@@ -40,7 +40,8 @@ export const requireRole = (...roles: string[]) =>
   };
 
 export const authenticate = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  const token = req.headers.authorization?.split(' ')[1];
+  // Also accept ?token= query param (used for PDF invoice direct browser downloads)
+  const token = req.headers.authorization?.split(' ')[1] || (req.query.token as string | undefined);
 
   if (!token) {
     res.status(401).json({ error: 'Unauthorized: No token provided' });
@@ -48,9 +49,18 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
   }
 
   try {
-    // Verify JWT signature only — no DB session lookup needed
     const decoded = jwt.verify(token, env.JWT_SECRET) as any;
     const userId = parseInt(String(decoded.sub ?? decoded.id), 10);
+
+    // Verify session still exists in DB — catches logged-out tokens
+    const session = await db.session.findFirst({
+      where: { token, userId, expiresAt: { gt: new Date() } },
+      select: { id: true },
+    });
+    if (!session) {
+      res.status(401).json({ error: 'Session expired or logged out' });
+      return;
+    }
 
     req.user = {
       id: userId,

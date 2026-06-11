@@ -1,22 +1,13 @@
 import { Request, Response } from 'express';
 import PDFDocument from 'pdfkit';
-import jwt from 'jsonwebtoken';
 import { db } from '../config/database';
-import { env } from '../config/env';
 
 export const invoiceController = {
   /** GET /bookings/:id/invoice — streams a PDF invoice for a completed booking */
   download: async (req: Request, res: Response) => {
     try {
-      // Support ?token= query param for direct browser downloads (PDF link opens in Linking.openURL)
-      const rawToken = (req.query.token as string) || (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-      if (!rawToken) { res.status(401).json({ error: 'Authentication required' }); return; }
-      let userId: number;
-      try {
-        const decoded = jwt.verify(rawToken, env.JWT_SECRET) as any;
-        userId = parseInt(String(decoded.sub ?? decoded.id), 10);
-      } catch { res.status(401).json({ error: 'Invalid or expired token' }); return; }
-
+      // authenticate middleware already validated the token (supports ?token= query param too)
+      const userId = req.user!.id;
       const bookingId = req.params.id;
 
       const booking = await db.booking.findUnique({

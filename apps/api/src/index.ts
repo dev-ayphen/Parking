@@ -39,3 +39,15 @@ const handleShutdown = () => {
 // Handle shutdown signals
 process.on('SIGTERM', handleShutdown);
 process.on('SIGINT', handleShutdown);
+
+// Crash safety — log and keep the process alive where possible
+process.on('uncaughtException', (err) => {
+  console.error('[CRASH] uncaughtException:', err);
+  // Fatal — exit so the process manager (PM2/Docker) can restart cleanly
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  // Non-fatal in most cases — log and continue
+  console.error('[CRASH] unhandledRejection:', reason);
+});

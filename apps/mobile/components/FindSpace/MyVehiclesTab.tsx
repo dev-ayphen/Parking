@@ -9,7 +9,7 @@ import {
   RefreshControl,
   Image,
 } from 'react-native';
-import { Car, Trash2, ChevronRight, Camera, UploadCloud, CheckCircle2 } from 'lucide-react-native';
+import { Car, Trash2, ChevronRight, Camera, UploadCloud, CheckCircle2, Check } from 'lucide-react-native';
 import FormLabel from '../FormLabel';
 import { Colors } from '../../theme';
 import { styles } from './findSpaceStyles';
@@ -42,6 +42,8 @@ interface MyVehiclesTabProps {
   onPickRCBook: () => void;
   newVehicleRole: string;
   setNewVehicleRole: (val: string) => void;
+  vehicleAuthAccepted: boolean;
+  setVehicleAuthAccepted: (val: boolean) => void;
   handleSaveVehicle: () => void;
   editVehicleName: string;
   setEditVehicleName: (val: string) => void;
@@ -87,6 +89,8 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
   onPickRCBook,
   newVehicleRole,
   setNewVehicleRole,
+  vehicleAuthAccepted,
+  setVehicleAuthAccepted,
   handleSaveVehicle,
   editVehicleName,
   setEditVehicleName,
@@ -258,6 +262,20 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
               </TouchableOpacity>
             ))}
           </View>
+
+          <FormLabel required>Authorization</FormLabel>
+          <TouchableOpacity
+            style={styles.checkboxRow}
+            onPress={() => setVehicleAuthAccepted(!vehicleAuthAccepted)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.checkbox, vehicleAuthAccepted && styles.checkboxChecked]}>
+              {vehicleAuthAccepted && <Check size={14} color={Colors.white} strokeWidth={3} />}
+            </View>
+            <Text style={styles.checkboxLabel}>
+              I confirm this vehicle belongs to me or I have authorization to use it
+            </Text>
+          </TouchableOpacity>
 
           <View style={styles.formActionsRow}>
             <TouchableOpacity
@@ -439,6 +457,11 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
                       {item.active && (
                         <View style={styles.activeBadge}>
                           <Text style={styles.activeBadgeText}>ACTIVE</Text>
+                        </View>
+                      )}
+                      {item.rcVerified && (
+                        <View style={[styles.activeBadge, { backgroundColor: Colors.successAlt }]}>
+                          <Text style={styles.activeBadgeText}>VERIFIED</Text>
                         </View>
                       )}
                     </View>

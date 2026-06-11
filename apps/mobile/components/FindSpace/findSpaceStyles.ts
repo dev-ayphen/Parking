@@ -777,6 +777,20 @@ export const styles = StyleSheet.create({
     fontWeight: FontWeight.medium,
     flex: 1,
   },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: BorderRadius.badge,               // 6 = badge ✓
+    borderWidth: 2,
+    borderColor: Colors.borderMedium,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.white,
+  },
+  checkboxChecked: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
   typeChip: {
     flex: 1,
     height: 38,

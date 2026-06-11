@@ -119,6 +119,7 @@ const FindSpaceScreen = () => {
   const [newVehicleSidePhotoUri, setNewVehicleSidePhotoUri] = useState<string | null>(null);
   const [newVehicleRCBookUri, setNewVehicleRCBookUri] = useState<string | null>(null);
   const [newVehicleRole, setNewVehicleRole] = useState('Owner');
+  const [vehicleAuthAccepted, setVehicleAuthAccepted] = useState(false);
 
   // Edit vehicle form state
   const [editVehicleName, setEditVehicleName] = useState('');
@@ -243,6 +244,7 @@ const FindSpaceScreen = () => {
       setNewVehicleSidePhotoUri(null);
       setNewVehicleRCBookUri(null);
       setNewVehicleRole('Owner');
+      setVehicleAuthAccepted(false);
       setShowAddVehicle(false);
       Alert.alert('Success', 'Vehicle added successfully!');
       await loadVehiclesFromAPI();
@@ -1110,6 +1112,8 @@ const FindSpaceScreen = () => {
           onPickRCBook={() => pickVehiclePhoto(setNewVehicleRCBookUri, true)}
           newVehicleRole={newVehicleRole}
           setNewVehicleRole={setNewVehicleRole}
+          vehicleAuthAccepted={vehicleAuthAccepted}
+          setVehicleAuthAccepted={setVehicleAuthAccepted}
           handleSaveVehicle={handleSaveVehicle}
           editVehicleName={editVehicleName}
           setEditVehicleName={setEditVehicleName}

@@ -85,10 +85,14 @@ async function refreshAccessToken(): Promise<string | null> {
  */
 export async function apiCall<T = any>(
   url: string,
-  options: RequestInit = {}
+  options: RequestInit & { timeoutMs?: number } = {}
 ): Promise<T> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.TIMEOUT);
+  // File uploads (FormData) are large/slow — give them a generous timeout.
+  const isUpload =
+    typeof FormData !== 'undefined' && options.body instanceof FormData;
+  const timeoutMs = options.timeoutMs ?? (isUpload ? 120000 : API_CONFIG.TIMEOUT);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     // Get token from secure storage if not already provided in headers.
@@ -171,7 +175,7 @@ export async function apiCall<T = any>(
     // Handle abort (timeout)
     if (error instanceof Error && error.name === 'AbortError') {
       throw new ApiError(
-        `Connection timeout (${API_CONFIG.TIMEOUT / 1000}s). Check if backend is running.`,
+        `Connection timeout (${Math.round(timeoutMs / 1000)}s). The upload may be too large or the connection is slow.`,
         408,
         true,
         false
@@ -183,10 +187,12 @@ export async function apiCall<T = any>(
       throw error;
     }
 
-    // Handle network errors
+    // Handle network errors — include the underlying message so we can tell
+    // a real connectivity drop from an iOS multipart/ATS failure.
     if (error instanceof Error) {
+      const detail = error.message ? ` (${error.message})` : '';
       throw new ApiError(
-        'Failed to connect to server. Check your network connection.',
+        `Failed to connect to server.${detail}`,
         0,
         false,
         true

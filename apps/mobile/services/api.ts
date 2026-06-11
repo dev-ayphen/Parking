@@ -62,21 +62,41 @@ export const api = {
    * @param files   files to attach, e.g. [{ field:'file', uri, name, type }]
    * @param fields  optional extra text fields appended to the form
    */
-  upload: <T = any>(
+  upload: async <T = any>(
     path: string,
     files: Array<{ field: string; uri: string; name: string; type: string }>,
     fields?: Record<string, string>,
     method: 'POST' | 'PUT' = 'POST'
-  ) => {
-    const form = new FormData();
-    for (const f of files) {
-      // React Native FormData file shape.
-      form.append(f.field, { uri: f.uri, name: f.name, type: f.type } as any);
+  ): Promise<T> => {
+    const buildForm = () => {
+      const form = new FormData();
+      for (const f of files) {
+        // React Native FormData file shape.
+        form.append(f.field, { uri: f.uri, name: f.name, type: f.type } as any);
+      }
+      if (fields) {
+        for (const [k, v] of Object.entries(fields)) form.append(k, v);
+      }
+      return form;
+    };
+
+    // Uploads can fail on a transient network blip — retry twice before giving up.
+    // A fresh FormData is built each attempt (a consumed body can't be reused).
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        return await apiCall<T>(buildUrl(path), { method, body: buildForm() as any });
+      } catch (e) {
+        lastErr = e;
+        const status = (e as any)?.status;
+        // Don't retry real server rejections (4xx other than timeout) — only network/timeout.
+        const isRetryable = status === 0 || status === 408 || status === undefined || status >= 500;
+        if (!isRetryable || attempt === 3) break;
+        // Small backoff between attempts.
+        await new Promise((r) => setTimeout(r, attempt * 800));
+      }
     }
-    if (fields) {
-      for (const [k, v] of Object.entries(fields)) form.append(k, v);
-    }
-    return apiCall<T>(buildUrl(path), { method, body: form as any });
+    throw lastErr;
   },
 };
 

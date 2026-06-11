@@ -12,7 +12,7 @@ const API_PORT = 3000;
  * Mac's IP. No more editing .env every time the IP changes.
  */
 function detectDevHost(): string | null {
-  // e.g. "192.168.1.3:8081" — the host the phone used to load the JS bundle
+  // e.g. "192.168.1.3:8081" — the host the phone/simulator used to load the JS bundle
   const hostUri =
     (Constants.expoConfig as any)?.hostUri ||
     (Constants as any)?.expoGoConfig?.debuggerHost ||
@@ -20,11 +20,16 @@ function detectDevHost(): string | null {
     (Constants as any)?.manifest?.debuggerHost ||
     '';
   const host = String(hostUri).split(':')[0]?.trim();
-  // Ignore tunnel/localhost hosts — only use a real LAN IP
-  if (host && host !== 'localhost' && host !== '127.0.0.1' && !host.includes('exp.direct')) {
-    return host;
-  }
-  return null;
+  if (!host) return null;
+  // Tunnel hosts (exp.direct) can't reach a LAN-only API server — bail to the env fallback.
+  if (host.includes('exp.direct')) return null;
+  // localhost/127.0.0.1 means we're on the iOS Simulator (or web), which shares the
+  // Mac's loopback — the API IS reachable at localhost. Use it directly.
+  // (Previously this returned null and fell through to a stale hardcoded LAN IP,
+  // which the simulator couldn't reach → "Failed to connect" on uploads.)
+  if (host === 'localhost' || host === '127.0.0.1') return 'localhost';
+  // Otherwise it's a real LAN IP (physical device on the same WiFi).
+  return host;
 }
 
 /**

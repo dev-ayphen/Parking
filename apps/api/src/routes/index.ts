@@ -15,9 +15,13 @@ import incidentRouter from './incident.routes';
 import abuseRouter from './abuse.routes';
 import userPreferencesRouter from './userPreferences.routes';
 import uploadRouter from './upload.routes';
+import configRouter from './config.routes';
+import helpRouter from './help.routes';
 
 const router = Router();
 
+router.use('/config', configRouter);
+router.use('/help', helpRouter);
 router.use('/auth', authRouter);
 router.use('/users', userRouter);
 router.use('/spaces', spaceRouter);

@@ -14,8 +14,11 @@ import {View,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CheckCircle, Download, ChevronDown, ChevronUp, MapPin, Star, TrendingUp, Calendar } from 'lucide-react-native';
 import { useFocusEffect } from 'expo-router';
+import * as Linking from 'expo-linking';
 import { PageHeader } from '../../components';
 import { api } from '../../services/api';
+import { getAuthToken } from '../../utils/secureStorage';
+import { API_BASE } from '../../config/api.config';
 import { getRatingStyle } from '../../utils/ratingUtils';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 
@@ -81,6 +84,18 @@ export default function HistoryScreen() {
   const showToast = (message: string) => {
     if (Platform.OS === 'android') ToastAndroid.show(message, ToastAndroid.SHORT);
     else Alert.alert('Booking Details', message);
+  };
+
+  const downloadInvoice = async (bookingId: string) => {
+    try {
+      const token = await getAuthToken();
+      // Build the PDF URL with the auth token as a query param so the browser
+      // can download it directly (Bearer header not possible in Linking.openURL)
+      const url = `${API_BASE}/bookings/${bookingId}/invoice?token=${token}`;
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert('Error', 'Could not open invoice. Please try again.');
+    }
   };
 
   if (loading) {
@@ -239,7 +254,7 @@ export default function HistoryScreen() {
                           style={styles.actionBtnPrimary}
                           onPress={(e) => {
                             e.stopPropagation();
-                            showToast(`Downloading invoice for ${shortId}...`);
+                            downloadInvoice(item.id);
                           }}
                         >
                           <Download size={16} color={Colors.white} style={{ marginRight: 6 }} />

@@ -3,8 +3,32 @@ import { vehicleService } from '../services/vehicle.service';
 import { createVehicleSchema } from '../validations/vehicle.validation';
 import { sendError, assertAuth, BadRequest } from '../utils/errors';
 import { ErrorCode } from '../utils/errorCodes';
+import { storageService } from '../services/storage.service';
+import { BUCKETS } from '../config/supabase';
+import { db } from '../config/database';
 
 export const vehicleController = {
+  /** GET /vehicles/:id/rcbook-url — returns a 1-hour signed URL for the private RC book */
+  getRcBookUrl: async (req: Request, res: Response) => {
+    try {
+      assertAuth(req);
+      const vehicleId = parseInt(req.params.id, 10);
+      if (isNaN(vehicleId)) throw BadRequest('Invalid vehicle ID', ErrorCode.INVALID_INPUT);
+
+      // Admin can view any vehicle's RC book; parker can only view their own
+      const isAdmin = req.user.role === 'ADMIN';
+      const where = isAdmin ? { id: vehicleId } : { id: vehicleId, userId: req.user.id };
+      const vehicle = await db.vehicle.findFirst({ where, select: { rcBookUrl: true } });
+      if (!vehicle) { res.status(404).json({ error: 'Vehicle not found' }); return; }
+      if (!vehicle.rcBookUrl) { res.status(404).json({ error: 'No RC book uploaded for this vehicle' }); return; }
+
+      const url = await storageService.resolveUrl(vehicle.rcBookUrl, BUCKETS.PRIVATE);
+      res.json({ success: true, url });
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
   /** POST /vehicles/:id/media — multipart: frontPhoto, sidePhoto, rcBook (any subset) */
   uploadMedia: async (req: Request, res: Response) => {
     try {

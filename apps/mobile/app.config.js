@@ -63,6 +63,15 @@ module.exports = {
       'expo-status-bar',
       'expo-video',
       '@react-native-community/datetimepicker',
+      [
+        'expo-notifications',
+        {
+          icon: './assets/icon.png',
+          color: '#DC0159',
+          defaultChannel: 'parkswift',
+          sounds: [],
+        },
+      ],
     ],
   },
 };

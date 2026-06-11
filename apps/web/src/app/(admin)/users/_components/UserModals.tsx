@@ -5,10 +5,12 @@ import { motion } from 'framer-motion';
 import {
   UserX, Ban, Trash2, X, AlertTriangle, Loader2,
   Mail, Phone, Calendar, Star, CheckCircle2, Car,
-  MapPin as MapPinIcon, ShieldAlert,
+  MapPin as MapPinIcon, ShieldAlert, FileText,
 } from 'lucide-react';
 import { adminApi } from '@/services/api';
 import type { AdminUser, UserDetails } from './types';
+
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
 
 // ───────────────────────────────────────────────────────────────────────
 // Shared shells
@@ -279,6 +281,42 @@ export function DeleteUserModal({
 // User Details (read-only deep view)
 // ───────────────────────────────────────────────────────────────────────
 
+function RcBookButton({ vehicleId }: { vehicleId: number }) {
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState('');
+
+  const handleView = async () => {
+    setLoading(true);
+    setErr('');
+    try {
+      const res = await fetch(`${SOCKET_URL}/api/admin/vehicles/${vehicleId}/rcbook-url`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('parkswift_token') || ''}` },
+      });
+      const data = await res.json();
+      if (!res.ok) { setErr(data.error || 'Not available'); return; }
+      window.open(data.url, '_blank', 'noopener,noreferrer');
+    } catch {
+      setErr('Failed to load');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="mt-1.5 flex items-center gap-2">
+      <button
+        onClick={handleView}
+        disabled={loading}
+        className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg transition-colors disabled:opacity-50"
+      >
+        {loading ? <Loader2 size={11} className="animate-spin" /> : <FileText size={11} />}
+        RC Book
+      </button>
+      {err && <span className="text-xs text-rose-500">{err}</span>}
+    </div>
+  );
+}
+
 export function UserDetailsModal({ user, onClose }: { user: UserDetails; onClose: () => void }) {
   const formatDate = (d?: string | null) =>
     d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
@@ -382,18 +420,21 @@ export function UserDetailsModal({ user, onClose }: { user: UserDetails; onClose
                 </div>
                 <span className="text-xs font-mono bg-gray-100 px-2 py-1 rounded">{v.licensePlate}</span>
               </div>
-              {v.sidePhotoUrl && (
+              {(v.frontPhotoUrl || v.sidePhotoUrl) && (
                 <div className="mt-2 flex gap-2">
                   {v.frontPhotoUrl && (
                     <a href={v.frontPhotoUrl} target="_blank" rel="noopener noreferrer">
                       <img src={v.frontPhotoUrl} alt="Front" className="w-20 h-14 rounded-lg object-cover border border-gray-200 hover:opacity-80 transition-opacity" />
                     </a>
                   )}
-                  <a href={v.sidePhotoUrl} target="_blank" rel="noopener noreferrer">
-                    <img src={v.sidePhotoUrl} alt="Side" className="w-20 h-14 rounded-lg object-cover border border-gray-200 hover:opacity-80 transition-opacity" />
-                  </a>
+                  {v.sidePhotoUrl && (
+                    <a href={v.sidePhotoUrl} target="_blank" rel="noopener noreferrer">
+                      <img src={v.sidePhotoUrl} alt="Side" className="w-20 h-14 rounded-lg object-cover border border-gray-200 hover:opacity-80 transition-opacity" />
+                    </a>
+                  )}
                 </div>
               )}
+              <RcBookButton vehicleId={v.id} />
             </div>
           ))}
         </Section>

@@ -21,6 +21,9 @@ model User {
   emergencyContactName  String?
   emergencyContactPhone String?
 
+  // Expo push token — stored on app open, used for background push notifications
+  expoPushToken       String?
+
   // Notification & app preferences (settings screen toggles)
   pushNotifications   Boolean  @default(true)
   emailNotifications  Boolean  @default(false)

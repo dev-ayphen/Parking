@@ -46,6 +46,19 @@ export const userController = {
     }
   },
 
+  /** POST /users/me/push-token — register or refresh Expo push token */
+  registerPushToken: async (req: Request, res: Response) => {
+    try {
+      assertAuth(req);
+      const { token } = req.body;
+      if (!token || typeof token !== 'string') throw BadRequest('token is required', ErrorCode.VALIDATION_ERROR);
+      await userService.updatePushToken(req.user.id, token);
+      res.json({ success: true });
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
   getPublicProfile: async (req: Request, res: Response) => {
     try {
       const result = await userService.getPublicProfile(parseInt(req.params.id));

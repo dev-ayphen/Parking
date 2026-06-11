@@ -13,5 +13,6 @@ router.post('/', vehicleController.addVehicle);
 router.put('/:id', vehicleController.updateVehicle);
 router.delete('/:id', vehicleController.deleteVehicle);
 router.post('/:id/media', uploadVehicleMedia, vehicleController.uploadMedia);
+router.get('/:id/rcbook-url', vehicleController.getRcBookUrl);
 
 export default router;

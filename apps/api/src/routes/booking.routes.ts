@@ -5,6 +5,7 @@ import { idempotency } from '../middleware/idempotency';
 import { validate } from '../middleware/validate';
 import { createBookingSchema } from '../validations/booking.validation';
 import { bookingController } from '../controllers/booking.controller';
+import { invoiceController } from '../controllers/invoice.controller';
 
 const router = Router();
 
@@ -43,5 +44,8 @@ router.get('/:id/verification', bookingController.getVerification);
 router.put('/:id/verification/accept', bookingController.acceptVerification);
 router.post('/:id/consent', bookingController.recordBookingConsent);
 router.get('/:id/consent', bookingController.getBookingConsent);
+
+// Invoice PDF download
+router.get('/:id/invoice', invoiceController.download);
 
 export default router;

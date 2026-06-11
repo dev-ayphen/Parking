@@ -3,6 +3,7 @@ import { adminController } from '../controllers/admin.controller';
 import { settingsController } from '../controllers/settings.controller';
 import { documentController } from '../controllers/document.controller';
 import { abuseController } from '../controllers/abuse.controller';
+import { vehicleController } from '../controllers/vehicle.controller';
 import { authenticate, requireRole } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import {
@@ -77,6 +78,9 @@ router.put('/settings', validate(updateSettingsSchema), settingsController.updat
 // ─── Communications ──────────────────────────────────────────────────
 router.post('/communications/notify', validate(sendBroadcastSchema), adminController.sendBroadcast);
 router.get('/communications/history', adminController.listBroadcastHistory);
+
+// ─── Vehicle RC book (admin view of private docs) ────────────────────
+router.get('/vehicles/:id/rcbook-url', vehicleController.getRcBookUrl);
 
 // ─── System & legal ──────────────────────────────────────────────────
 router.get('/system-logs', adminController.listSystemLogs);

@@ -10,6 +10,7 @@ router.get('/me', authenticate, userController.getProfile);
 router.put('/me', authenticate, userController.updateProfile);
 router.put('/me/complete-profile', authenticate, userController.completeProfile);
 router.post('/me/photo', authenticate, uploadImage, userController.uploadPhoto);
+router.post('/me/push-token', authenticate, userController.registerPushToken);
 
 // Public route - no authentication needed
 router.get('/:id', userController.getPublicProfile);

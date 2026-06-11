@@ -234,6 +234,10 @@ export const userService = {
     }
   },
 
+  updatePushToken: async (userId: number, token: string) => {
+    await db.user.update({ where: { id: userId }, data: { expoPushToken: token } });
+  },
+
   getPublicProfile: async (userId: number) => {
     if (!userId || isNaN(userId)) {
       const error = new Error('Invalid user ID');

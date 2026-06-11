@@ -1,6 +1,7 @@
 import { Request } from 'express';
 import { db } from '../config/database';
 import { auditService } from './audit.service';
+import { pushService } from './push.service';
 
 export const bookingService = {
   createBooking: async (parkerId: number, data: any, req?: Request) => {
@@ -96,6 +97,15 @@ export const bookingService = {
       payload: { spaceId, vehicleId, durationHours },
       req,
     });
+
+    const ownerId = (booking.space as any)?.ownerId;
+    if (ownerId) {
+      pushService.sendToUser(ownerId, {
+        title: 'New Booking Request',
+        body: `A parker wants to book "${(booking.space as any)?.name}". Approve or decline.`,
+        data: { bookingId: booking.id, screen: 'booking-requests' },
+      }).catch(() => {});
+    }
 
     return booking;
   },
@@ -225,6 +235,11 @@ export const bookingService = {
       bookingId, event: 'BOOKING_APPROVED', fromStatus: booking.status, toStatus: 'APPROVED',
       actorId: ownerId, actorRole: 'OWNER', req,
     });
+    pushService.sendToUser(booking.parkerId, {
+      title: 'Booking Approved',
+      body: 'Your parking booking has been approved. Show up on time!',
+      data: { bookingId, screen: 'booking-detail' },
+    }).catch(() => {});
     return { success: true, booking: updated };
   },
 
@@ -248,6 +263,11 @@ export const bookingService = {
       bookingId, event: 'BOOKING_REJECTED', fromStatus: booking.status, toStatus: 'REJECTED',
       actorId: ownerId, actorRole: 'OWNER', req,
     });
+    pushService.sendToUser(booking.parkerId, {
+      title: 'Booking Declined',
+      body: 'Your parking request was declined. Try another space nearby.',
+      data: { bookingId, screen: 'booking-detail' },
+    }).catch(() => {});
     return { success: true, booking: updated };
   },
 
@@ -304,6 +324,11 @@ export const bookingService = {
       bookingId, event: 'SESSION_STARTED', fromStatus: booking.status, toStatus: 'ACTIVE',
       actorId: userId ?? booking.parkerId, actorRole: 'OWNER', req,
     });
+    pushService.sendToUser(booking.parkerId, {
+      title: 'Session Started',
+      body: 'Your parking session is now active. Enjoy your spot!',
+      data: { bookingId, screen: 'booking-detail' },
+    }).catch(() => {});
     return { success: true, booking: updated };
   },
 
@@ -361,6 +386,11 @@ export const bookingService = {
       bookingId, event: 'SESSION_ENDED', fromStatus: booking.status, toStatus: 'COMPLETED',
       actorId: booking.parkerId, actorRole: 'PARKER', req,
     });
+    pushService.sendToUser(booking.parkerId, {
+      title: 'Session Complete',
+      body: `Your parking session ended. Total: ₹${totalAmount}. Download your invoice!`,
+      data: { bookingId, screen: 'booking-detail' },
+    }).catch(() => {});
     return {
       success: true,
       booking: updated,

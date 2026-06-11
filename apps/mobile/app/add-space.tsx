@@ -634,11 +634,16 @@ export default function AddSpaceScreen() {
       if (areaPhotoUri  && isLocal(areaPhotoUri))  { const g = guess(areaPhotoUri);  mediaFiles.push({ field: 'areaPhoto',  uri: areaPhotoUri,  name: `area.${g.ext}`,  type: g.type }); }
       if (areaVideoUri  && isLocal(areaVideoUri))  { const g = guess(areaVideoUri);  mediaFiles.push({ field: 'areaVideo',  uri: areaVideoUri,  name: `video.${g.ext}`, type: g.type }); }
 
+      // Track upload failures so we surface them instead of silently "succeeding".
+      const uploadErrors: string[] = [];
+
       if (mediaFiles.length > 0) {
         try {
           await api.upload(`/spaces/${space.id}/media`, mediaFiles);
         } catch (e) {
+          const msg = (e as Error)?.message || 'unknown error';
           if (__DEV__) console.log('[ADD-SPACE] media upload failed', e);
+          uploadErrors.push(`Photos/video: ${msg}`);
         }
       }
 
@@ -655,8 +660,18 @@ export default function AddSpaceScreen() {
             { documentType: docType, documentLabel: doc.name }
           );
         } catch (e) {
+          const msg = (e as Error)?.message || 'unknown error';
           if (__DEV__) console.log('[ADD-SPACE] doc upload failed', doc.name, e);
+          uploadErrors.push(`Document "${doc.name}": ${msg}`);
         }
+      }
+
+      // If any media/doc failed to upload, tell the user — don't pretend it all saved.
+      if (uploadErrors.length > 0) {
+        Alert.alert(
+          'Some files did not upload',
+          `The space was saved, but these uploads failed:\n\n${uploadErrors.join('\n')}\n\nPlease open the space and re-upload them.`
+        );
       }
 
       setSubmittedSpace({

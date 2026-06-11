@@ -1,0 +1,627 @@
+import React, { useState, useRef, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform,
+  Alert,
+  ActivityIndicator,
+  StatusBar,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme } from '../../hooks/useTheme';
+import { CheckCircle } from 'lucide-react-native';
+import { LeafletMapHandle } from '../../components/LeafletMap';
+import * as ImagePicker from 'expo-image-picker';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { PageHeader } from '../../components';
+import { z } from 'zod';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { api } from '../../services/api';
+import { Colors, FontSize, FontWeight, BorderRadius, ExtendedColors } from '../../theme';
+import { styles } from '../../components/AddSpace/addSpaceStyles';
+import Step1BasicDetails from '../../components/AddSpace/Step1BasicDetails';
+import Step2Location from '../../components/AddSpace/Step2Location';
+import Step3Pricing from '../../components/AddSpace/Step3Pricing';
+import Step4Documents from '../../components/AddSpace/Step4Documents';
+import Step5Compliance from '../../components/AddSpace/Step5Compliance';
+
+// Space-type → required proof options (COMPLIANCE_AND_TERMS.md)
+const SPACE_DOC_REQUIREMENTS: Record<string, string[]> = {
+  'Independent House': ['EB Bill', 'Property Tax', 'Water Bill'],
+  'Rented House': ['Rental Agreement', 'EB Bill'],
+  'Apartment Owner Slot': ['Maintenance Bill', 'Parking Allocation Photo'],
+  'Apartment Tenant Slot': ['Rental Agreement', 'Parking Permission'],
+  'Gated Villa': ['Property Tax', 'EB Bill'],
+  'Shop Front Parking': ['Shop License', 'GST Certificate', 'Rental Agreement'],
+  'Office Parking': ['Company ID', 'Parking Permission'],
+  'Vacant Private Land': ['Land Tax Receipt', 'Patta Copy'],
+  'Inside Compound': ['Address Proof', 'Compound Photos'],
+  'Open Frontage Area': [], // Images only — admin review, no doc type needed
+};
+
+// Zod Schema matching the backend with COMPLIANCE validations
+const createSpaceSchema = z
+  .object({
+    // Step 1: Basic Details
+    spaceName: z
+      .string()
+      .min(1, 'Space name is required')
+      .min(2, 'Minimum 2 characters')
+      .max(100, 'Maximum 100 characters'),
+    spaceType: z.enum(
+      [
+        'Independent House',
+        'Rented House',
+        'Apartment Owner Slot',
+        'Apartment Tenant Slot',
+        'Gated Villa',
+        'Shop Front Parking',
+        'Office Parking',
+        'Vacant Private Land',
+        'Inside Compound',
+        'Open Frontage Area',
+      ],
+      { errorMap: () => ({ message: 'Please select a space type' }) }
+    ),
+    parkingFor: z.enum(['Car', 'Bike', 'Both'], {
+      errorMap: () => ({ message: 'Please specify parking type (Car, Bike, or Both)' }),
+    }),
+    capacity: z.coerce
+      .number()
+      .min(1, 'Capacity must be at least 1 parking spot')
+      .max(10, 'Capacity cannot exceed 10 spots'),
+
+    // Step 2: Location
+    address: z
+      .string()
+      .min(1, 'Address is required')
+      .min(5, 'Minimum 5 characters')
+      .max(200, 'Maximum 200 characters'),
+    landmark: z.string().max(100).optional(),
+    latitude: z.coerce.number().min(-90, 'Invalid latitude').max(90, 'Invalid latitude'),
+    longitude: z.coerce.number().min(-180, 'Invalid longitude').max(180, 'Invalid longitude'),
+
+    // Step 3: Pricing & Timing
+    hourlyPrice: z
+      .string()
+      .min(1, 'Hourly price is required')
+      .regex(/^\d+(\.\d{1,2})?$/, 'Enter a valid price (e.g., 50 or 50.50)'),
+    dailyRate: z
+      .string()
+      .regex(/^\d+(\.\d{1,2})?$/, 'Enter a valid daily rate (e.g., 400)')
+      .optional()
+      .or(z.literal('')),
+    monthlyRate: z
+      .string()
+      .regex(/^\d+(\.\d{1,2})?$/, 'Enter a valid monthly rate (e.g., 8000)')
+      .optional()
+      .or(z.literal('')),
+    availability: z.enum(['24 Hours', 'Custom Hours', 'Weekdays Only'], {
+      errorMap: () => ({ message: 'Please select availability hours' }),
+    }),
+    amenities: z.array(z.string()),
+    startTime: z.string().optional(),
+    endTime: z.string().optional(),
+
+    // Step 4: Photos & Documents
+    frontPhoto: z
+      .boolean()
+      .refine((val) => val === true, 'Front photo is required for verification'),
+    areaPhoto: z.boolean().optional(),
+    areaVideo: z.boolean().optional(),
+    visibility: z.enum(['Private', 'Shared', 'Roadside']).optional(),
+    docType: z
+      .enum(
+        [
+          'EB Bill',
+          'Property Tax',
+          'Water Bill',
+          'Rental Agreement',
+          'Maintenance Bill',
+          'Parking Allocation Photo',
+          'Parking Permission',
+          'Shop License',
+          'GST Certificate',
+          'Company ID',
+          'Land Tax Receipt',
+          'Patta Copy',
+          'Address Proof',
+          'Compound Photos',
+        ],
+        { errorMap: () => ({ message: 'Please select a valid document type for this space' }) }
+      )
+      .optional(),
+
+    // Step 5: Compliance Consent (REQUIRED per COMPLIANCE_AND_TERMS.md)
+    acceptOwnerResponsibility: z
+      .boolean()
+      .refine(
+        (val) => val === true,
+        'You must confirm ownership or authorization. False claims may result in suspension and legal action.'
+      ),
+    acceptLegalCompliance: z
+      .boolean()
+      .refine(
+        (val) => val === true,
+        'You must confirm compliance with local municipal and parking authority regulations.'
+      ),
+    acceptNonViolation: z
+      .boolean()
+      .refine(
+        (val) => val === true,
+        'You must confirm this space does not block public roads, footpaths, or emergency access.'
+      ),
+  })
+
+  .refine(
+    (data) => {
+      if (data.availability === 'Custom Hours') {
+        return (
+          !!(data.startTime && data.startTime.trim()) && !!(data.endTime && data.endTime.trim())
+        );
+      }
+      return true;
+    },
+    { message: 'Start and end times are required for Custom Hours', path: ['startTime'] }
+  );
+
+type SpaceFormData = z.infer<typeof createSpaceSchema>;
+
+export default function AddSpaceScreen() {
+  const theme = useTheme();
+  const router = useRouter();
+  const [step, setStep] = useState(1);
+  const [submittedSpace, setSubmittedSpace] = useState<{
+    id: number;
+    name: string;
+    spaceType: string;
+  } | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showSpaceTypeModal, setShowSpaceTypeModal] = useState(false);
+  const [showParkingForModal, setShowParkingForModal] = useState(false);
+  const [showDocTypeModal, setShowDocTypeModal] = useState(false);
+  const [locationQuery, setLocationQuery] = useState('');
+  const [isSearchingLocation, setIsSearchingLocation] = useState(false);
+  const [markerCoord, setMarkerCoord] = useState({ latitude: 12.9716, longitude: 77.5946 });
+  const mapRef = useRef<LeafletMapHandle>(null);
+  const [uploadedDocs, setUploadedDocs] = useState<Array<{ name: string; uri: string }>>([]);
+  const [showAvailabilityModal, setShowAvailabilityModal] = useState(false);
+  const [modalAvailability, setModalAvailability] = useState('');
+  const [modalStartTime, setModalStartTime] = useState('');
+  const [modalEndTime, setModalEndTime] = useState('');
+  const [startAmPm, setStartAmPm] = useState<'AM' | 'PM'>('AM');
+  const [endAmPm, setEndAmPm] = useState<'AM' | 'PM'>('PM');
+  const [showAmenitiesModal, setShowAmenitiesModal] = useState(false);
+  const [tempAmenities, setTempAmenities] = useState<string[]>([]);
+
+  const EMPTY_DEFAULTS = {
+    spaceName: '',
+    capacity: 1,
+    address: '',
+    landmark: '',
+    latitude: 12.9716,
+    longitude: 77.5946,
+    hourlyPrice: '',
+    dailyRate: '',
+    monthlyRate: '',
+    amenities: [] as string[],
+    startTime: '',
+    endTime: '',
+    frontPhoto: false,
+    areaPhoto: false,
+    areaVideo: false,
+    acceptOwnerResponsibility: false,
+    acceptLegalCompliance: false,
+    acceptNonViolation: false,
+  };
+
+  const {
+    control,
+    handleSubmit,
+    watch,
+    setValue,
+    trigger,
+    reset,
+    formState: { errors },
+  } = useForm<SpaceFormData>({
+    resolver: zodResolver(createSpaceSchema),
+    defaultValues: EMPTY_DEFAULTS,
+  });
+
+  // Reset everything when screen is focused (handles back-navigation reuse)
+  useFocusEffect(
+    useCallback(() => {
+      reset(EMPTY_DEFAULTS);
+      setStep(1);
+      setUploadedDocs([]);
+      setLocationQuery('');
+      setMarkerCoord({ latitude: 12.9716, longitude: 77.5946 });
+    }, [])
+  );
+
+  const applyLocation = (lat: number, lng: number, displayAddress: string) => {
+    setValue('latitude', lat, { shouldValidate: true });
+    setValue('longitude', lng, { shouldValidate: true });
+    setValue('address', displayAddress, { shouldValidate: true });
+    const coord = { latitude: lat, longitude: lng };
+    setMarkerCoord(coord);
+    mapRef.current?.animateToRegion({ ...coord, latitudeDelta: 0.01 });
+  };
+
+  const searchLocation = async () => {
+    if (!locationQuery.trim()) return;
+    setIsSearchingLocation(true);
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationQuery)}&format=json&limit=1&addressdetails=1`,
+        { headers: { 'User-Agent': 'ParkSwift/1.0' } }
+      );
+      const results = await res.json();
+      if (results.length > 0) {
+        const place = results[0];
+        const lat = parseFloat(place.lat);
+        const lng = parseFloat(place.lon);
+        const addr = place.address || {};
+        const parts = [
+          addr.road,
+          addr.suburb || addr.neighbourhood,
+          addr.city || addr.town || addr.village,
+          addr.state,
+        ].filter(Boolean);
+        applyLocation(lat, lng, parts.join(', ') || place.display_name);
+      } else {
+        Alert.alert('Not Found', 'No location found. Try a different name.');
+      }
+    } catch {
+      Alert.alert('Search Failed', 'Unable to search. Check your connection.');
+    } finally {
+      setIsSearchingLocation(false);
+    }
+  };
+
+  const reverseGeocode = async (lat: number, lng: number) => {
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+        { headers: { 'User-Agent': 'ParkSwift/1.0' } }
+      );
+      const data = await res.json();
+      if (data.address) {
+        const addr = data.address;
+        const parts = [
+          addr.road,
+          addr.suburb || addr.neighbourhood,
+          addr.city || addr.town || addr.village,
+          addr.state,
+        ].filter(Boolean);
+        applyLocation(lat, lng, parts.join(', ') || data.display_name);
+      }
+    } catch {}
+  };
+
+  const handlePickDocument = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission Required', 'Please allow access to your photo library.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
+        quality: 0.8,
+      });
+      if (!result.canceled && result.assets.length > 0) {
+        const asset = result.assets[0];
+        const name = asset.fileName || `document_${Date.now()}.jpg`;
+        setUploadedDocs((prev) => [...prev, { name, uri: asset.uri }]);
+      }
+    } catch {
+      Alert.alert('Error', 'Failed to pick document');
+    }
+  };
+
+  // Auto-format typed digits into HH:MM (e.g. "0930" → "09:30")
+  const formatTimeInput = (raw: string): string => {
+    const digits = raw.replace(/\D/g, '').slice(0, 4);
+    if (digits.length <= 2) return digits;
+    return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+  };
+
+  const isTimeValid = (t: string) => /^(0[1-9]|1[0-2]):[0-5][0-9]$/.test(t);
+
+  const handleNext = async () => {
+    let fieldsToValidate: (keyof SpaceFormData)[] = [];
+
+    if (step === 1) {
+      fieldsToValidate = ['spaceName', 'spaceType', 'parkingFor', 'capacity'];
+    } else if (step === 2) {
+      fieldsToValidate = ['address', 'latitude', 'longitude'];
+    } else if (step === 3) {
+      fieldsToValidate = ['hourlyPrice', 'availability'];
+    } else if (step === 4) {
+      fieldsToValidate = ['frontPhoto'];
+      const isValid = await trigger(fieldsToValidate);
+      if (isValid) {
+        if (watch('spaceType') !== 'Open Frontage Area' && uploadedDocs.length === 0) {
+          Alert.alert(
+            'Document Required',
+            'Please upload at least one required proof document before proceeding.'
+          );
+          return;
+        }
+        setStep(step + 1);
+      }
+      return;
+    }
+
+    const isValid = await trigger(fieldsToValidate);
+    if (isValid && step < 5) {
+      setStep(step + 1);
+    }
+  };
+
+  const handleBack = () => {
+    if (step > 1) {
+      setStep(step - 1);
+    } else {
+      router.back();
+    }
+  };
+
+  const onSubmit = async (data: SpaceFormData) => {
+    try {
+      setIsSubmitting(true);
+      const payload = {
+        spaceName: data.spaceName,
+        spaceType: data.spaceType,
+        parkingFor: data.parkingFor,
+        capacity: data.capacity,
+        address: data.address,
+        landmark: data.landmark || undefined,
+        latitude: data.latitude,
+        longitude: data.longitude,
+        hourlyPrice: data.hourlyPrice,
+        dailyRate: data.dailyRate ? parseFloat(data.dailyRate) : undefined,
+        monthlyRate: data.monthlyRate ? parseFloat(data.monthlyRate) : undefined,
+        availability: data.availability,
+        startTime: data.startTime || undefined,
+        endTime: data.endTime || undefined,
+        amenities: data.amenities,
+        frontPhoto: data.frontPhoto,
+        areaPhoto: data.areaPhoto || undefined,
+        areaVideo: data.areaVideo || undefined,
+        visibility: data.visibility || undefined,
+        docType: data.docType || undefined,
+        acceptOwnerResponsibility: data.acceptOwnerResponsibility,
+        acceptLegalCompliance: data.acceptLegalCompliance,
+        acceptNonViolation: data.acceptNonViolation,
+        confirmed: true,
+      };
+
+      const responseData = await api.post('/spaces', payload);
+      const space = responseData.space;
+      setSubmittedSpace({
+        id: space.id,
+        name: space.name,
+        spaceType: space.spaceType,
+      });
+    } catch (error) {
+      Alert.alert('Submission Failed', (error as Error).message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // ── Success screen ─────────────────────────────────────────────────────
+  if (submittedSpace) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="dark-content" />
+        <ScrollView
+          contentContainerStyle={styles.successContainer}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Icon */}
+          <View style={styles.successIconWrap}>
+            <View style={styles.successIconOuter}>
+              <CheckCircle size={56} color={Colors.success} strokeWidth={1.5} />
+            </View>
+          </View>
+
+          <Text style={styles.successTitle}>Space Submitted!</Text>
+          <Text style={styles.successSubtitle}>
+            Your space has been sent to admin for verification. You'll be notified once it's
+            approved.
+          </Text>
+
+          {/* Submission details card */}
+          <View style={styles.successCard}>
+            <View style={styles.successDetailRow}>
+              <Text style={styles.successDetailLabel}>Space Name</Text>
+              <Text style={styles.successDetailValue}>{submittedSpace.name}</Text>
+            </View>
+            <View style={styles.successDetailRow}>
+              <Text style={styles.successDetailLabel}>Space Type</Text>
+              <Text style={styles.successDetailValue}>{submittedSpace.spaceType}</Text>
+            </View>
+            <View style={styles.successDetailRow}>
+              <Text style={styles.successDetailLabel}>Submission ID</Text>
+              <Text style={styles.successDetailValue}>
+                #SP{String(submittedSpace.id).padStart(5, '0')}
+              </Text>
+            </View>
+            <View style={[styles.successDetailRow, { borderBottomWidth: 0 }]}>
+              <Text style={styles.successDetailLabel}>Status</Text>
+              <View style={styles.successStatusChip}>
+                <View style={styles.successStatusDot} />
+                <Text style={styles.successStatusText}>Pending Review</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Info box */}
+          <View style={styles.successInfoBox}>
+            <Text style={styles.successInfoText}>
+              📋 Admin will review your documents and space details. Approval usually takes 1–2
+              business days.
+            </Text>
+          </View>
+
+          {/* Actions */}
+          <TouchableOpacity
+            style={styles.successPrimaryBtn}
+            onPress={() => router.replace('/(my-spaces)')}
+          >
+            <Text style={styles.successPrimaryBtnText}>Go to My Spaces</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.successSecondaryBtn}
+            onPress={() => router.replace('/(home)')}
+          >
+            <Text style={styles.successSecondaryBtnText}>Back to Home</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" />
+      <PageHeader
+        title={`Add Space  ${step}/5`}
+        onBack={handleBack}
+        right={
+          <TouchableOpacity
+            style={[styles.headerBtn, isSubmitting && styles.headerBtnDisabled]}
+            onPress={
+              step < 5
+                ? handleNext
+                : handleSubmit(onSubmit, (errs) => {
+                    const first = Object.values(errs)[0];
+                    const msg = (first as any)?.message || 'Please check all required fields';
+                    Alert.alert('Cannot Submit', msg);
+                  })
+            }
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? (
+              <ActivityIndicator size="small" color={Colors.primary} />
+            ) : (
+              <Text style={styles.headerBtnText}>{step === 5 ? 'Submit' : 'Next'}</Text>
+            )}
+          </TouchableOpacity>
+        }
+      />
+
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.container}
+      >
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          {/* COMPLIANCE NOTICE - Shown on Step 1 only */}
+          {step === 1 && (
+            <View style={styles.complianceBanner}>
+              <Text style={styles.complianceTitle}>⚠️ Compliance Required</Text>
+              <Text style={styles.complianceText}>
+                You must provide valid ownership proof. False listings may result in account
+                suspension and legal action.
+              </Text>
+            </View>
+          )}
+
+          {/* STEP 1: BASIC DETAILS */}
+          {step === 1 && (
+            <Step1BasicDetails
+              control={control as any}
+              errors={errors as any}
+              watch={watch as any}
+              setValue={setValue as any}
+              showSpaceTypeModal={showSpaceTypeModal}
+              setShowSpaceTypeModal={setShowSpaceTypeModal}
+              showParkingForModal={showParkingForModal}
+              setShowParkingForModal={setShowParkingForModal}
+            />
+          )}
+
+          {/* STEP 2: LOCATION */}
+          {step === 2 && (
+            <Step2Location
+              control={control as any}
+              errors={errors as any}
+              locationQuery={locationQuery}
+              setLocationQuery={setLocationQuery}
+              isSearchingLocation={isSearchingLocation}
+              searchLocation={searchLocation}
+              markerCoord={markerCoord}
+              reverseGeocode={reverseGeocode}
+              mapRef={mapRef}
+            />
+          )}
+
+          {/* STEP 3: PRICING & TIMING */}
+          {step === 3 && (
+            <Step3Pricing
+              control={control as any}
+              errors={errors as any}
+              watch={watch as any}
+              setValue={setValue as any}
+              showAvailabilityModal={showAvailabilityModal}
+              setShowAvailabilityModal={setShowAvailabilityModal}
+              modalAvailability={modalAvailability}
+              setModalAvailability={setModalAvailability}
+              modalStartTime={modalStartTime}
+              setModalStartTime={setModalStartTime}
+              modalEndTime={modalEndTime}
+              setModalEndTime={setModalEndTime}
+              startAmPm={startAmPm}
+              setStartAmPm={setStartAmPm}
+              endAmPm={endAmPm}
+              setEndAmPm={setEndAmPm}
+              showAmenitiesModal={showAmenitiesModal}
+              setShowAmenitiesModal={setShowAmenitiesModal}
+              tempAmenities={tempAmenities}
+              setTempAmenities={setTempAmenities}
+              formatTimeInput={formatTimeInput}
+              isTimeValid={isTimeValid}
+            />
+          )}
+
+          {/* STEP 4: PHOTOS & DOCUMENTS */}
+          {step === 4 && (
+            <Step4Documents
+              control={control as any}
+              errors={errors as any}
+              watch={watch as any}
+              setValue={setValue as any}
+              showSpaceTypeModal={showSpaceTypeModal}
+              setShowSpaceTypeModal={setShowSpaceTypeModal}
+              uploadedDocs={uploadedDocs}
+              setUploadedDocs={setUploadedDocs}
+              handlePickDocument={handlePickDocument}
+            />
+          )}
+
+          {/* STEP 5: CONFIRM & SUBMIT */}
+          {step === 5 && (
+            <Step5Compliance
+              errors={errors as any}
+              watch={watch as any}
+              setValue={setValue as any}
+              uploadedDocs={uploadedDocs}
+            />
+          )}
+
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}

@@ -1,0 +1,699 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                  Int      @id @default(autoincrement())
+  phone               String   @unique
+  firstName           String?
+  lastName            String?
+  email               String?  @unique
+  photoUrl            String?
+  isProfileComplete   Boolean  @default(false)
+  role                Role     @default(PARKER)
+
+  // Emergency contact (for parking-related incidents)
+  emergencyContactName  String?
+  emergencyContactPhone String?
+
+  // Notification & app preferences (settings screen toggles)
+  pushNotifications   Boolean  @default(true)
+  emailNotifications  Boolean  @default(false)
+  locationServices    Boolean  @default(true)
+  darkTheme           Boolean  @default(false)
+
+  // Account moderation status — admin-controlled
+  status              String   @default("ACTIVE") // ACTIVE | SUSPENDED | BANNED
+  suspendedAt         DateTime?
+  suspendedUntil      DateTime? // null = permanent suspension
+  suspendReason       String?
+  bannedAt            DateTime?
+  banReason           String?
+  lastLoginAt         DateTime?
+
+  // Soft delete — set when admin deletes; audit trail preserved
+  deletedAt           DateTime?
+  deletedReason       String?
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  sessions            Session[]
+  parkerProfile       ParkerProfile?
+  ownerProfile        OwnerProfile?
+  vehicles            Vehicle[]
+  spacesOwned         Space[]
+  bookingsAsParker    Booking[] @relation("ParkerBookings")
+  ratingsGiven        Rating[]  @relation("RatingsGiven")
+  ratingsReceived     Rating[]  @relation("RatingsReceived")
+  subscriptions       Subscription[]
+  supportTickets      SupportTicket[]
+  transactions        Transaction[]
+  notifications       Notification[]
+  complianceLogs      ComplianceLog[]
+  incidentReports     IncidentReport[]
+  abuseReportsAbout   AbuseReport[]   @relation("AbuseReportsAbout")
+  abuseReportsBy      AbuseReport[]   @relation("AbuseReportsBy")
+
+  @@index([deletedAt])
+  @@index([role])
+  @@index([status])
+}
+
+enum Role {
+  PARKER
+  OWNER
+  ADMIN
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       Int
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token        String   @unique
+  refreshToken String   @unique
+  expiresAt    DateTime
+  refreshTokenExpiresAt DateTime
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId, expiresAt])
+}
+
+model ParkerProfile {
+  id              Int   @id @default(autoincrement())
+  userId          Int   @unique
+  user            User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  totalBookings   Int   @default(0)
+  totalSpent      Float @default(0)
+  averageRating   Float @default(0)
+}
+
+model OwnerProfile {
+  id                  Int    @id @default(autoincrement())
+  userId              Int    @unique
+  user                User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  totalSpaces         Int    @default(0)
+  totalEarnings       Float  @default(0)
+  averageRating       Float  @default(0)
+  verificationStatus  String @default("PENDING")
+}
+
+model Space {
+  id              Int      @id @default(autoincrement())
+  ownerId         Int
+  owner           User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  // Basic Details (Step 1)
+  name            String
+  spaceType       String   // Independent House | Rented House | Apartment Owner Slot | Apartment Tenant Slot | Gated Villa | Shop Front Parking | Office Parking | Vacant Private Land | Inside Compound | Open Frontage Area
+  parkingFor      String   // Car | Bike | Both
+  capacity        Int      // 1-10 slots
+
+  // Location (Step 2)
+  address         String
+  landmark        String?
+  lat             Float?
+  lng             Float?
+
+  // Pricing & Timing (Step 3)
+  hourlyRate      Float
+  dailyRate       Float?
+  monthlyRate     Float?
+  availability    String   // 24 Hours | Custom Hours | Weekdays Only
+  startTime       String?  // e.g. "09:00 AM" — only set when availability = Custom Hours
+  endTime         String?  // e.g. "06:00 PM" — only set when availability = Custom Hours
+  amenities       String[]
+
+  // Photos & Documents (Step 4)
+  frontPhotoUrl   String?
+  areaPhotoUrl    String?
+  videoUrl        String?  // Space area video (optional)
+  visibility      String?  // Private | Shared | Roadside
+  docType         String?  // legacy — kept for backwards compat
+  docPhotoUrl     String?
+  requiresAdminReview Boolean @default(false) // true for Open Frontage Area
+
+  // Status & Metadata
+  status          String   @default("PENDING") // PENDING | VERIFIED | REJECTED | BLOCKED
+  rejectionReason String?
+  features        String[]
+
+  // Soft delete
+  deletedAt       DateTime?
+  deletedReason   String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  bookings        Booking[]
+  documents       SpaceDocument[]
+  ownerConsent    OwnerConsent?
+
+  @@index([status])
+  @@index([ownerId])
+  @@index([lat, lng])
+  @@index([deletedAt])
+}
+
+model OwnerConsent {
+  id                          Int      @id @default(autoincrement())
+  spaceId                     Int      @unique
+  space                       Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  // ── Identity of the owner who consented (legal evidence) ──────────────
+  userId                      Int?
+  ipAddress                   String?
+  userAgent                   String?
+  tcVersion                   String?  // e.g., "owner-tos-v1.0"
+
+  // ── Consent flags (snapshot of what was agreed) ───────────────────────
+  acceptOwnerResponsibility   Boolean  @default(false)
+  acceptLegalCompliance       Boolean  @default(false)
+  acceptPublicObstructionRules Boolean @default(false)
+
+  // ── Non-violation declaration (verbatim text snapshotted at consent) ─
+  acceptNonViolationDeclaration Boolean @default(false)
+  nonViolationDeclarationText   String?  // e.g., "I confirm this parking space does not intentionally violate local parking or municipal regulations to the best of my knowledge."
+
+  acceptedAt                  DateTime @default(now())
+  platform                    String?
+  appVersion                  String?
+  createdAt                   DateTime @default(now())
+
+  @@index([userId])
+}
+
+// Roadside / Open Frontage warning acknowledgment — court-critical evidence
+// that the parker saw and accepted the risk before booking a roadside space.
+model RoadsideAcknowledgment {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  spaceId     Int
+  bookingId   String?  // nullable: acknowledgment may be recorded before booking creation
+  warningText String   // exact warning text shown to user, snapshotted
+  ipAddress   String?
+  userAgent   String?
+  appVersion  String?
+  platform    String?  // ios | android | web
+  acceptedAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([spaceId])
+  @@index([bookingId])
+}
+
+model SpaceDocument {
+  id             Int      @id @default(autoincrement())
+  spaceId        Int
+  space          Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  documentType   String   // EB_BILL | PROPERTY_TAX | WATER_BILL | RENTAL_AGREEMENT | OWNER_PERMISSION | MAINTENANCE_BILL | PARKING_ALLOCATION_PHOTO | PARKING_PERMISSION | SHOP_LICENSE | GST_CERTIFICATE | COMPANY_ID | LAND_TAX_RECEIPT | PATTA_COPY | ADDRESS_PROOF | COMPOUND_PHOTO | AREA_PHOTO | OTHER
+  documentLabel  String   // Human-readable: "EB Bill", "Property Tax", etc.
+  fileUrl        String   // Relative path: /uploads/space-docs/<filename>
+  fileType       String   // PDF | IMAGE
+  fileSizeBytes  Int?
+  status         String   @default("PENDING") // PENDING | VERIFIED | REJECTED
+  verifiedAt     DateTime?
+  verifiedById   Int?     // Admin user ID
+  rejectionReason String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([spaceId, status])
+  @@index([status, createdAt])
+}
+
+model Vehicle {
+  id              Int      @id @default(autoincrement())
+  userId          Int
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brandModel      String   // Vehicle Brand & Model (e.g. "Maruti Swift")
+  licensePlate    String   @unique
+  vehicleType     String   // CAR or BIKE
+  capacity        Int      // 2, 4, 5, or 7 seater
+  ownershipType   String   // OWNER or DRIVER
+  frontPhotoUrl   String?
+  sidePhotoUrl    String?
+  rcBookUrl       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  bookings        Booking[]
+}
+
+model Booking {
+  id                String   @id @default(cuid())
+  spaceId           Int
+  space             Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  parkerId          Int
+  parker            User     @relation("ParkerBookings", fields: [parkerId], references: [id], onDelete: Cascade)
+  vehicleId         Int
+  vehicle           Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  duration          Int      // hours
+  eta               DateTime
+  totalAmount       Float
+  paymentMode       String   @default("DIRECT_AT_SPACE")
+  status            String   @default("PENDING_APPROVAL") // PENDING_APPROVAL | APPROVED | ACTIVE | COMPLETED | CANCELLED | REJECTED
+  sessionOtp        String?
+  sessionStartedAt  DateTime?
+  sessionEndedAt    DateTime?
+  exitTime          DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  verification      ConditionVerification?
+  rating            Rating?
+  consent           BookingConsent?
+  incidents         IncidentReport[]
+
+  @@index([spaceId, status])
+  @@index([parkerId, status])
+  @@index([status, createdAt])
+}
+
+model BookingConsent {
+  id                            Int      @id @default(autoincrement())
+  bookingId                     String   @unique
+  booking                       Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  // ── Identity of the person who consented (legal evidence) ─────────────
+  userId                        Int?
+  ipAddress                     String?
+  userAgent                     String?
+  tcVersion                     String?  // e.g., "parker-tos-v1.2"
+
+  // ── Consent flags (snapshot of what was agreed) ───────────────────────
+  verifiedSurroundings          Boolean  @default(false)
+  acceptLocalParkingRules       Boolean  @default(false)
+  acceptFineResponsibility      Boolean  @default(false)
+  acceptPlatformDisclaimer      Boolean  @default(false)
+  acceptParkingTerms            Boolean  @default(false)
+
+  acceptedAt                    DateTime @default(now())
+  platform                      String?
+  appVersion                    String?
+  createdAt                     DateTime @default(now())
+
+  @@index([userId])
+}
+
+model ConditionVerification {
+  id                  Int      @id @default(autoincrement())
+  bookingId           String   @unique
+  booking             Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  verificationType    String   // NO_CONCERN | PHOTO_VIDEO
+  mediaUrls           String[]
+  parkerAccepted      Boolean  @default(false)
+  acceptedAt          DateTime?
+}
+
+model Rating {
+  id        Int      @id @default(autoincrement())
+  bookingId String   @unique
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  raterId   Int
+  rater     User     @relation("RatingsGiven", fields: [raterId], references: [id], onDelete: Cascade)
+  rateeId   Int
+  ratee     User     @relation("RatingsReceived", fields: [rateeId], references: [id], onDelete: Cascade)
+  rating    Int      // 0-5
+  review    String?
+  createdAt DateTime @default(now())
+}
+
+model SubscriptionPlan {
+  id            Int      @id @default(autoincrement())
+  name          String   @unique // Basic | Pro | Premium
+  description   String   @default("Complete management for space owners.")
+  price         Float    // Monthly price in INR
+  yearlyPrice   Float?   // Optional discounted yearly price
+  billingCycle  String   @default("MONTHLY") // Default billing period
+  features      String[] // Array of feature strings shown to users
+  iconKey       String   @default("shield") // shield | zap | crown — chooses icon in UI
+  colorKey      String   @default("blue")   // blue | indigo | amber
+  isActive      Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId      Int?
+  planRef     SubscriptionPlan? @relation(fields: [planId], references: [id])
+  plan        String   // MONTHLY | YEARLY  (legacy billing-cycle string, kept for back-compat)
+  planName    String?  // Snapshot of plan name at subscription time (Basic/Pro/Premium)
+  price       Float
+  status      String   @default("ACTIVE") // ACTIVE | EXPIRED | SUSPENDED | CANCELLED
+  startDate   DateTime @default(now())
+  renewalDate DateTime
+  autoRenewal Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  invoices    Invoice[]
+
+  @@index([userId, status])
+  @@index([renewalDate])
+}
+
+// Invoice — issued when a subscription is renewed or first purchased
+model Invoice {
+  id              Int       @id @default(autoincrement())
+  invoiceNumber   String    @unique // INV-2026-0001
+  userId          Int
+  subscriptionId  Int?
+  subscription    Subscription? @relation(fields: [subscriptionId], references: [id])
+
+  // Financials
+  subtotal        Float
+  taxAmount       Float     @default(0)  // GST etc.
+  discountAmount  Float     @default(0)
+  totalAmount     Float
+  currency        String    @default("INR")
+
+  status          String    @default("PENDING") // PENDING | PAID | FAILED | REFUNDED | VOID
+  issuedAt        DateTime  @default(now())
+  dueAt           DateTime?
+  paidAt          DateTime?
+
+  // Billing snapshot
+  billingName     String?
+  billingEmail    String?
+  billingAddress  String?
+  gstin           String?   // If buyer is a business
+
+  items           InvoiceItem[]
+  paymentAttempts PaymentAttempt[]
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([userId, status])
+  @@index([status, issuedAt])
+}
+
+model InvoiceItem {
+  id          Int      @id @default(autoincrement())
+  invoiceId   Int
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  description String   // "Pro Plan — Monthly"
+  quantity    Int      @default(1)
+  unitPrice   Float
+  amount      Float    // quantity * unitPrice
+  metadata    Json?    // {planId, billingCycle, etc.}
+  createdAt   DateTime @default(now())
+
+  @@index([invoiceId])
+}
+
+// Each attempt to pay an invoice through any gateway
+model PaymentAttempt {
+  id              Int       @id @default(autoincrement())
+  invoiceId       Int
+  invoice         Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  gateway         String    // RAZORPAY | STRIPE | UPI | MANUAL
+  gatewayOrderId  String?   // Provider's order ref
+  gatewayPaymentId String?  // Provider's payment ref after success
+
+  amount          Float
+  currency        String    @default("INR")
+  status          String    @default("INITIATED") // INITIATED | SUCCEEDED | FAILED | CANCELLED
+  failureReason   String?
+  rawResponse     Json?     // Full gateway payload for audit
+
+  attemptedAt     DateTime  @default(now())
+  completedAt     DateTime?
+
+  @@index([invoiceId, status])
+  @@index([gateway, status])
+}
+
+model Transaction {
+  id             Int      @id @default(autoincrement())
+  txnNumber      String   @unique // TXN-0941 — auto-generated
+  type           String   // SUBSCRIPTION | BOOKING_PAYMENT | OWNER_PAYOUT | REFUND
+  amount         Float    // positive = inflow to platform, negative = outflow (payout/refund)
+  status         String   @default("SUCCESS") // SUCCESS | PENDING | FAILED
+  paymentMethod  String   @default("UPI")     // UPI | Credit Card | Debit Card | Bank Transfer | Net Banking | Cash | Wallet
+  description    String?  // "Subscription (Pro)", "Booking Payment", "Owner Payout", "Refund (Cancelled)"
+
+  userId         Int?
+  user           User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  entityLabel    String?  // For non-user entities like space name ("B2-Fort Space")
+
+  subscriptionId Int?
+  bookingId      String?
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([type, status])
+  @@index([createdAt])
+}
+
+model PlatformSettings {
+  // Singleton — only one row, always id = 1
+  id                       Int      @id @default(1)
+
+  // ── General ───────────────────────────────────────────────────────────
+  platformName             String   @default("ParkSwift")
+  supportEmail             String   @default("support@parkswift.com")
+  supportPhone             String?
+  defaultCurrency          String   @default("INR")
+  defaultLocale            String   @default("en-IN")
+  maintenanceMode          Boolean  @default(false)
+  maintenanceMessage       String?
+
+  // ── Pricing & Fees ────────────────────────────────────────────────────
+  commissionRate           Float    @default(15.0) // % platform takes per booking
+  minHourlyRate            Float    @default(20)
+  maxHourlyRate            Float    @default(500)
+  cancellationPolicy       String   @default("FLEXIBLE")     // FLEXIBLE | MODERATE | STRICT
+  refundPolicy             String   @default("AUTO_REFUND")  // AUTO_REFUND | WALLET | MANUAL
+  lateFeePolicy            String   @default("DOUBLE_15M")   // DOUBLE_15M | STANDARD | NONE
+  discountCodesEnabled     Boolean  @default(true)
+  seasonalPricingEnabled   Boolean  @default(false)
+  gstRate                  Float    @default(18)
+
+  // ── Security ──────────────────────────────────────────────────────────
+  twoFactorEnabled         Boolean  @default(false)
+  sessionTimeoutMinutes    Int      @default(10080)  // 7 days default
+  maxLoginAttempts         Int      @default(5)
+  requirePhoneVerification Boolean  @default(true)
+  requireEmailVerification Boolean  @default(false)
+  passwordMinLength        Int      @default(8)
+
+  // ── Notifications ─────────────────────────────────────────────────────
+  emailNotificationsEnabled Boolean @default(true)
+  smsNotificationsEnabled   Boolean @default(true)
+  pushNotificationsEnabled  Boolean @default(true)
+  marketingEmailsEnabled    Boolean @default(false)
+  bookingNotifications      Boolean @default(true)
+  paymentNotifications      Boolean @default(true)
+  systemAlerts              Boolean @default(true)
+
+  // ── API & Integrations ────────────────────────────────────────────────
+  razorpayEnabled           Boolean @default(true)
+  razorpayKeyId             String?
+  msg91Enabled              Boolean @default(true)
+  fcmEnabled                Boolean @default(true)
+  googleMapsApiKey          String?
+  webhookUrl                String?
+  apiRateLimit              Int     @default(100) // requests per minute per user
+
+  updatedAt                DateTime @updatedAt
+  updatedById              Int?
+}
+
+model SupportTicket {
+  id              Int      @id @default(autoincrement())
+  userId          Int
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject         String?  // Optional short title
+  category        String   // BOOKING | SPACE_OWNER | SUBSCRIPTION | ACCOUNT | TECHNICAL | OTHER
+  description     String
+  status          String   @default("OPEN") // OPEN | IN_PROGRESS | WAITING_FOR_USER | RESOLVED | CLOSED
+  priority        String   @default("NORMAL") // LOW | NORMAL | HIGH | URGENT
+  attachmentUrls  String[] // Screenshot/image URLs
+  isLiveChat      Boolean  @default(false) // True if created from Live Chat screen
+  resolutionNote  String?
+  closedAt        DateTime?
+  rating          Int?     // 1-5, after user marks resolved
+  ratingComment   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  replies         SupportTicketReply[]
+
+  @@index([status, priority])
+  @@index([userId, status])
+}
+
+model SupportTicketReply {
+  id        Int      @id @default(autoincrement())
+  ticketId  Int
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorId  Int?     // Null = system reply
+  message   String
+  isAdmin   Boolean  @default(false) // true = staff reply, false = user reply
+  createdAt DateTime @default(now())
+
+  @@index([ticketId, createdAt])
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  // Retention: notifications survive user deletion as legal evidence
+  // (warnings sent to a user must be auditable even if their account is removed)
+  userId    Int?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  title     String
+  message   String
+  category  String   @default("GENERAL") // GENERAL | BOOKING | PAYMENT | SPACE | SUPPORT | SYSTEM
+  metadata  Json?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead, createdAt])
+  @@index([createdAt])
+}
+
+model SystemLog {
+  id        Int      @id @default(autoincrement())
+  level     String   // INFO | WARN | ERROR | SUCCESS
+  source    String   // auth | bookings | payments | spaces | admin | notifications | system
+  message   String
+  metadata  Json?
+  actorId   Int?     // user who performed the action (if any)
+  createdAt DateTime @default(now())
+
+  @@index([level, createdAt])
+  @@index([source, createdAt])
+}
+
+model LegalDocument {
+  id          Int      @id @default(autoincrement())
+  slug        String   @unique  // "terms" | "privacy" | "owner-terms" | "parker-terms"
+  title       String
+  version     String              // "1.0.0"
+  content     String              // Markdown
+  isActive    Boolean  @default(true)
+  effectiveAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  acceptances ComplianceLog[]
+}
+
+model ComplianceLog {
+  id              Int      @id @default(autoincrement())
+  type            String   // T_AND_C_ACCEPTED | PRIVACY_ACCEPTED | BOOKING_TERMS_ACCEPTED | VEHICLE_OWNERSHIP_ACCEPTED | OWNER_TERMS_ACCEPTED | DATA_EXPORT_REQUESTED | DATA_DELETION_REQUESTED
+  userId          Int?
+  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  documentId      Int?
+  document        LegalDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  documentVersion String?
+  status          String   @default("RECEIVED") // RECEIVED | PROCESSING | COMPLETED | DENIED
+  notes           String?
+  platform        String?  // ios | android | web
+  ipAddress       String?
+  appVersion      String?
+  createdAt       DateTime @default(now())
+
+  @@index([type, createdAt])
+  @@index([userId])
+}
+
+model IncidentReport {
+  id                Int      @id @default(autoincrement())
+  bookingId         String   @unique
+  booking           Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  reportedByUserId  Int
+  reportedByUser    User     @relation(fields: [reportedByUserId], references: [id], onDelete: SetNull)
+  reportType        String   // TOWING | VEHICLE_DAMAGE | UNSAFE_SPACE | DISPUTE | PROPERTY_DAMAGE | HARASSMENT | ILLEGAL_PARKING | THEFT | OTHER
+  description       String
+  evidenceUrls      String[] // photo/video proof
+  status            String   @default("REPORTED") // REPORTED | INVESTIGATING | RESOLVED | CLOSED
+  resolution        String?  // Admin notes on how resolved
+  resolvedAt        DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([status])
+  @@index([reportedByUserId])
+  @@index([createdAt])
+}
+
+model AbuseReport {
+  id                Int      @id @default(autoincrement())
+  reportedUserId    Int
+  reportedUser      User     @relation("AbuseReportsAbout", fields: [reportedUserId], references: [id], onDelete: Cascade)
+  reportedByUserId  Int
+  reportedByUser    User     @relation("AbuseReportsBy", fields: [reportedByUserId], references: [id], onDelete: SetNull)
+  abuseType         String   // FAKER_BOOKING | DAMAGING_PROPERTY | REPEATED_CANCELLATION | ILLEGAL_PARKING | HARASSMENT | FAKE_SPACE | UNSAFE_AREA | OFFLINE_PAYMENT_DEMAND | MISLEADING_LISTING | OTHER
+  description       String
+  evidenceUrls      String[]
+  status            String   @default("REPORTED") // REPORTED | INVESTIGATING | WARNING_ISSUED | SUSPENDED_TEMP | BANNED | RESOLVED
+  adminAction       String?  // Description of action taken
+  suspendedUntil    DateTime? // If temporarily suspended
+  permanentlyBanned Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([status])
+  @@index([reportedByUserId])
+  @@index([reportedUserId])
+}
+
+// ─── Audit trail — court evidence (Phase 2) ──────────────────────────────────
+
+// Immutable per-booking event log. Append-only by service-layer convention;
+// every status transition writes one row.
+model BookingAuditLog {
+  id         Int      @id @default(autoincrement())
+  bookingId  String
+  event      String   // BOOKING_CREATED | BOOKING_APPROVED | BOOKING_REJECTED | BOOKING_CANCELLED | SESSION_STARTED | SESSION_LEAVING | SESSION_ENDED | VERIFICATION_SUBMITTED | VERIFICATION_ACCEPTED
+  fromStatus String?
+  toStatus   String?
+  actorId    Int?     // user/admin who triggered the event
+  actorRole  String?  // PARKER | OWNER | ADMIN | SYSTEM
+  payload    Json?    // additional context (declined reason, OTP verified, etc.)
+  ipAddress  String?
+  userAgent  String?
+  timestamp  DateTime @default(now())
+
+  @@index([bookingId, timestamp])
+  @@index([event])
+  @@index([actorId])
+}
+
+// Immutable admin moderation log. Append-only.
+model AdminActionLog {
+  id         Int      @id @default(autoincrement())
+  adminId    Int?     // null if admin user later deleted (SetNull preserves the log)
+  action     String   // SPACE_APPROVED | SPACE_REJECTED | SPACE_BLOCKED | USER_SUSPENDED | USER_UNSUSPENDED | USER_BANNED | USER_DELETED | DOC_VERIFIED | DOC_REJECTED | REFUND_ISSUED | ABUSE_ACTIONED | BROADCAST_SENT
+  targetType String   // USER | SPACE | BOOKING | DOCUMENT | TRANSACTION | ABUSE_REPORT
+  targetId   String   // entity id (kept as string for flexibility — Booking ids are cuid)
+  reason     String?
+  payload    Json?
+  ipAddress  String?
+  userAgent  String?
+  timestamp  DateTime @default(now())
+
+  @@index([adminId])
+  @@index([targetType, targetId])
+  @@index([action, timestamp])
+  @@index([timestamp])
+}

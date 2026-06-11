@@ -1,0 +1,82 @@
+import React from 'react';
+import {StyleSheet, ScrollView, Text, View, StatusBar} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { PageHeader } from '../../components';
+import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
+
+const TermsScreen = () => {
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
+      <PageHeader title="Terms of Service" />
+      
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.textContainer}>
+          <Text style={styles.heading}>1. Agreement to Terms</Text>
+          <Text style={styles.paragraph}>
+            By accessing or using ParkSwift, you agree to be bound by these Terms of Service. If you disagree with any part of the terms, then you do not have permission to access the Service.
+          </Text>
+
+          <Text style={styles.heading}>2. Use of Service</Text>
+          <Text style={styles.paragraph}>
+            ParkSwift provides a platform to connect parking space owners with drivers. You agree to use this service only for lawful purposes and in accordance with these Terms. You are responsible for ensuring that your vehicle and parking activities comply with local laws and regulations.
+          </Text>
+
+          <Text style={styles.heading}>3. User Accounts</Text>
+          <Text style={styles.paragraph}>
+            When you create an account with us, you must provide information that is accurate, complete, and current at all times. Failure to do so constitutes a breach of the Terms, which may result in immediate termination of your account on our Service.
+          </Text>
+
+          <Text style={styles.heading}>4. Payments and Fees</Text>
+          <Text style={styles.paragraph}>
+            Users agree to pay all applicable fees for parking spaces booked through the app. ParkSwift acts as a payment collection agent for space owners. Refunds are subject to our cancellation policy.
+          </Text>
+
+          <Text style={styles.heading}>5. Liability</Text>
+          <Text style={styles.paragraph}>
+            ParkSwift is not responsible for any damage, loss, or theft of vehicles or property while using a parking space booked through our platform. Users park at their own risk.
+          </Text>
+
+          <Text style={styles.heading}>6. Changes to Terms</Text>
+          <Text style={styles.paragraph}>
+            We reserve the right, at our sole discretion, to modify or replace these Terms at any time. We will try to provide at least 30 days' notice prior to any new terms taking effect.
+          </Text>
+          
+          <View style={styles.spacer} />
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: Colors.white,
+  },
+  content: {
+    flex: 1,
+    backgroundColor: Colors.screenBg,
+  },
+  textContainer: {
+    padding: Spacing['4xl'],
+  },
+  heading: {
+    fontSize: FontSize['2xl'],
+    fontWeight: FontWeight.bold,
+    color: Colors.textPrimary,
+    marginBottom: Spacing.md,
+    marginTop: Spacing['3xl'],
+  },
+  paragraph: {
+    fontSize: FontSize.base,
+    lineHeight: 24,
+    color: Colors.textDark,
+    marginBottom: Spacing.md,
+  },
+  spacer: {
+    height: Spacing['5xl'],
+  }
+});
+
+export default TermsScreen;

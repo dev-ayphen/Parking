@@ -1,0 +1,57 @@
+# Dependencies
+node_modules
+pnpm-lock.yaml
+yarn.lock
+package-lock.json
+
+# Build outputs
+dist
+build
+.next
+out
+.cache
+coverage
+
+# Nx
+.nx/cache
+.nx/workspace-data
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+.env.local
+.env.*.local
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.coverage
+.nyc_output
+
+# Redis persistence file
+dump.rdb
+
+# Claude Code local settings
+.claude/
+
+# Expo
+.expo/

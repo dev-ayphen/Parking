@@ -1,0 +1,407 @@
+import React, { useState, useEffect } from 'react';
+import {View,
+  Text,
+  StyleSheet,
+  StatusBar,
+  TouchableOpacity,
+  ScrollView,
+  Platform,
+  TextInput,
+  Alert,
+  KeyboardAvoidingView,
+  ActivityIndicator} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { Paperclip, ChevronDown, CheckCircle2 } from 'lucide-react-native';
+import PageHeader from '../../../components/PageHeader';
+import { api } from '../../../services/api';
+import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../../theme';
+
+
+const CATEGORIES: { label: string; value: string }[] = [
+  { label: 'Booking', value: 'BOOKING' },
+  { label: 'Space Owner', value: 'SPACE_OWNER' },
+  { label: 'Subscription', value: 'SUBSCRIPTION' },
+  { label: 'Account', value: 'ACCOUNT' },
+  { label: 'Technical Issue', value: 'TECHNICAL' },
+  { label: 'Other', value: 'OTHER' },
+];
+const PRIORITIES: { label: string; value: string }[] = [
+  { label: 'Low', value: 'LOW' },
+  { label: 'Normal', value: 'NORMAL' },
+  { label: 'High', value: 'HIGH' },
+  { label: 'Urgent', value: 'URGENT' },
+];
+
+export default function CreateTicketScreen() {
+  const router = useRouter();
+
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [mobile, setMobile] = useState('');
+
+  const [subject, setSubject] = useState('');
+  const [description, setDescription] = useState('');
+
+  const [category, setCategory] = useState(CATEGORIES[0]);
+  const [priority, setPriority] = useState(PRIORITIES[1]); // default NORMAL
+
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [prefilling, setPrefilling] = useState(true);
+
+  // Prefill contact details from user profile
+  useEffect(() => {
+    (async () => {
+      try {
+        const json = await api.get('/users/me');
+        if (json.user) {
+          setName([json.user.firstName, json.user.lastName].filter(Boolean).join(' '));
+          setEmail(json.user.email || '');
+          setMobile(json.user.phone || '');
+        }
+      } catch {}
+      finally {
+        setPrefilling(false);
+      }
+    })();
+  }, []);
+
+  const handleSubmit = async () => {
+    if (!subject.trim() || !description.trim()) {
+      Alert.alert('Missing details', 'Subject and description are required.');
+      return;
+    }
+    try {
+      setSubmitting(true);
+      const json = await api.post('/support', {
+        subject: subject.trim(),
+        description: description.trim(),
+        category: category.value,
+        priority: priority.value,
+      });
+      if (!json.success) {
+        Alert.alert('Error', json.error || 'Failed to create ticket');
+        return;
+      }
+      Alert.alert(
+        'Ticket Submitted',
+        `Your ticket ${json.ticket.ticketNumber} has been created. We'll get back to you shortly.`,
+        [{ text: 'View Tickets', onPress: () => router.replace('/(home)/support/tickets') }],
+      );
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Network error');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" />
+      <PageHeader title="Create Ticket" onBack={() => router.back()} />
+
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }} 
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView contentContainerStyle={styles.content}>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Contact Details</Text>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Name</Text>
+              {prefilling
+                ? <View style={styles.skeletonField} />
+                : <TextInput
+                    style={styles.input}
+                    value={name}
+                    onChangeText={setName}
+                    placeholder="Your full name"
+                  />
+              }
+            </View>
+
+            <View style={styles.row}>
+              <View style={[styles.inputGroup, { flex: 1, marginRight: Spacing.md }]}>
+                <Text style={styles.label}>Email</Text>
+                {prefilling
+                  ? <View style={styles.skeletonField} />
+                  : <TextInput
+                      style={styles.input}
+                      value={email}
+                      onChangeText={setEmail}
+                      placeholder="Your email address"
+                      keyboardType="email-address"
+                    />
+                }
+              </View>
+              <View style={[styles.inputGroup, { flex: 1, marginLeft: Spacing.md }]}>
+                <Text style={styles.label}>Mobile</Text>
+                {prefilling
+                  ? <View style={styles.skeletonField} />
+                  : <TextInput
+                      style={styles.input}
+                      value={mobile}
+                      onChangeText={setMobile}
+                      placeholder="Your mobile number"
+                      keyboardType="phone-pad"
+                    />
+                }
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Issue Details</Text>
+            
+            <View style={styles.row}>
+              <View style={[styles.inputGroup, { flex: 1, marginRight: Spacing.md, zIndex: 10 }]}>
+                <Text style={styles.label}>Category</Text>
+                <TouchableOpacity 
+                  style={styles.dropdownButton}
+                  onPress={() => {
+                    setShowCategoryDropdown(!showCategoryDropdown);
+                    setShowPriorityDropdown(false);
+                  }}
+                >
+                  <Text style={styles.dropdownText}>{category.label}</Text>
+                  <ChevronDown size={16} color={Colors.textSecondary} />
+                </TouchableOpacity>
+                {showCategoryDropdown && (
+                  <View style={styles.dropdownMenu}>
+                    {CATEGORIES.map((c) => (
+                      <TouchableOpacity
+                        key={c.value}
+                        style={styles.dropdownItem}
+                        onPress={() => {
+                          setCategory(c);
+                          setShowCategoryDropdown(false);
+                        }}
+                      >
+                        <Text style={[styles.dropdownItemText, category.value === c.value && { color: Colors.textPrimary, fontWeight: FontWeight.semibold }]}>{c.label}</Text>
+                        {category.value === c.value && <CheckCircle2 size={16} color={Colors.successAlt} />}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
+
+              <View style={[styles.inputGroup, { flex: 1, marginLeft: Spacing.md, zIndex: 9 }]}>
+                <Text style={styles.label}>Priority</Text>
+                <TouchableOpacity
+                  style={styles.dropdownButton}
+                  onPress={() => {
+                    setShowPriorityDropdown(!showPriorityDropdown);
+                    setShowCategoryDropdown(false);
+                  }}
+                >
+                  <Text style={styles.dropdownText}>{priority.label}</Text>
+                  <ChevronDown size={16} color={Colors.textSecondary} />
+                </TouchableOpacity>
+                {showPriorityDropdown && (
+                  <View style={styles.dropdownMenu}>
+                    {PRIORITIES.map((p) => (
+                      <TouchableOpacity
+                        key={p.value}
+                        style={styles.dropdownItem}
+                        onPress={() => {
+                          setPriority(p);
+                          setShowPriorityDropdown(false);
+                        }}
+                      >
+                        <Text style={[styles.dropdownItemText, priority.value === p.value && { color: Colors.textPrimary, fontWeight: FontWeight.semibold }]}>{p.label}</Text>
+                        {priority.value === p.value && <CheckCircle2 size={16} color={Colors.successAlt} />}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
+            </View>
+            
+            <View style={[styles.inputGroup, { zIndex: 1 }]}>
+              <Text style={styles.label}>Subject</Text>
+              <TextInput 
+                style={styles.input}
+                value={subject}
+                onChangeText={setSubject}
+                placeholder="Brief summary of the issue"
+              />
+            </View>
+            
+            <View style={[styles.inputGroup, { zIndex: 1 }]}>
+              <Text style={styles.label}>Description</Text>
+              <TextInput 
+                style={[styles.input, styles.textArea]}
+                value={description}
+                onChangeText={setDescription}
+                placeholder="Please describe your issue in detail..."
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+              />
+            </View>
+
+            <TouchableOpacity style={styles.attachmentButton} activeOpacity={0.7}>
+              <Paperclip size={18} color={Colors.textSecondary} />
+              <Text style={styles.attachmentText}>Attach File/Screenshot (Optional)</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      <View style={styles.footer}>
+        <TouchableOpacity
+          style={[styles.submitButton, submitting && { opacity: 0.6 }]}
+          onPress={handleSubmit}
+          disabled={submitting}
+        >
+          {submitting ? (
+            <ActivityIndicator size="small" color={Colors.white} />
+          ) : (
+            <Text style={styles.submitButtonText}>Submit Ticket</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: Colors.screenBg,
+  },
+  content: {
+    padding: Spacing.screenH,
+  },
+  section: {
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.lg,                  // 16 = lg ✓
+    padding: Spacing.screenH,
+    marginBottom: Spacing.screenH,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 8 },
+      android: { elevation: 1 },
+    }),
+  },
+  sectionTitle: {
+    fontSize: FontSize.xl,                          // 16 = xl ✓
+    fontWeight: FontWeight.bold,
+    color: Colors.textPrimary,
+    marginBottom: Spacing['3xl'],
+  },
+  row: {
+    flexDirection: 'row',
+  },
+  inputGroup: {
+    marginBottom: Spacing['3xl'],
+  },
+  label: {
+    fontSize: FontSize.base,                        // 13 = base ✓
+    fontWeight: FontWeight.medium,
+    color: Colors.textBody,
+    marginBottom: Spacing.md,
+  },
+  input: {
+    backgroundColor: Colors.screenBg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: BorderRadius.md,                  // 12 = md ✓
+    paddingHorizontal: Spacing['3xl'],
+    paddingVertical: Spacing['2xl'],
+    fontSize: FontSize.lg,                          // 15 = lg ✓
+    color: Colors.textPrimary,
+  },
+  textArea: {
+    height: 120,
+    paddingTop: Spacing['3xl'],
+  },
+  dropdownButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.screenBg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: BorderRadius.md,                  // 12 = md ✓
+    paddingHorizontal: Spacing['3xl'],
+    paddingVertical: Spacing['2xl'],
+  },
+  dropdownText: {
+    fontSize: FontSize.lg,                          // 15 = lg ✓
+    color: Colors.textPrimary,
+  },
+  dropdownMenu: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    backgroundColor: Colors.white,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: BorderRadius.md,                  // 12 = md ✓
+    marginTop: Spacing.xs,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12 },
+      android: { elevation: 8 },
+    }),
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing['3xl'],
+    paddingVertical: Spacing.xl,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.surfaceBg,
+  },
+  dropdownItemText: {
+    fontSize: FontSize.md,                          // 14 = md ✓
+    color: Colors.textSecondary,
+  },
+  skeletonField: {
+    height: 48,
+    borderRadius: BorderRadius.md,                  // 12 = md ✓
+    backgroundColor: Colors.surfaceBg,
+  },
+  attachmentButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing['3xl'],
+    borderWidth: 1,
+    borderColor: Colors.borderMuted,
+    borderStyle: 'dashed',
+    borderRadius: BorderRadius.md,                  // 12 = md ✓
+    backgroundColor: Colors.screenBg,
+    gap: Spacing.md,
+    marginTop: Spacing.md,
+  },
+  attachmentText: {
+    fontSize: FontSize.md,                          // 14 = md ✓
+    color: Colors.textSecondary,
+    fontWeight: FontWeight.medium,
+  },
+  footer: {
+    padding: Spacing.screenH,
+    paddingBottom: Platform.OS === 'ios' ? 34 : Spacing.screenH,
+    backgroundColor: Colors.white,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  submitButton: {
+    backgroundColor: Colors.primary,
+    paddingVertical: Spacing['3xl'],
+    borderRadius: BorderRadius.md,                  // 12 = md ✓
+    alignItems: 'center',
+  },
+  submitButtonText: {
+    color: Colors.white,
+    fontSize: FontSize.xl,                          // 16 = xl ✓
+    fontWeight: FontWeight.semibold,
+  },
+});

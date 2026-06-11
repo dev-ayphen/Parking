@@ -1,0 +1,36 @@
+import { Router } from 'express';
+import authRouter from './auth.routes';
+import userRouter from './user.routes';
+import spaceRouter from './space.routes';
+import bookingRouter from './booking.routes';
+import vehicleRouter from './vehicle.routes';
+import ratingRouter from './rating.routes';
+import subscriptionRouter from './subscription.routes';
+import adminRouter from './admin.routes';
+import homeRouter from './home.routes';
+import settingsRouter from './settings.routes';
+import supportRouter from './support.routes';
+import legalRouter from './legal.routes';
+import incidentRouter from './incident.routes';
+import abuseRouter from './abuse.routes';
+import userPreferencesRouter from './userPreferences.routes';
+
+const router = Router();
+
+router.use('/auth', authRouter);
+router.use('/users', userRouter);
+router.use('/spaces', spaceRouter);
+router.use('/bookings', bookingRouter);
+router.use('/vehicles', vehicleRouter);
+router.use('/ratings', ratingRouter);
+router.use('/subscriptions', subscriptionRouter);
+router.use('/admin', adminRouter);
+router.use('/home', homeRouter);
+router.use('/settings', settingsRouter);
+router.use('/support', supportRouter);
+router.use('/legal', legalRouter);
+router.use('/incidents', incidentRouter);
+router.use('/abuse-reports', abuseRouter);
+router.use('/user-preferences', userPreferencesRouter);
+
+export default router;

@@ -1,0 +1,172 @@
+import { Tabs } from 'expo-router';
+import { useTheme } from '../../hooks/useTheme';
+import { Home, MapPin, CheckCircle, Clock, ClipboardList } from 'lucide-react-native';
+import { Platform, View, TouchableOpacity, StyleSheet } from 'react-native';
+import { Colors, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+
+// Full-screen action pages that should hide the entire tab bar (so their
+// footer buttons aren't covered by the floating nav).
+const FULLSCREEN_ROUTES = ['booking-request', 'add-space', 'exit-verification', 'analytics', 'manage-subscription', 'bookings'];
+
+function CustomTabBar({ state, descriptors, navigation }: any) {
+  // Hide the whole tab bar on full-screen action pages
+  const activeRoute = state.routes[state.index]?.name;
+  if (FULLSCREEN_ROUTES.includes(activeRoute)) {
+    return null;
+  }
+
+  return (
+    <View style={styles.tabBarContainer}>
+      <View style={styles.tabBarBackground}>
+        {state.routes.map((route: any, index: number) => {
+          const { options } = descriptors[route.key];
+
+          // Hide auxiliary screens from tab bar.
+          // NOTE: 'recent-requests' MUST be here — otherwise expo-router auto-registers it
+          // as a 6th tab with no icon, rendering an invisible flex:1 slot on the right that
+          // shifts the centered Verify button left-of-center.
+          if (['bookings', 'analytics', 'manage-subscription', 'live-sessions', 'add-space', 'exit-verification', 'booking-request', 'recent-requests'].includes(route.name)) {
+            return null;
+          }
+
+          const isFocused = state.index === index;
+          const isVerify = route.name === 'verify';
+
+          const onPress = () => {
+            const event = navigation.emit({
+              type: 'tabPress',
+              target: route.key,
+              canPreventDefault: true,
+            });
+
+            if (!isFocused && !event.defaultPrevented) {
+              navigation.navigate(route.name, route.params);
+            }
+          };
+
+          let icon;
+          const color = isFocused ? Colors.white : Colors.textMuted;
+          const strokeWidth = isFocused ? 2.5 : 2;
+
+          if (route.name === 'index') icon = <Home size={22} color={color} strokeWidth={strokeWidth} />;
+          if (route.name === 'spaces') icon = <MapPin size={22} color={color} strokeWidth={strokeWidth} />;
+          if (route.name === 'active') icon = <Clock size={22} color={color} strokeWidth={strokeWidth} />;
+          if (route.name === 'history') icon = <ClipboardList size={22} color={color} strokeWidth={strokeWidth} />;
+
+          if (isVerify) {
+            return (
+              <TouchableOpacity
+                key={route.key}
+                onPress={onPress}
+                activeOpacity={0.8}
+                style={styles.verifyButtonWrapper}
+              >
+                <View style={styles.verifyButton}>
+                  <CheckCircle size={28} color={Colors.white} strokeWidth={2.5} />
+                </View>
+              </TouchableOpacity>
+            );
+          }
+
+          return (
+            <TouchableOpacity
+              key={route.key}
+              onPress={onPress}
+              style={styles.tabItem}
+            >
+              {icon}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+export default function MySpacesLayout() {
+  const theme = useTheme();
+
+  return (
+    <Tabs
+      tabBar={(props) => <CustomTabBar {...props} />}
+      screenOptions={{
+        headerShown: false,
+      }}
+    >
+      <Tabs.Screen name="index" options={{ title: 'Dashboard' }} />
+      <Tabs.Screen name="spaces" options={{ title: 'Spaces' }} />
+      <Tabs.Screen name="verify" options={{ title: 'Verify' }} />
+      <Tabs.Screen name="active" options={{ title: 'Active' }} />
+      <Tabs.Screen name="history" options={{ title: 'History' }} />
+
+      {/* Hide other screens from the tab bar */}
+      <Tabs.Screen name="bookings" options={{ href: null }} />
+      <Tabs.Screen name="analytics" options={{ href: null }} />
+      <Tabs.Screen name="manage-subscription" options={{ href: null }} />
+      <Tabs.Screen name="live-sessions" options={{ href: null }} />
+      <Tabs.Screen name="add-space" options={{ href: null }} />
+      <Tabs.Screen name="exit-verification" options={{ href: null }} />
+      <Tabs.Screen name="booking-request" options={{ href: null }} />
+      <Tabs.Screen name="recent-requests" options={{ href: null }} />
+    </Tabs>
+  );
+}
+
+const styles = StyleSheet.create({
+  tabBarContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingBottom: Platform.OS === 'ios' ? 32 : 20,
+    paddingHorizontal: Spacing.screenH,
+    backgroundColor: 'transparent',
+  },
+  tabBarBackground: {
+    flexDirection: 'row',
+    backgroundColor: ExtendedColors.darkCard,       // '#1E293B' ✓
+    borderRadius: BorderRadius.circleLg,            // 32 = circleLg ✓
+    height: 64,
+    alignItems: 'center',
+    // 'space-around' distributes equal space on both sides of every item, so the
+    // five flex slots stay perfectly even and the center Verify button is dead-center.
+    justifyContent: 'space-around',
+    paddingHorizontal: Spacing['3xl'],
+    width: '100%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  tabItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: '100%',
+  },
+  verifyButtonWrapper: {
+    flex: 1,                                          // equal slot → button sits dead-center
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 64, // Matches the tab bar height to ensure vertical alignment of surrounding elements
+  },
+  verifyButton: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: -32, // Pop out above the tab bar
+    borderWidth: 4,
+    borderColor: Colors.screenBg, // Pseudo-cutout blending with the main background
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
+  }
+});

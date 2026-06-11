@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "ignoreDeprecations": "5.0",
+    "target": "ES2020",
+    "lib": ["ES2020", "dom", "dom.iterable"],
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "baseUrl": ".",
+    "paths": {
+      "@parkswift/libs-common": ["libs-common/src/index.ts"],
+      "@parkswift/libs-common/*": ["libs-common/src/*"],
+      "@parkswift/api": ["apps/api/src/index.ts"],
+      "@parkswift/api/*": ["apps/api/src/*"],
+      "@parkswift/mobile": ["apps/mobile/src/index.ts"],
+      "@parkswift/mobile/*": ["apps/mobile/src/*"],
+      "@parkswift/web": ["apps/web/src/index.ts"],
+      "@parkswift/web/*": ["apps/web/src/*"]
+    }
+  }
+}

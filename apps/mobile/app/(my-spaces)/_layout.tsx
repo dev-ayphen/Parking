@@ -22,10 +22,9 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
           const { options } = descriptors[route.key];
 
           // Hide auxiliary screens from tab bar.
-          // NOTE: 'recent-requests' MUST be here — otherwise expo-router auto-registers it
-          // as a 6th tab with no icon, rendering an invisible flex:1 slot on the right that
-          // shifts the centered Verify button left-of-center.
-          if (['bookings', 'analytics', 'manage-subscription', 'live-sessions', 'exit-verification', 'booking-request', 'recent-requests'].includes(route.name)) {
+          // We use a strict whitelist so that any newly added files don't create invisible slots.
+          const VISIBLE_TABS = ['index', 'spaces', 'verify', 'active', 'history'];
+          if (!VISIBLE_TABS.includes(route.name)) {
             return null;
           }
 
@@ -103,6 +102,7 @@ export default function MySpacesLayout() {
       <Tabs.Screen name="bookings" options={{ href: null }} />
       <Tabs.Screen name="analytics" options={{ href: null }} />
       <Tabs.Screen name="manage-subscription" options={{ href: null }} />
+      <Tabs.Screen name="subscription-plans" options={{ href: null }} />
       <Tabs.Screen name="live-sessions" options={{ href: null }} />
       <Tabs.Screen name="exit-verification" options={{ href: null }} />
       <Tabs.Screen name="booking-request" options={{ href: null }} />

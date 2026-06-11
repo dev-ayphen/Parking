@@ -102,7 +102,7 @@ export default function Step2Location({
                 activeOpacity={0.7}
               >
                 <Search size={14} color={Colors.textMuted} />
-                <Text style={{ fontSize: FontSize.sm, color: Colors.text, flex: 1 }} numberOfLines={2}>
+                <Text style={{ fontSize: FontSize.sm, color: Colors.textPrimary, flex: 1 }} numberOfLines={2}>
                   {s.displayName}
                 </Text>
               </TouchableOpacity>

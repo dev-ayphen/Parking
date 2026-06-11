@@ -18,30 +18,33 @@ interface AdminSpace {
   id: number;
   name: string;
   spaceType: string;
-  parkingFor: string;
   address: string;
   landmark: string | null;
   capacity: number;
   hourlyRate: number;
-  dailyRate: number | null;
-  monthlyRate: number | null;
-  availability: string;
-  startTime: string | null;
-  endTime: string | null;
-  amenities: string[];
-  visibility: string | null;
-  docType: string | null;
   status: string;
   requiresAdminReview?: boolean;
   bookingsCount: number;
   owner: { id: number; name: string; phone: string; email: string | null } | null;
-  ownerConsent: {
+  createdAt: string;
+  // Fields only present on the single-space detail response (not in the list endpoint).
+  parkingFor?: string;
+  dailyRate?: number | null;
+  monthlyRate?: number | null;
+  availability?: string;
+  startTime?: string | null;
+  endTime?: string | null;
+  amenities?: string[];
+  visibility?: string | null;
+  docType?: string | null;
+  latitude?: number;
+  longitude?: number;
+  ownerConsent?: {
     acceptOwnerResponsibility: boolean;
     acceptLegalCompliance: boolean;
     acceptNonViolationDeclaration: boolean;
     acceptedAt: string;
   } | null;
-  createdAt: string;
 }
 
 interface SpaceDocument {

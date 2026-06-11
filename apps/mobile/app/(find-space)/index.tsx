@@ -500,6 +500,23 @@ const FindSpaceScreen = () => {
   useEffect(() => {
     (async () => {
       try {
+        // Respect the Location Services preference from Settings. If the user has
+        // turned it OFF, don't request GPS — fall back to the default city center.
+        try {
+          const prefs = await api.get('/user-preferences');
+          if (prefs?.success && prefs.preferences?.locationServices === false) {
+            const fb = { latitude: 13.0827, longitude: 80.2707 };
+            setUserLocation(fb);
+            setSearchCenter(fb);
+            const delta = regionDeltaForRadius(searchRadiusRef.current);
+            mapRef.current?.animateToRegion({ ...fb, latitudeDelta: delta, longitudeDelta: delta }, 1000);
+            fetchParkingSpaces(fb.latitude, fb.longitude);
+            return;
+          }
+        } catch {
+          // If prefs can't be read, fall through to the normal permission flow.
+        }
+
         let { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') {
           const fb = { latitude: 13.0827, longitude: 80.2707 };

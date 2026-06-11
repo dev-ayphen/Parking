@@ -7,7 +7,8 @@ import {View,
   ScrollView,
   Switch,
   Platform,
-  ActivityIndicator} from 'react-native';
+  ActivityIndicator,
+  Alert} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Bell, Lock, Globe, Moon, Shield } from 'lucide-react-native';
@@ -49,19 +50,39 @@ export default function SettingsScreen() {
     })();
   }, []);
 
-  // Persist a toggle change to the backend
-  const updatePreference = async (key: string, value: boolean) => {
+  // Persist a toggle change to the backend.
+  // Returns true on success; on failure we revert the switch so the UI never lies.
+  const updatePreference = async (key: string, value: boolean): Promise<boolean> => {
     try {
       await api.put('/user-preferences', { [key]: value });
+      return true;
     } catch (e) {
       if (__DEV__) console.log('[SETTINGS] save error', e);
+      return false;
     }
   };
 
-  const toggle = (key: string, setter: (v: boolean) => void, current: boolean) => {
+  const toggle = async (
+    key: string,
+    setter: (v: boolean) => void,
+    current: boolean,
+  ) => {
     const next = !current;
-    setter(next);
-    updatePreference(key, next);
+    setter(next); // optimistic
+    const ok = await updatePreference(key, next);
+    if (!ok) {
+      // Revert and tell the user it didn't save.
+      setter(current);
+      Alert.alert('Could not save', 'Please check your connection and try again.');
+      return;
+    }
+    // One helpful note when location is turned off — it affects parking search.
+    if (key === 'locationServices' && next === false) {
+      Alert.alert(
+        'Location Services Off',
+        'Parking search will use a default area instead of your current location. You can turn this back on anytime.',
+      );
+    }
   };
 
   if (loading) {
@@ -129,9 +150,13 @@ export default function SettingsScreen() {
             </View>
             <Switch
               value={darkTheme}
-              onValueChange={(val) => {
-                setThemeMode(val ? 'dark' : 'light');
-                updatePreference('darkTheme', val);
+              onValueChange={async (val) => {
+                setThemeMode(val ? 'dark' : 'light'); // apply immediately for instant feedback
+                const ok = await updatePreference('darkTheme', val);
+                if (!ok) {
+                  setThemeMode(val ? 'light' : 'dark'); // revert
+                  Alert.alert('Could not save', 'Please check your connection and try again.');
+                }
               }}
               trackColor={{ false: Colors.border, true: Colors.primary }}
               thumbColor={Colors.white}

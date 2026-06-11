@@ -85,7 +85,7 @@ export default function LiveChatScreen() {
         return;
       }
       // Navigate to the ticket detail screen — handles real-time chat from here
-      router.replace(`/(home)/support/ticket-${json.ticket.id}`);
+      router.replace(`/(home)/support/ticket/${json.ticket.id}`);
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Network error');
     } finally {
@@ -112,7 +112,7 @@ export default function LiveChatScreen() {
                 <TouchableOpacity
                   key={t.id}
                   style={styles.openChatCard}
-                  onPress={() => router.push(`/(home)/support/ticket-${t.id}`)}
+                  onPress={() => router.push(`/(home)/support/ticket/${t.id}`)}
                   activeOpacity={0.7}
                 >
                   <View style={styles.openChatIcon}>

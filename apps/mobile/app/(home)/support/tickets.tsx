@@ -152,7 +152,7 @@ export default function MySupportTicketsScreen() {
                   key={ticket.id}
                   style={styles.ticketCard}
                   activeOpacity={0.7}
-                  onPress={() => router.push(`/(home)/support/ticket-${ticket.id}`)}
+                  onPress={() => router.push(`/(home)/support/ticket/${ticket.id}`)}
                 >
                   <View style={styles.ticketHeader}>
                     <Text style={styles.ticketId}>{ticket.ticketNumber}</Text>

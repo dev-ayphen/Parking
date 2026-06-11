@@ -14,10 +14,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft, Send, Clock, Info, Star, RotateCcw, CheckCircle2, XCircle, Pause, Ticket as TicketIcon } from 'lucide-react-native';
 import { io as createSocket, Socket } from 'socket.io-client';
-import { API_BASE } from '../../../config/api.config';
-import { api } from '../../../services/api';
-import { getAuthToken } from '../../../utils/secureStorage';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../../theme';
+import { API_BASE } from '../../../../config/api.config';
+import { api } from '../../../../services/api';
+import { getAuthToken } from '../../../../utils/secureStorage';
+import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../../../theme';
 
 const SOCKET_URL = (API_BASE || '').replace(/\/api\/?$/, '');
 
@@ -59,10 +59,8 @@ interface TicketData {
 
 export default function TicketDetailScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams();
-  // Route param can be either bare id or "ticket-<id>"
-  const rawId = (id as string)?.replace(/^ticket-/, '') || '';
-  const numericId = parseInt(rawId, 10);
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const numericId = parseInt(id || '', 10);
 
   const [ticket, setTicket] = useState<TicketData | null>(null);
   const [loading, setLoading] = useState(true);

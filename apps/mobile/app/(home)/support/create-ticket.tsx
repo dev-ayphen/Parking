@@ -147,7 +147,7 @@ export default function CreateTicketScreen() {
         style={{ flex: 1 }} 
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <ScrollView contentContainerStyle={styles.content}>
+        <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Contact Details</Text>
 
@@ -336,6 +336,10 @@ export default function CreateTicketScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: Colors.white,
+  },
+  scrollView: {
+    flex: 1,
     backgroundColor: Colors.screenBg,
   },
   content: {
@@ -343,61 +347,62 @@ const styles = StyleSheet.create({
   },
   section: {
     backgroundColor: Colors.white,
-    borderRadius: BorderRadius.lg,                  // 16 = lg ✓
-    padding: Spacing.screenH,
-    marginBottom: Spacing.screenH,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing['3xl'],
+    marginBottom: Spacing['3xl'],
     borderWidth: 1,
     borderColor: Colors.border,
     ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 8 },
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.03, shadowRadius: 4 },
       android: { elevation: 1 },
     }),
   },
   sectionTitle: {
-    fontSize: FontSize.xl,                          // 16 = xl ✓
+    fontSize: FontSize.xl,
     fontWeight: FontWeight.bold,
     color: Colors.textPrimary,
-    marginBottom: Spacing['3xl'],
+    marginBottom: Spacing.xl,
   },
   row: {
     flexDirection: 'row',
   },
   inputGroup: {
-    marginBottom: Spacing['3xl'],
+    marginBottom: Spacing.xl,
   },
   label: {
-    fontSize: FontSize.base,                        // 13 = base ✓
-    fontWeight: FontWeight.medium,
-    color: Colors.textBody,
-    marginBottom: Spacing.md,
+    fontSize: FontSize.base,
+    fontWeight: FontWeight.semibold,
+    color: Colors.textSecondary,
+    marginBottom: Spacing.sm,
   },
   input: {
+    height: 48,
     backgroundColor: Colors.screenBg,
     borderWidth: 1,
     borderColor: Colors.border,
-    borderRadius: BorderRadius.md,                  // 12 = md ✓
+    borderRadius: BorderRadius.input,
     paddingHorizontal: Spacing['3xl'],
-    paddingVertical: Spacing['2xl'],
-    fontSize: FontSize.lg,                          // 15 = lg ✓
+    fontSize: FontSize.md,
     color: Colors.textPrimary,
   },
   textArea: {
-    height: 120,
-    paddingTop: Spacing['3xl'],
+    height: 100,
+    paddingTop: Spacing.xl,
+    textAlignVertical: 'top',
   },
   dropdownButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    height: 48,
     backgroundColor: Colors.screenBg,
     borderWidth: 1,
     borderColor: Colors.border,
-    borderRadius: BorderRadius.md,                  // 12 = md ✓
+    borderRadius: BorderRadius.input,
     paddingHorizontal: Spacing['3xl'],
-    paddingVertical: Spacing['2xl'],
   },
   dropdownText: {
-    fontSize: FontSize.lg,                          // 15 = lg ✓
+    fontSize: FontSize.md,
     color: Colors.textPrimary,
   },
   dropdownMenu: {
@@ -408,7 +413,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     borderWidth: 1,
     borderColor: Colors.border,
-    borderRadius: BorderRadius.md,                  // 12 = md ✓
+    borderRadius: BorderRadius.input,
     marginTop: Spacing.xs,
     ...Platform.select({
       ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12 },
@@ -430,7 +435,7 @@ const styles = StyleSheet.create({
   },
   skeletonField: {
     height: 48,
-    borderRadius: BorderRadius.md,                  // 12 = md ✓
+    borderRadius: BorderRadius.input,
     backgroundColor: Colors.surfaceBg,
   },
   attachmentThumbs: {
@@ -463,11 +468,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: Spacing['3xl'],
+    paddingVertical: Spacing.xl,
     borderWidth: 1,
     borderColor: Colors.borderMuted,
     borderStyle: 'dashed',
-    borderRadius: BorderRadius.md,                  // 12 = md ✓
+    borderRadius: BorderRadius.input,
     backgroundColor: Colors.screenBg,
     gap: Spacing.md,
     marginTop: Spacing.md,
@@ -486,13 +491,14 @@ const styles = StyleSheet.create({
   },
   submitButton: {
     backgroundColor: Colors.primary,
-    paddingVertical: Spacing['3xl'],
-    borderRadius: BorderRadius.md,                  // 12 = md ✓
+    height: 46,
+    borderRadius: BorderRadius.input,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   submitButtonText: {
     color: Colors.white,
-    fontSize: FontSize.xl,                          // 16 = xl ✓
+    fontSize: FontSize.md,
     fontWeight: FontWeight.semibold,
   },
 });

@@ -18,7 +18,7 @@ export default function HomeLayout() {
       <Stack.Screen name="manage-billing" options={{ title: 'Manage Billing' }} />
       <Stack.Screen name="support/tickets" options={{ title: 'My Support Tickets' }} />
       <Stack.Screen name="support/create-ticket" options={{ title: 'Contact Support' }} />
-      <Stack.Screen name="support/ticket-[id]" options={{ title: 'Ticket Details' }} />
+      <Stack.Screen name="support/ticket/[id]" options={{ title: 'Ticket Details' }} />
       <Stack.Screen name="support/faq" options={{ title: 'FAQ' }} />
       <Stack.Screen name="support/articles" options={{ title: 'Help Articles' }} />
       <Stack.Screen name="support/chat" options={{ title: 'Live Chat' }} />

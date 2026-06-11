@@ -41,7 +41,7 @@ export interface UserDetails {
     totalSpent: number;
   };
   spaces: Array<{ id: number; name: string; status: string; hourlyRate: number }>;
-  vehicles: Array<{ id: number; brandModel: string; licensePlate: string; vehicleType: string }>;
+  vehicles: Array<{ id: number; brandModel: string; licensePlate: string; vehicleType: string; frontPhotoUrl?: string | null; sidePhotoUrl?: string | null }>;
   recentBookings: Array<{ id: string; space: string; status: string; amount: number; date: string }>;
   subscriptions: Array<{ id: number; planName: string | null; price: number; status: string; renewalDate: string }>;
 }

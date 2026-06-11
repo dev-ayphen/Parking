@@ -317,6 +317,7 @@ export const adminService = {
           email: ticket.user.email,
           role: ticket.user.role,
         } : null,
+        attachmentUrls: (ticket as any).attachmentUrls || [],
         replies: ticket.replies.map((r) => ({
           id: r.id,
           message: r.message,

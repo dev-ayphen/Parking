@@ -287,8 +287,12 @@ export function UserDetailsModal({ user, onClose }: { user: UserDetails; onClose
     <ModalShell title="User Details" onClose={onClose} wide>
       {/* Profile Header */}
       <div className="flex items-center gap-4 pb-5 border-b border-gray-100 mb-5">
-        <div className="w-16 h-16 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xl">
-          {user.name.split(' ').map((n) => n[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()}
+        <div className="w-16 h-16 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xl overflow-hidden">
+          {user.photoUrl ? (
+            <img src={user.photoUrl} alt={user.name} className="w-full h-full object-cover rounded-full" />
+          ) : (
+            user.name.split(' ').map((n: string) => n[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
+          )}
         </div>
         <div className="flex-1 min-w-0">
           <h3 className="text-xl font-bold text-gray-900">{user.name}</h3>
@@ -361,12 +365,35 @@ export function UserDetailsModal({ user, onClose }: { user: UserDetails; onClose
       {user.vehicles.length > 0 && (
         <Section title={`Vehicles (${user.vehicles.length})`} icon={<Car size={14} className="text-gray-500" />}>
           {user.vehicles.map((v) => (
-            <div key={v.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
-              <div>
-                <p className="text-sm font-semibold text-gray-900">{v.brandModel}</p>
-                <p className="text-xs text-gray-500">{v.vehicleType}</p>
+            <div key={v.id} className="py-3 border-b border-gray-100 last:border-0">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {v.frontPhotoUrl ? (
+                    <img src={v.frontPhotoUrl} alt={v.brandModel} className="w-12 h-12 rounded-lg object-cover border border-gray-200 flex-shrink-0" />
+                  ) : (
+                    <div className="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
+                      <Car size={20} className="text-gray-400" />
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">{v.brandModel}</p>
+                    <p className="text-xs text-gray-500">{v.vehicleType}</p>
+                  </div>
+                </div>
+                <span className="text-xs font-mono bg-gray-100 px-2 py-1 rounded">{v.licensePlate}</span>
               </div>
-              <span className="text-xs font-mono bg-gray-100 px-2 py-1 rounded">{v.licensePlate}</span>
+              {v.sidePhotoUrl && (
+                <div className="mt-2 flex gap-2">
+                  {v.frontPhotoUrl && (
+                    <a href={v.frontPhotoUrl} target="_blank" rel="noopener noreferrer">
+                      <img src={v.frontPhotoUrl} alt="Front" className="w-20 h-14 rounded-lg object-cover border border-gray-200 hover:opacity-80 transition-opacity" />
+                    </a>
+                  )}
+                  <a href={v.sidePhotoUrl} target="_blank" rel="noopener noreferrer">
+                    <img src={v.sidePhotoUrl} alt="Side" className="w-20 h-14 rounded-lg object-cover border border-gray-200 hover:opacity-80 transition-opacity" />
+                  </a>
+                </div>
+              )}
             </div>
           ))}
         </Section>

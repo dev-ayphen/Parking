@@ -86,7 +86,7 @@ export const userAdminService = {
       where: { id: userId },
       include: {
         spacesOwned: { select: { id: true, name: true, status: true, hourlyRate: true } },
-        vehicles: { select: { id: true, brandModel: true, licensePlate: true, vehicleType: true } },
+        vehicles: { select: { id: true, brandModel: true, licensePlate: true, vehicleType: true, frontPhotoUrl: true, sidePhotoUrl: true } },
         bookingsAsParker: {
           select: { id: true, status: true, totalAmount: true, createdAt: true, space: { select: { name: true } } },
           orderBy: { createdAt: 'desc' },

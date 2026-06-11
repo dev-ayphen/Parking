@@ -30,6 +30,7 @@ interface SupportTicket {
 interface TicketDetails extends SupportTicket {
   resolutionNote: string | null;
   closedAt: string | null;
+  attachmentUrls: string[];
   user: { id: number; name: string; phone: string; email: string | null; role: string } | null;
   replies: { id: number; message: string; isAdmin: boolean; authorId: number | null; createdAt: string }[];
 }
@@ -562,6 +563,26 @@ function TicketDetailsModal({ ticket, onClose, onChanged, onTicketUpdate }: {
             message={ticket.description}
             opening
           />
+
+          {/* Attachments (photos uploaded with the ticket) */}
+          {ticket.attachmentUrls && ticket.attachmentUrls.length > 0 && (
+            <div className="mb-4 bg-white border border-gray-200 rounded-2xl p-4">
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">
+                Attachments ({ticket.attachmentUrls.length})
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {ticket.attachmentUrls.map((url, i) => (
+                  <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="block group">
+                    <img
+                      src={url}
+                      alt={`Attachment ${i + 1}`}
+                      className="w-24 h-24 object-cover rounded-xl border border-gray-200 group-hover:opacity-80 transition-opacity"
+                    />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
 
           {ticket.replies.map((r) => (
             <MessageBubble

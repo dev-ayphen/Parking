@@ -7,5 +7,6 @@ const router = Router();
 router.get('/space-types', configController.getSpaceTypes);
 router.get('/support-config', configController.getSupportConfig);
 router.get('/booking-statuses', configController.getBookingStatusConfig);
+router.get('/space-risk-levels', configController.getSpaceRiskLevels);
 
 export default router;

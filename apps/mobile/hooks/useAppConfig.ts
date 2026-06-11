@@ -19,10 +19,21 @@ export interface SupportPriority {
   value: string;
 }
 
+export interface RiskLevel {
+  level: 'LOW' | 'MEDIUM' | 'HIGH';
+  label: string;
+  color: string;
+  bg: string;
+  border: string;
+  note: string;
+}
+
 export interface AppConfig {
   spaceTypes: SpaceType[];
   supportCategories: SupportCategory[];
   supportPriorities: SupportPriority[];
+  riskLevels: Record<'LOW' | 'MEDIUM' | 'HIGH', RiskLevel>;
+  spaceTypeRiskMap: Record<string, 'LOW' | 'MEDIUM' | 'HIGH'>;
 }
 
 /**
@@ -35,6 +46,8 @@ export function useAppConfig() {
     spaceTypes: [],
     supportCategories: [],
     supportPriorities: [],
+    riskLevels: {} as Record<'LOW' | 'MEDIUM' | 'HIGH', RiskLevel>,
+    spaceTypeRiskMap: {},
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -44,15 +57,18 @@ export function useAppConfig() {
       setLoading(true);
       setError(null);
 
-      const [spaceTypesRes, supportRes] = await Promise.all([
+      const [spaceTypesRes, supportRes, riskRes] = await Promise.all([
         api.get('/config/space-types'),
         api.get('/config/support-config'),
+        api.get('/config/space-risk-levels'),
       ]);
 
       setConfig({
         spaceTypes: spaceTypesRes?.spaceTypes || [],
         supportCategories: supportRes?.categories || [],
         supportPriorities: supportRes?.priorities || [],
+        riskLevels: riskRes?.riskLevels || {},
+        spaceTypeRiskMap: riskRes?.spaceTypeRiskMap || {},
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load config');

@@ -72,4 +72,51 @@ export const configController = {
       sendError(res, error);
     }
   },
+
+  /** GET /config/space-risk-levels — returns risk level definitions and styling */
+  getSpaceRiskLevels: async (req: Request, res: Response) => {
+    try {
+      const riskLevels = {
+        LOW: {
+          level: 'LOW',
+          label: 'Low Risk',
+          color: '#16a34a',
+          bg: '#dcfce7',
+          border: '#bbf7d0',
+          note: 'Standard private space. Verify surroundings before parking.',
+        },
+        MEDIUM: {
+          level: 'MEDIUM',
+          label: 'Medium Risk',
+          color: '#ea580c',
+          bg: '#fed7aa',
+          border: '#fed7aa',
+          note: 'Shared/rented space. Confirm access and local parking rules.',
+        },
+        HIGH: {
+          level: 'HIGH',
+          label: 'High Risk',
+          color: '#dc2626',
+          bg: '#fee2e2',
+          border: '#fca5a5',
+          note: 'Open/roadside area. You accept full responsibility for fines or towing.',
+        },
+      };
+      const spaceTypeRiskMap = {
+        'Independent House': 'LOW',
+        'Rented House': 'LOW',
+        'Apartment Owner Slot': 'MEDIUM',
+        'Apartment Tenant Slot': 'MEDIUM',
+        'Gated Villa': 'LOW',
+        'Shop Front Parking': 'HIGH',
+        'Office Parking': 'MEDIUM',
+        'Vacant Private Land': 'HIGH',
+        'Inside Compound': 'MEDIUM',
+        'Open Frontage Area': 'HIGH',
+      };
+      res.json({ success: true, riskLevels, spaceTypeRiskMap });
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
 };

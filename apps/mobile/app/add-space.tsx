@@ -30,6 +30,44 @@ import Step3Pricing from '../components/AddSpace/Step3Pricing';
 import Step4Documents from '../components/AddSpace/Step4Documents';
 import Step5Compliance from '../components/AddSpace/Step5Compliance';
 
+// The canonical space types the form accepts (must match the Zod enum below).
+const VALID_SPACE_TYPES = [
+  'Independent House',
+  'Rented House',
+  'Apartment Owner Slot',
+  'Apartment Tenant Slot',
+  'Gated Villa',
+  'Shop Front Parking',
+  'Office Parking',
+  'Vacant Private Land',
+  'Inside Compound',
+  'Open Frontage Area',
+] as const;
+
+// Legacy / short space-type values stored on older spaces → current canonical value.
+// Pre-taxonomy listings saved values like "Apartment" that no longer exist as options,
+// which would otherwise fail Zod validation and block editing.
+const LEGACY_SPACE_TYPE_MAP: Record<string, (typeof VALID_SPACE_TYPES)[number]> = {
+  Apartment: 'Apartment Owner Slot',
+  House: 'Independent House',
+  Villa: 'Gated Villa',
+  Shop: 'Shop Front Parking',
+  Office: 'Office Parking',
+  Land: 'Vacant Private Land',
+  Compound: 'Inside Compound',
+  Roadside: 'Open Frontage Area',
+  'Open Frontage': 'Open Frontage Area',
+};
+
+// Coerce any stored spaceType into a valid one (or undefined → forces re-pick).
+function normalizeSpaceType(raw: unknown): (typeof VALID_SPACE_TYPES)[number] | undefined {
+  if (typeof raw !== 'string') return undefined;
+  if ((VALID_SPACE_TYPES as readonly string[]).includes(raw)) {
+    return raw as (typeof VALID_SPACE_TYPES)[number];
+  }
+  return LEGACY_SPACE_TYPE_MAP[raw];
+}
+
 // Space-type → required proof options (COMPLIANCE_AND_TERMS.md)
 const SPACE_DOC_REQUIREMENTS: Record<string, string[]> = {
   'Independent House': ['EB Bill', 'Property Tax', 'Water Bill'],
@@ -268,10 +306,17 @@ export default function AddSpaceScreen() {
         const lat = sp.lat ?? 12.9716;
         const lng = sp.lng ?? 77.5946;
 
+        // Coerce legacy/short stored values into the current valid enum so editing
+        // an older listing doesn't immediately fail validation on Step 1.
+        const normalizedType = normalizeSpaceType(sp.spaceType);
+        const normalizedParkingFor = (['Car', 'Bike', 'Both'] as const).includes(sp.parkingFor)
+          ? sp.parkingFor
+          : undefined;
+
         reset({
           spaceName: sp.name ?? '',
-          spaceType: sp.spaceType,
-          parkingFor: sp.parkingFor,
+          spaceType: normalizedType,
+          parkingFor: normalizedParkingFor,
           capacity: sp.capacity ?? 1,
           address: sp.address ?? '',
           landmark: sp.landmark ?? '',

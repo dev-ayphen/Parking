@@ -27,11 +27,11 @@ const ARRIVAL_PRESETS = [
 
 // Mandatory declarations the parker must accept before booking
 const DECLARATIONS = [
-  { key: 'verifiedSurroundings', text: 'I have verified the surroundings and parking area is suitable for my vehicle.' },
-  { key: 'acceptLocalParkingRules', text: 'I understand and accept the local parking rules and regulations.' },
-  { key: 'acceptFineResponsibility', text: 'I accept full responsibility for any parking fines or penalties.' },
-  { key: 'acceptPlatformDisclaimer', text: 'I understand ParkSwift only connects me with the space owner and is not liable for disputes.' },
-  { key: 'acceptParkingTerms', text: 'I agree to the Terms & Conditions and cancellation policy.' },
+  { key: 'verifiedSurroundings',   text: 'I verified the surroundings before parking' },
+  { key: 'acceptLocalParkingRules',text: 'I understand local parking laws and authority regulations still apply' },
+  { key: 'acceptFineResponsibility',text: 'I accept responsibility for fines, towing, or violations caused by improper parking' },
+  { key: 'acceptPlatformDisclaimer',text: 'ParkSwift only facilitates parking coordination between users' },
+  { key: 'acceptParkingTerms',     text: 'I agree to the Parking Terms & Conditions' },
 ] as const;
 
 type DeclarationKey = (typeof DECLARATIONS)[number]['key'];

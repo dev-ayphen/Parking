@@ -418,9 +418,28 @@ const SpaceDetailScreen = () => {
             </View>
 
             {/* ── Risk Banner ── */}
-            {risk && riskKey !== 'LOW' && (
+            {risk && riskKey === 'HIGH' && (
               <View style={[styles.riskBanner, { backgroundColor: risk.bg, borderColor: risk.border }]}>
-                <AlertTriangle size={16} color={risk.color} />
+                <View style={styles.riskBannerHeader}>
+                  <AlertTriangle size={18} color={risk.color} strokeWidth={2.5} />
+                  <Text style={[styles.riskBannerTitle, { color: risk.color }]}>Open Roadside Space — High Risk</Text>
+                </View>
+                {[
+                  'This parking space is near a public/open roadside area',
+                  'Please verify local parking permissions before proceeding',
+                  'Avoid traffic obstruction or restricted parking areas',
+                  'Parking violations/fines remain the parker\'s responsibility',
+                ].map((line, i) => (
+                  <View key={i} style={styles.riskBannerLine}>
+                    <View style={[styles.riskBullet, { backgroundColor: risk.color }]} />
+                    <Text style={[styles.riskBannerText, { color: risk.color }]}>{line}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+            {risk && riskKey === 'MEDIUM' && (
+              <View style={[styles.riskBanner, { backgroundColor: risk.bg, borderColor: risk.border }]}>
+                <AlertTriangle size={16} color={risk.color} strokeWidth={2.5} />
                 <Text style={[styles.riskBannerText, { color: risk.color }]}>{risk.note}</Text>
               </View>
             )}
@@ -503,7 +522,11 @@ const SpaceDetailScreen = () => {
           </View>
         </View>
         <TouchableOpacity
-          style={[styles.bookBtn, availableSlots <= 0 && !isOwnSpace && styles.bookBtnDisabled]}
+          style={[
+            styles.bookBtn,
+            availableSlots <= 0 && !isOwnSpace && styles.bookBtnDisabled,
+            riskKey === 'HIGH' && !isOwnSpace && availableSlots > 0 && styles.bookBtnHighRisk,
+          ]}
           onPress={availableSlots <= 0 && !isOwnSpace ? undefined : handleBookNow}
           activeOpacity={availableSlots <= 0 && !isOwnSpace ? 1 : 0.8}
           disabled={loading || (availableSlots <= 0 && !isOwnSpace)}
@@ -512,7 +535,13 @@ const SpaceDetailScreen = () => {
             <ActivityIndicator color={C.white} size="small" />
           ) : (
             <Text style={styles.bookBtnText}>
-              {isOwnSpace ? 'Manage Space' : availableSlots <= 0 ? 'Fully Occupied' : 'Book Now'}
+              {isOwnSpace
+                ? 'Manage Space'
+                : availableSlots <= 0
+                ? 'Fully Occupied'
+                : riskKey === 'HIGH'
+                ? 'Proceed at Your Own Responsibility'
+                : 'Book Now'}
             </Text>
           )}
         </TouchableOpacity>
@@ -593,8 +622,12 @@ const makeStyles = ({ colors: C }: AppTheme) => StyleSheet.create({
   riskChip: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: Spacing.sm, paddingVertical: 3, borderRadius: BorderRadius.badge, borderWidth: 1 },
   riskChipText: { fontSize: FontSize.nano, fontWeight: FontWeight.bold },                                    // 10=nano ✓
 
-  riskBanner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg, paddingHorizontal: Spacing['2xl'], paddingVertical: Spacing.xl, borderRadius: BorderRadius.md, borderWidth: 1, marginBottom: Spacing['3xl'] },
-  riskBannerText: { fontSize: FontSize.sm, fontWeight: FontWeight.medium, flex: 1 },                        // 12=sm ✓
+  riskBanner: { flexDirection: 'column', gap: Spacing.md, paddingHorizontal: Spacing['2xl'], paddingVertical: Spacing.xl, borderRadius: BorderRadius.md, borderWidth: 1, marginBottom: Spacing['3xl'] },
+  riskBannerHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
+  riskBannerTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, flex: 1 },
+  riskBannerLine: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.lg },
+  riskBullet: { width: 5, height: 5, borderRadius: 3, marginTop: 6 },
+  riskBannerText: { fontSize: FontSize.sm, fontWeight: FontWeight.medium, flex: 1 },
 
   cardDivider: { height: 1, backgroundColor: C.surfaceBg, marginVertical: Spacing.xl },               // 12=xl ✓
 
@@ -673,6 +706,7 @@ const makeStyles = ({ colors: C }: AppTheme) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   bookBtnDisabled: { backgroundColor: C.textMuted },
+  bookBtnHighRisk: { backgroundColor: C.error },
   bookBtnText: { color: C.white, fontSize: FontSize.lg, fontWeight: FontWeight.bold },                 // 15=lg ✓
 
   // Skeleton placeholder shown while background fetch is in flight

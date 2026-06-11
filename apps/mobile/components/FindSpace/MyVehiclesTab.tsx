@@ -238,7 +238,7 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
               <UploadCloud size={24} color={Colors.textMuted} />
             )}
             <Text style={styles.uploadBoxText}>
-              {newVehicleRCBookUri ? 'RC Book Selected' : 'Upload RC Book'}
+              {newVehicleRCBookUri ? 'RC Book Selected ✓' : 'Upload RC for verified vehicle badge'}
             </Text>
           </TouchableOpacity>
 

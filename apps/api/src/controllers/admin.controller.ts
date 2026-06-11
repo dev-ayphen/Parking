@@ -333,7 +333,10 @@ export const adminController = {
     try {
       const ticketId = parseInt(req.params.id);
       const result = await adminService.updateSupportTicket(ticketId, req.body);
+      // Per-ticket room → the user (and admin) viewing this ticket update live.
       emitTicketEvent('support:status', ticketId, { ticketId, status: result.ticket.status, priority: result.ticket.priority });
+      // Admin room → sidebar badge / list refresh.
+      emitToAdmin('support', 'support:updated', { ticketId, status: result.ticket.status });
       res.json(result);
     } catch (error) {
       sendError(res, error);

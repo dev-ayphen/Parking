@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { io as createSocket, Socket } from 'socket.io-client';
 import { adminApi } from '@/services/api';
+import { useAuthStore } from '@/store/authStore';
 
 const SOCKET_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api').replace(/\/api\/?$/, '');
 
@@ -116,9 +117,13 @@ export default function SupportPage() {
     return () => clearTimeout(t);
   }, [fetchTickets]);
 
-  // Real-time admin socket: refresh when new tickets/replies arrive
+  // Real-time admin socket: refresh when new tickets/replies arrive.
+  // The socket server requires a JWT in the handshake AND admin:join only joins
+  // the admin room if that JWT's role is ADMIN — so the token is mandatory here.
   useEffect(() => {
-    const socket = createSocket(SOCKET_URL, { transports: ['websocket'] });
+    const token = useAuthStore.getState().token;
+    if (!token) return;
+    const socket = createSocket(SOCKET_URL, { transports: ['websocket'], auth: { token } });
     socket.on('connect', () => socket.emit('admin:join'));
     const refresh = () => fetchTickets();
     socket.on('support:new', refresh);
@@ -417,9 +422,11 @@ function TicketDetailsModal({ ticket, onClose, onChanged, onTicketUpdate }: {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [ticket.replies.length]);
 
-  // Real-time: listen for user replies on this ticket
+  // Real-time: listen for user replies on this ticket (token required by the server)
   useEffect(() => {
-    const socket = createSocket(SOCKET_URL, { transports: ['websocket'] });
+    const token = useAuthStore.getState().token;
+    if (!token) return;
+    const socket = createSocket(SOCKET_URL, { transports: ['websocket'], auth: { token } });
     socket.on('connect', () => socket.emit('support:join', ticket.id));
     socket.on('support:reply', (payload: any) => {
       if (payload?.ticketId !== ticket.id) return;

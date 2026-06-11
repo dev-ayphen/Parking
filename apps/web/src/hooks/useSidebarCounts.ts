@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { io as createSocket } from 'socket.io-client';
 import { adminApi } from '@/services/api';
+import { useAuthStore } from '@/store/authStore';
 
 export interface SidebarCounts {
   pendingSpaces: number;
@@ -38,7 +39,9 @@ export function useSidebarCounts(): SidebarCounts {
   useEffect(() => {
     fetchCounts();
 
-    const socket = createSocket(SOCKET_URL, { transports: ['websocket'] });
+    const token = useAuthStore.getState().token;
+    if (!token) return;
+    const socket = createSocket(SOCKET_URL, { transports: ['websocket'], auth: { token } });
     socket.on('connect', () => socket.emit('admin:join'));
     // Any of these events implies a count may have changed — refetch
     const refresh = () => fetchCounts();

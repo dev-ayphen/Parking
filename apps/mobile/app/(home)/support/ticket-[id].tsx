@@ -16,6 +16,7 @@ import { ChevronLeft, Send, Clock, Info, Star, RotateCcw, CheckCircle2, XCircle,
 import { io as createSocket, Socket } from 'socket.io-client';
 import { API_BASE } from '../../../config/api.config';
 import { api } from '../../../services/api';
+import { getAuthToken } from '../../../utils/secureStorage';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../../theme';
 
 const SOCKET_URL = (API_BASE || '').replace(/\/api\/?$/, '');
@@ -102,23 +103,41 @@ export default function TicketDetailScreen() {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 200);
   }, [ticket?.replies.length]);
 
-  // Real-time socket subscription for new replies + status changes
+  // Real-time socket subscription for new replies + status changes.
+  // The socket server REQUIRES a JWT in the handshake — without it the connection
+  // is rejected and live replies never arrive. So we fetch the token first.
   useEffect(() => {
     if (isNaN(numericId)) return;
-    const socket = createSocket(SOCKET_URL, { transports: ['websocket'] });
-    socketRef.current = socket;
-    socket.on('connect', () => socket.emit('support:join', numericId));
-    socket.on('support:reply', (payload: any) => {
-      if (payload?.ticketId !== numericId) return;
-      setTicket((prev) => prev ? { ...prev, replies: [...prev.replies, payload.reply] } : prev);
-    });
-    socket.on('support:status', (payload: any) => {
-      if (payload?.ticketId !== numericId) return;
-      setTicket((prev) => prev ? { ...prev, status: payload.status, priority: payload.priority ?? prev.priority } : prev);
-    });
+    let socket: Socket | null = null;
+    let cancelled = false;
+
+    (async () => {
+      const token = await getAuthToken();
+      if (cancelled || !token) return;
+      socket = createSocket(SOCKET_URL, { transports: ['websocket'], auth: { token } });
+      socketRef.current = socket;
+      socket.on('connect', () => socket?.emit('support:join', numericId));
+      socket.on('support:reply', (payload: any) => {
+        if (payload?.ticketId !== numericId || !payload?.reply) return;
+        setTicket((prev) => {
+          if (!prev) return prev;
+          // Dedup: ignore a reply we already have (e.g. our own optimistic append).
+          if (prev.replies.some((r) => r.id === payload.reply.id)) return prev;
+          return { ...prev, replies: [...prev.replies, payload.reply] };
+        });
+      });
+      socket.on('support:status', (payload: any) => {
+        if (payload?.ticketId !== numericId) return;
+        setTicket((prev) => prev ? { ...prev, status: payload.status, priority: payload.priority ?? prev.priority } : prev);
+      });
+    })();
+
     return () => {
-      socket.emit('support:leave', numericId);
-      socket.disconnect();
+      cancelled = true;
+      if (socket) {
+        socket.emit('support:leave', numericId);
+        socket.disconnect();
+      }
       socketRef.current = null;
     };
   }, [numericId]);
@@ -129,8 +148,12 @@ export default function TicketDetailScreen() {
       setSending(true);
       const json = await api.post(`/support/${numericId}/reply`, { message: replyText.trim() });
       if (json.success) {
-        // Optimistically append (socket will dedupe on its own ticket-room — this is the same window)
-        setTicket((prev) => prev ? { ...prev, replies: [...prev.replies, json.reply] } : prev);
+        // Optimistically append, guarding against a socket echo that already added it.
+        setTicket((prev) => {
+          if (!prev) return prev;
+          if (prev.replies.some((r) => r.id === json.reply.id)) return prev;
+          return { ...prev, replies: [...prev.replies, json.reply] };
+        });
         setReplyText('');
         // Refresh status (may have auto-flipped from WAITING_FOR_USER → IN_PROGRESS)
         fetchTicket();

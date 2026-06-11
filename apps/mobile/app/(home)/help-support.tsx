@@ -1,19 +1,66 @@
-import React from 'react';
-import {View,
+import React, { useState } from 'react';
+import {
+  View,
   Text,
   StyleSheet,
   StatusBar,
   TouchableOpacity,
   ScrollView,
-  Platform} from 'react-native';
+  Platform,
+  TextInput,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import PageHeader from '../../components/PageHeader';
-import { Search, HelpCircle, FileText, MessageCircle } from 'lucide-react-native';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import {
+  Search,
+  HelpCircle,
+  FileText,
+  Ticket,
+  ChevronDown,
+  ChevronUp,
+  X,
+} from 'lucide-react-native';
+import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
+
+interface FAQItem {
+  question: string;
+  answer: string;
+}
+
+const FAQ_DATA: FAQItem[] = [
+  {
+    question: 'How do I cancel my booking?',
+    answer: "Go to your Bookings tab, select the active booking you wish to cancel, and click 'Cancel Booking'. Refunds are processed automatically based on the cancellation policy.",
+  },
+  {
+    question: 'How to request a refund?',
+    answer: 'Refunds for eligible cancellations are credited directly to your source payment method within 5-7 business days. You can track refund status in the Wallet section.',
+  },
+  {
+    question: 'How to add a new parking space?',
+    answer: "Navigate to 'My Spaces' and click 'Add Space'. Follow the step-by-step wizard to upload photos, set pricing, define availability, and submit for verification.",
+  },
+  {
+    question: 'What are the payout cycles for hosts?',
+    answer: 'Payouts are aggregated weekly and deposited directly into your linked bank account every Monday. You can update bank details in host settings.',
+  },
+];
 
 export default function HelpSupportScreen() {
   const router = useRouter();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+
+  const filteredFaqs = FAQ_DATA.filter(
+    (faq) =>
+      faq.question.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      faq.answer.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const handleToggleExpand = (index: number) => {
+    setExpandedIndex(expandedIndex === index ? null : index);
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -22,8 +69,22 @@ export default function HelpSupportScreen() {
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
         <View style={styles.searchContainer}>
-          <Search size={20} color={Colors.textMuted} />
-          <Text style={styles.searchPlaceholder}>Search for help...</Text>
+          <Search size={20} color={Colors.textMuted} style={styles.searchIcon} />
+          <TextInput
+            value={searchQuery}
+            onChangeText={(text) => {
+              setSearchQuery(text);
+              setExpandedIndex(null);
+            }}
+            placeholder="Search for help..."
+            placeholderTextColor={Colors.textMuted}
+            style={styles.searchInput}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} activeOpacity={0.7}>
+              <X size={18} color={Colors.textMuted} />
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={styles.gridContainer}>
@@ -49,14 +110,60 @@ export default function HelpSupportScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.gridItem, styles.gridItemFull]}
-            onPress={() => router.push('/(home)/support/chat')}
+            onPress={() => router.push('/(home)/support/create-ticket')}
           >
             <View style={[styles.iconContainer, { backgroundColor: Colors.errorBg }]}>
-              <MessageCircle size={24} color={Colors.errorAlt} />
+              <Ticket size={24} color={Colors.errorAlt} />
             </View>
-            <Text style={styles.gridTitle}>Live Chat</Text>
-            <Text style={styles.gridDesc}>Talk to an agent</Text>
+            <Text style={styles.gridTitle}>Contact Support</Text>
+            <Text style={styles.gridDesc}>Raise a support ticket</Text>
           </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity
+          style={styles.myTicketsRow}
+          onPress={() => router.push('/(home)/support/tickets')}
+          activeOpacity={0.7}
+        >
+          <View style={styles.myTicketsLeft}>
+            <FileText size={18} color={Colors.textSecondary} />
+            <Text style={styles.myTicketsText}>My Support Tickets</Text>
+          </View>
+          <ChevronDown size={18} color={Colors.textMuted} style={{ transform: [{ rotate: '-90deg' }] }} />
+        </TouchableOpacity>
+
+        <View style={styles.faqSection}>
+          <Text style={styles.faqSectionTitle}>Popular Topics</Text>
+          {filteredFaqs.length > 0 ? (
+            filteredFaqs.map((faq, index) => {
+              const isExpanded = expandedIndex === index;
+              return (
+                <View key={index} style={styles.faqCard}>
+                  <TouchableOpacity
+                    style={styles.faqHeader}
+                    onPress={() => handleToggleExpand(index)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.faqQuestion}>{faq.question}</Text>
+                    {isExpanded ? (
+                      <ChevronUp size={20} color={Colors.textSecondary} />
+                    ) : (
+                      <ChevronDown size={20} color={Colors.textSecondary} />
+                    )}
+                  </TouchableOpacity>
+                  {isExpanded && (
+                    <View style={styles.faqAnswerContainer}>
+                      <Text style={styles.faqAnswer}>{faq.answer}</Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })
+          ) : (
+            <View style={styles.emptySearchContainer}>
+              <Text style={styles.emptySearchText}>No matching questions found.</Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.contactCard}>
@@ -67,6 +174,7 @@ export default function HelpSupportScreen() {
           <TouchableOpacity
             style={styles.contactButton}
             onPress={() => router.push('/(home)/support/create-ticket')}
+            activeOpacity={0.8}
           >
             <Text style={styles.contactButtonText}>Contact Support</Text>
           </TouchableOpacity>
@@ -89,17 +197,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.white,
-    paddingHorizontal: Spacing['3xl'],
-    paddingVertical: Spacing['2xl'],
-    borderRadius: BorderRadius.md,                  // 12 = md ✓
-    gap: Spacing.xl,
+    paddingHorizontal: Spacing.xl,
+    borderRadius: BorderRadius.md,
+    gap: Spacing.md,
     marginBottom: Spacing['4xl'],
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: Colors.border,
+    height: 48,
   },
-  searchPlaceholder: {
-    color: Colors.textMuted,
-    fontSize: FontSize.xl,                          // 16 = xl ✓
+  searchIcon: {
+    marginRight: Spacing.xs,
+  },
+  searchInput: {
+    flex: 1,
+    height: '100%',
+    fontSize: FontSize.md,
+    color: Colors.textPrimary,
+    fontWeight: FontWeight.medium,
+    padding: 0,
   },
   gridContainer: {
     flexDirection: 'row',
@@ -110,14 +225,14 @@ const styles = StyleSheet.create({
   gridItem: {
     width: '47%',
     backgroundColor: Colors.white,
-    borderRadius: BorderRadius.lg,                  // 16 = lg ✓
+    borderRadius: BorderRadius.lg,
     padding: Spacing['3xl'],
     ...Platform.select({
       ios: {
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 8,
+        shadowOpacity: 0.04,
+        shadowRadius: 6,
       },
       android: {
         elevation: 2,
@@ -130,52 +245,124 @@ const styles = StyleSheet.create({
   iconContainer: {
     width: 48,
     height: 48,
-    borderRadius: BorderRadius.md,                  // 12 = md ✓
+    borderRadius: BorderRadius.md,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.xl,
   },
   gridTitle: {
-    fontSize: FontSize.xl,                          // 16 = xl ✓
+    fontSize: FontSize.xl,
     fontWeight: FontWeight.semibold,
     color: Colors.textPrimary,
     marginBottom: Spacing.xs,
   },
   gridDesc: {
-    fontSize: FontSize.sm,                          // 12 = sm ✓
+    fontSize: FontSize.sm,
     color: Colors.textSecondary,
   },
+  myTicketsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.button,
+    paddingVertical: Spacing['3xl'],
+    paddingHorizontal: Spacing.screenH,
+    marginBottom: Spacing['4xl'],
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  myTicketsLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xl,
+  },
+  myTicketsText: {
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.semibold,
+    color: Colors.textPrimary,
+  },
+  faqSection: {
+    marginBottom: Spacing['6xl'],
+  },
+  faqSectionTitle: {
+    fontSize: FontSize.xl,
+    fontWeight: FontWeight.bold,
+    color: Colors.textPrimary,
+    marginBottom: Spacing['3xl'],
+  },
+  faqCard: {
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    marginBottom: Spacing.xl,
+    overflow: 'hidden',
+  },
+  faqHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: Spacing['3xl'],
+    gap: Spacing.lg,
+  },
+  faqQuestion: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.semibold,
+    color: Colors.textPrimary,
+    flex: 1,
+  },
+  faqAnswerContainer: {
+    paddingHorizontal: Spacing['3xl'],
+    paddingBottom: Spacing['3xl'],
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderLighter,
+  },
+  faqAnswer: {
+    fontSize: FontSize.md,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+    marginTop: Spacing.md,
+  },
+  emptySearchContainer: {
+    alignItems: 'center',
+    paddingVertical: Spacing['4xl'],
+  },
+  emptySearchText: {
+    fontSize: FontSize.md,
+    color: Colors.textMuted,
+  },
   contactCard: {
-    backgroundColor: ExtendedColors.darkCard,       // '#1E293B' ✓
-    borderRadius: BorderRadius.lg,                  // 16 = lg ✓
+    backgroundColor: Colors.surfaceBg,
+    borderRadius: BorderRadius.lg,
     padding: Spacing['4xl'],
     alignItems: 'center',
-    marginBottom: Spacing.screenH,
+    marginBottom: Spacing['7xl'],
   },
   contactTitle: {
-    fontSize: FontSize['2xl'],                      // 18 = 2xl ✓
+    fontSize: FontSize.xl,
     fontWeight: FontWeight.bold,
-    color: Colors.white,
+    color: Colors.textPrimary,
     marginBottom: Spacing.md,
   },
   contactDesc: {
-    fontSize: FontSize.md,                          // 14 = md ✓
-    color: Colors.textMuted,
+    fontSize: FontSize.md,
+    color: Colors.textSecondary,
     textAlign: 'center',
-    marginBottom: Spacing.screenH,
+    marginBottom: Spacing['4xl'],
     lineHeight: 20,
   },
   contactButton: {
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.primaryBg,
     paddingHorizontal: Spacing['4xl'],
     paddingVertical: Spacing.xl,
-    borderRadius: BorderRadius.sm,                  // 8 = sm ✓
+    borderRadius: BorderRadius.button,
     width: '100%',
     alignItems: 'center',
   },
   contactButtonText: {
-    color: Colors.white,
-    fontSize: FontSize.xl,                          // 16 = xl ✓
-    fontWeight: FontWeight.semibold,
+    color: Colors.primary,
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.bold,
   },
 });

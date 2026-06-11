@@ -210,7 +210,7 @@ export default function MySpacesListScreen() {
         <View style={styles.actionsRow}>
           <TouchableOpacity
             style={styles.actionBtn}
-            onPress={() => router.push(`/(my-spaces)/add-space?edit=${item.id}`)}
+            onPress={() => router.push(`/add-space?edit=${item.id}`)}
           >
             <Edit3 size={16} color={item.status === 'REJECTED' ? Colors.primary : Colors.textDark} />
             <Text style={[styles.actionBtnText, item.status === 'REJECTED' && { color: Colors.primary }]}>
@@ -245,7 +245,7 @@ export default function MySpacesListScreen() {
         <PageHeader
           title="My Spaces"
           right={
-            <TouchableOpacity style={styles.addBtn} onPress={() => router.push('/(my-spaces)/add-space')}>
+            <TouchableOpacity style={styles.addBtn} onPress={() => router.push('/add-space')}>
               <Plus size={20} color={Colors.primary} strokeWidth={2.5} />
             </TouchableOpacity>
           }
@@ -295,7 +295,7 @@ export default function MySpacesListScreen() {
       <PageHeader
         title="My Spaces"
         right={
-          <TouchableOpacity style={styles.addBtn} onPress={() => router.push('/(my-spaces)/add-space')}>
+          <TouchableOpacity style={styles.addBtn} onPress={() => router.push('/add-space')}>
             <Plus size={20} color={Colors.primary} strokeWidth={2.5} />
           </TouchableOpacity>
         }
@@ -337,7 +337,7 @@ export default function MySpacesListScreen() {
             <Text style={styles.emptySubtitle}>{emptyCopy[tab].subtitle}</Text>
             <TouchableOpacity
               style={styles.emptyBtn}
-              onPress={() => router.push('/(my-spaces)/add-space')}
+              onPress={() => router.push('/add-space')}
             >
               <Text style={styles.emptyBtnText}>+ Add a Space</Text>
             </TouchableOpacity>

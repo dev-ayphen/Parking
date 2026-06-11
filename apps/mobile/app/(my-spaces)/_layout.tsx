@@ -6,7 +6,7 @@ import { Colors, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 
 // Full-screen action pages that should hide the entire tab bar (so their
 // footer buttons aren't covered by the floating nav).
-const FULLSCREEN_ROUTES = ['booking-request', 'add-space', 'exit-verification', 'analytics', 'manage-subscription', 'bookings'];
+const FULLSCREEN_ROUTES = ['booking-request', 'exit-verification', 'analytics', 'manage-subscription', 'bookings'];
 
 function CustomTabBar({ state, descriptors, navigation }: any) {
   // Hide the whole tab bar on full-screen action pages
@@ -25,7 +25,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
           // NOTE: 'recent-requests' MUST be here — otherwise expo-router auto-registers it
           // as a 6th tab with no icon, rendering an invisible flex:1 slot on the right that
           // shifts the centered Verify button left-of-center.
-          if (['bookings', 'analytics', 'manage-subscription', 'live-sessions', 'add-space', 'exit-verification', 'booking-request', 'recent-requests'].includes(route.name)) {
+          if (['bookings', 'analytics', 'manage-subscription', 'live-sessions', 'exit-verification', 'booking-request', 'recent-requests'].includes(route.name)) {
             return null;
           }
 
@@ -104,7 +104,6 @@ export default function MySpacesLayout() {
       <Tabs.Screen name="analytics" options={{ href: null }} />
       <Tabs.Screen name="manage-subscription" options={{ href: null }} />
       <Tabs.Screen name="live-sessions" options={{ href: null }} />
-      <Tabs.Screen name="add-space" options={{ href: null }} />
       <Tabs.Screen name="exit-verification" options={{ href: null }} />
       <Tabs.Screen name="booking-request" options={{ href: null }} />
       <Tabs.Screen name="recent-requests" options={{ href: null }} />

@@ -391,7 +391,7 @@ export default function OwnerDashboardScreen() {
               <TouchableOpacity 
                 style={styles.emptyStateBtn}
                 activeOpacity={0.8}
-                onPress={() => router.push('/(my-spaces)/add-space')}
+                onPress={() => router.push('/add-space')}
               >
                 <Text style={styles.emptyStateBtnText}>Add a Space</Text>
               </TouchableOpacity>

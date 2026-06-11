@@ -12,23 +12,23 @@ import {
   StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useTheme } from '../../hooks/useTheme';
+import { useTheme } from '../hooks/useTheme';
 import { CheckCircle } from 'lucide-react-native';
-import { LeafletMapHandle } from '../../components/LeafletMap';
+import { LeafletMapHandle } from '../components/LeafletMap';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { PageHeader } from '../../components';
+import { PageHeader } from '../components';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { api } from '../../services/api';
-import { Colors, FontSize, FontWeight, BorderRadius, ExtendedColors } from '../../theme';
-import { styles } from '../../components/AddSpace/addSpaceStyles';
-import Step1BasicDetails from '../../components/AddSpace/Step1BasicDetails';
-import Step2Location from '../../components/AddSpace/Step2Location';
-import Step3Pricing from '../../components/AddSpace/Step3Pricing';
-import Step4Documents from '../../components/AddSpace/Step4Documents';
-import Step5Compliance from '../../components/AddSpace/Step5Compliance';
+import { api } from '../services/api';
+import { Colors, FontSize, FontWeight, BorderRadius, ExtendedColors } from '../theme';
+import { styles } from '../components/AddSpace/addSpaceStyles';
+import Step1BasicDetails from '../components/AddSpace/Step1BasicDetails';
+import Step2Location from '../components/AddSpace/Step2Location';
+import Step3Pricing from '../components/AddSpace/Step3Pricing';
+import Step4Documents from '../components/AddSpace/Step4Documents';
+import Step5Compliance from '../components/AddSpace/Step5Compliance';
 
 // Space-type → required proof options (COMPLIANCE_AND_TERMS.md)
 const SPACE_DOC_REQUIREMENTS: Record<string, string[]> = {

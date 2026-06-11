@@ -198,8 +198,11 @@ export const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
+  // Explicit height — the LeafletMap WebView is flex:1 internally and would
+  // collapse to 0 inside the height-less mapContainer without this.
   mapView: {
-    height: 200,
+    height: 220,
+    width: '100%',
   },
   mapHint: {
     paddingVertical: 6,

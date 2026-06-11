@@ -65,6 +65,7 @@ export default function Step2Location({
       <View style={styles.mapContainer}>
         <LeafletMap
           ref={mapRef}
+          style={styles.mapView}
           initialRegion={{ latitude: 12.9716, longitude: 77.5946, latitudeDelta: 0.01 }}
           markers={[{ id: 'pin', lat: markerCoord.latitude, lng: markerCoord.longitude, kind: 'pin' }]}
           onMapPress={({ latitude, longitude }) => reverseGeocode(latitude, longitude)}

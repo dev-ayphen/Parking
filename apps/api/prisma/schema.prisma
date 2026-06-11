@@ -39,6 +39,11 @@ model User {
   banReason           String?
   lastLoginAt         DateTime?
 
+  // Terms & Conditions acceptance tracking
+  // Records the version the user last accepted. If current T&C version differs → re-prompt.
+  acceptedTermsVersion  String?   // e.g. "1.0.0"
+  termsAcceptedAt       DateTime?
+
   // Soft delete — set when admin deletes; audit trail preserved
   deletedAt           DateTime?
   deletedReason       String?

@@ -9,6 +9,7 @@ import {View,
   Animated,
   Dimensions,
   Keyboard,
+  Platform,
   TouchableWithoutFeedback} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -75,6 +76,21 @@ const VerifyOtpScreen = () => {
 
       // Save token + user + expiry BEFORE navigating so every screen finds auth ready
       await setSession(data.token, data.user, data.expiresIn);
+
+      // Record T&C acceptance if user hasn't accepted current version yet.
+      // This fires once on first login and again only when T&C version changes.
+      const CURRENT_TC_VERSION = '1.0.0';
+      if (data.user?.acceptedTermsVersion !== CURRENT_TC_VERSION) {
+        try {
+          await api.post('/auth/accept-terms', {
+            termsVersion: CURRENT_TC_VERSION,
+            platform: Platform.OS,
+          });
+        } catch (_) {
+          // Non-blocking — don't fail login if this fails
+        }
+      }
+
       setLoading(false);
 
       if (data.user.isNewUser) {

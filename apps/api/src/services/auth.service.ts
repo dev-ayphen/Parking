@@ -349,6 +349,7 @@ export const authService = {
           isProfileComplete: user.isProfileComplete,
           isNewUser,
           role: user.role,
+          acceptedTermsVersion: user.acceptedTermsVersion ?? null,
         },
       };
     } catch (error) {

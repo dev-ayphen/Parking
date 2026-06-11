@@ -14,6 +14,7 @@ router.post('/request-otp', otpLimiter, authController.requestOtp);
 router.post('/verify-otp', otpVerifyLimiter, authController.verifyOtp);
 router.post('/refresh-token', authController.refreshToken);
 router.post('/logout', authenticate, authController.logout);
+router.post('/accept-terms', authenticate, authController.acceptTerms);
 
 // Admin login with email + password (dev dashboard)
 router.post('/admin-login', async (req, res) => {

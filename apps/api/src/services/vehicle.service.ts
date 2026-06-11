@@ -73,10 +73,26 @@ export const vehicleService = {
       orderBy: { createdAt: 'desc' },
     });
 
+    // Resolve storage keys → full URLs so the mobile client can display images directly.
+    const resolved = await Promise.all(
+      vehicles.map(async (v) => ({
+        ...v,
+        frontPhotoUrl: v.frontPhotoUrl
+          ? await storageService.resolveUrl(v.frontPhotoUrl, BUCKETS.PUBLIC).catch(() => v.frontPhotoUrl)
+          : null,
+        sidePhotoUrl: v.sidePhotoUrl
+          ? await storageService.resolveUrl(v.sidePhotoUrl, BUCKETS.PUBLIC).catch(() => v.sidePhotoUrl)
+          : null,
+        rcBookUrl: v.rcBookUrl
+          ? await storageService.resolveUrl(v.rcBookUrl, BUCKETS.PRIVATE).catch(() => null)
+          : null,
+      }))
+    );
+
     return {
       success: true,
-      data: vehicles,
-      count: vehicles.length,
+      data: resolved,
+      count: resolved.length,
     };
   },
 

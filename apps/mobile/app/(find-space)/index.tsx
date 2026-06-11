@@ -127,6 +127,10 @@ const FindSpaceScreen = () => {
   const [editVehicleType, setEditVehicleType] = useState('Car');
   const [editVehicleCapacity, setEditVehicleCapacity] = useState('5 Seater');
   const [editVehicleRole, setEditVehicleRole] = useState('Owner');
+  // Edit vehicle photos — populated from API URL on open, replaced by local URI on new pick
+  const [editFrontPhotoUri, setEditFrontPhotoUri] = useState<string | null>(null);
+  const [editSidePhotoUri, setEditSidePhotoUri] = useState<string | null>(null);
+  const [editRCBookUri, setEditRCBookUri] = useState<string | null>(null);
 
   // Active bookings state - loaded from API (empty until real data)
   const [activeBooking, setActiveBooking] = useState<any>(null);
@@ -267,6 +271,10 @@ const FindSpaceScreen = () => {
     setEditVehicleCapacity(vehicle.capacity || '5 Seater');
     const mappedRole = vehicle.role === 'OWNER' ? 'Owner' : vehicle.role === 'DRIVER' ? 'Driver' : vehicle.role;
     setEditVehicleRole(mappedRole);
+    // Prefill existing photos from API — resolved Supabase URLs
+    setEditFrontPhotoUri(vehicle.frontPhotoUrl || null);
+    setEditSidePhotoUri(vehicle.sidePhotoUrl || null);
+    setEditRCBookUri(vehicle.rcBookUrl || null);
     setShowEditModal(true);
   };
 
@@ -288,9 +296,28 @@ const FindSpaceScreen = () => {
         ownershipType: editVehicleRole === 'Owner' ? 'OWNER' : 'DRIVER',
       });
 
+      // Upload only newly picked local files (skip existing Supabase https:// URLs)
+      const isLocal = (uri: string) => uri.startsWith('file://') || uri.startsWith('content://') || uri.startsWith('/');
+      const guess = (uri: string) => {
+        const ext = (uri.split('.').pop() || '').toLowerCase();
+        if (ext === 'png') return { ext: 'png', type: 'image/png' };
+        if (ext === 'pdf') return { ext: 'pdf', type: 'application/pdf' };
+        return { ext: 'jpg', type: 'image/jpeg' };
+      };
+      const editMediaFiles: Array<{ field: string; uri: string; name: string; type: string }> = [];
+      if (editFrontPhotoUri && isLocal(editFrontPhotoUri)) { const g = guess(editFrontPhotoUri); editMediaFiles.push({ field: 'frontPhoto', uri: editFrontPhotoUri, name: `front.${g.ext}`, type: g.type }); }
+      if (editSidePhotoUri  && isLocal(editSidePhotoUri))  { const g = guess(editSidePhotoUri);  editMediaFiles.push({ field: 'sidePhoto',  uri: editSidePhotoUri,  name: `side.${g.ext}`,  type: g.type }); }
+      if (editRCBookUri     && isLocal(editRCBookUri))     { const g = guess(editRCBookUri);     editMediaFiles.push({ field: 'rcBook',     uri: editRCBookUri,     name: `rcbook.${g.ext}`, type: g.type }); }
+      if (editMediaFiles.length > 0) {
+        try { await api.upload(`/vehicles/${editingVehicle.id}/media`, editMediaFiles); } catch {}
+      }
+
       Alert.alert('Success', 'Vehicle updated successfully!');
       setShowEditModal(false);
       setEditingVehicle(null);
+      setEditFrontPhotoUri(null);
+      setEditSidePhotoUri(null);
+      setEditRCBookUri(null);
       await loadVehiclesFromAPI();
     } catch (error) {
       Alert.alert('Error', (error as Error).message);
@@ -419,6 +446,11 @@ const FindSpaceScreen = () => {
         capacity: `${v.capacity} Seater`,
         role: v.ownershipType,
         active: false,
+        // Resolved Supabase URLs (or null) — used for display and edit-mode prefill
+        frontPhotoUrl: v.frontPhotoUrl || null,
+        sidePhotoUrl: v.sidePhotoUrl || null,
+        rcBookUrl: v.rcBookUrl || null,
+        rcVerified: v.rcVerified || false,
       }));
 
       if (__DEV__) console.log('[FIND_SPACE] ✅ Loaded vehicles:', formattedVehicles.length);
@@ -1125,6 +1157,12 @@ const FindSpaceScreen = () => {
           setEditVehicleCapacity={setEditVehicleCapacity}
           editVehicleRole={editVehicleRole}
           setEditVehicleRole={setEditVehicleRole}
+          editFrontPhotoUri={editFrontPhotoUri}
+          editSidePhotoUri={editSidePhotoUri}
+          editRCBookUri={editRCBookUri}
+          onEditPickFrontPhoto={() => pickVehiclePhoto(setEditFrontPhotoUri)}
+          onEditPickSidePhoto={() => pickVehiclePhoto(setEditSidePhotoUri)}
+          onEditPickRCBook={() => pickVehiclePhoto(setEditRCBookUri, true)}
           handleUpdateVehicle={handleUpdateVehicle}
           vehicles={vehicles}
           handleSetActiveVehicle={handleSetActiveVehicle}

@@ -249,7 +249,14 @@ export const spaceService = {
     const ratingAvg = ratingCount > 0 ? Math.round((ratingAgg._avg.rating || 0) * 10) / 10 : 0;
     const availableSpots = Math.max(0, (space.capacity || 0) - activeCount);
 
-    return { ...space, ratingAvg, ratingCount, availableSpots };
+    // Resolve storage keys to full public URLs so the mobile client can display them directly.
+    const [frontPhotoUrl, areaPhotoUrl, videoUrl] = await Promise.all([
+      space.frontPhotoUrl ? storageService.resolveUrl(space.frontPhotoUrl, BUCKETS.PUBLIC).catch(() => space.frontPhotoUrl) : null,
+      space.areaPhotoUrl  ? storageService.resolveUrl(space.areaPhotoUrl,  BUCKETS.PUBLIC).catch(() => space.areaPhotoUrl) : null,
+      space.videoUrl      ? storageService.resolveUrl(space.videoUrl,      BUCKETS.PUBLIC).catch(() => space.videoUrl) : null,
+    ]);
+
+    return { ...space, frontPhotoUrl, areaPhotoUrl, videoUrl, ratingAvg, ratingCount, availableSpots };
   },
 
   getMySpaces: async (ownerId: number) => {
@@ -260,7 +267,17 @@ export const spaceService = {
       },
       orderBy: { createdAt: 'desc' },
     });
-    return spaces;
+
+    // Resolve storage keys → full public URLs for all spaces in the list.
+    const resolved = await Promise.all(
+      spaces.map(async (sp) => ({
+        ...sp,
+        frontPhotoUrl: sp.frontPhotoUrl
+          ? await storageService.resolveUrl(sp.frontPhotoUrl, BUCKETS.PUBLIC).catch(() => sp.frontPhotoUrl)
+          : null,
+      }))
+    );
+    return resolved;
   },
 
   createSpace: async (ownerId: number, data: CreateSpaceInput) => {

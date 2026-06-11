@@ -55,6 +55,13 @@ interface MyVehiclesTabProps {
   setEditVehicleCapacity: (val: string) => void;
   editVehicleRole: string;
   setEditVehicleRole: (val: string) => void;
+  // Edit mode photo state — Supabase URL (existing) or local URI (newly picked)
+  editFrontPhotoUri: string | null;
+  editSidePhotoUri: string | null;
+  editRCBookUri: string | null;
+  onEditPickFrontPhoto: () => void;
+  onEditPickSidePhoto: () => void;
+  onEditPickRCBook: () => void;
   handleUpdateVehicle: () => void;
   vehicles: any[];
   handleSetActiveVehicle: (id: string) => void;
@@ -102,6 +109,12 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
   setEditVehicleCapacity,
   editVehicleRole,
   setEditVehicleRole,
+  editFrontPhotoUri,
+  editSidePhotoUri,
+  editRCBookUri,
+  onEditPickFrontPhoto,
+  onEditPickSidePhoto,
+  onEditPickRCBook,
   handleUpdateVehicle,
   vehicles,
   handleSetActiveVehicle,
@@ -391,6 +404,48 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
               </TouchableOpacity>
             ))}
           </View>
+
+          <FormLabel required={false}>Vehicle Photos</FormLabel>
+          <View style={styles.photoUploadRow}>
+            <TouchableOpacity
+              style={[styles.uploadBox, editFrontPhotoUri && styles.uploadBoxSuccess]}
+              onPress={onEditPickFrontPhoto}
+            >
+              {editFrontPhotoUri ? (
+                <Image source={{ uri: editFrontPhotoUri }} style={{ width: 48, height: 48, borderRadius: 6, marginBottom: 4 }} />
+              ) : (
+                <Camera size={24} color={Colors.textMuted} />
+              )}
+              <Text style={styles.uploadBoxText}>{editFrontPhotoUri ? 'Tap to change' : 'Front View'}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.uploadBox, editSidePhotoUri && styles.uploadBoxSuccess]}
+              onPress={onEditPickSidePhoto}
+            >
+              {editSidePhotoUri ? (
+                <Image source={{ uri: editSidePhotoUri }} style={{ width: 48, height: 48, borderRadius: 6, marginBottom: 4 }} />
+              ) : (
+                <Camera size={24} color={Colors.textMuted} />
+              )}
+              <Text style={styles.uploadBoxText}>{editSidePhotoUri ? 'Tap to change' : 'Side View'}</Text>
+            </TouchableOpacity>
+          </View>
+
+          <FormLabel required={false}>RC Book (Registration)</FormLabel>
+          <TouchableOpacity
+            style={[styles.fullWidthUploadBox, editRCBookUri && styles.uploadBoxSuccess]}
+            onPress={onEditPickRCBook}
+          >
+            {editRCBookUri ? (
+              <CheckCircle2 size={24} color={Colors.successAlt} />
+            ) : (
+              <UploadCloud size={24} color={Colors.textMuted} />
+            )}
+            <Text style={styles.uploadBoxText}>
+              {editRCBookUri ? 'RC Book ✓ (tap to replace)' : 'Upload RC for verified vehicle badge'}
+            </Text>
+          </TouchableOpacity>
 
           <View style={styles.formActionsRow}>
             <TouchableOpacity

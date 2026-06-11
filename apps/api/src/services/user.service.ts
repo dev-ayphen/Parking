@@ -57,6 +57,10 @@ export const userService = {
       throw error;
     }
 
+    const photoUrl = user.photoUrl
+      ? await storageService.resolveUrl(user.photoUrl, BUCKETS.PUBLIC).catch(() => user.photoUrl)
+      : null;
+
     return {
       success: true,
       user: {
@@ -65,7 +69,7 @@ export const userService = {
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
-        photoUrl: user.photoUrl,
+        photoUrl,
         isProfileComplete: user.isProfileComplete,
         role: user.role,
         createdAt: user.createdAt,

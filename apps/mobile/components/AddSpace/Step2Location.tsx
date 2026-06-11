@@ -1,12 +1,14 @@
 import React from 'react';
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
 import { Control, Controller, FieldErrors } from 'react-hook-form';
 import { Search } from 'lucide-react-native';
 import LeafletMap, { LeafletMapHandle } from '../LeafletMap';
 import FormInput from '../FormInput';
 import { styles } from './addSpaceStyles';
-import { Colors } from '../../theme';
+import { Colors, BorderRadius, FontSize } from '../../theme';
 import { SpaceFormData } from './Step1BasicDetails';
+
+type Suggestion = { displayName: string; lat: number; lng: number };
 
 type Props = {
   control: Control<SpaceFormData>;
@@ -15,6 +17,8 @@ type Props = {
   setLocationQuery: (v: string) => void;
   isSearchingLocation: boolean;
   searchLocation: () => void;
+  locationSuggestions: Suggestion[];
+  pickSuggestion: (s: Suggestion) => void;
   markerCoord: { latitude: number; longitude: number };
   reverseGeocode: (lat: number, lng: number) => void;
   mapRef: React.RefObject<LeafletMapHandle | null>;
@@ -27,6 +31,8 @@ export default function Step2Location({
   setLocationQuery,
   isSearchingLocation,
   searchLocation,
+  locationSuggestions,
+  pickSuggestion,
   markerCoord,
   reverseGeocode,
   mapRef,
@@ -36,29 +42,73 @@ export default function Step2Location({
       <Text style={styles.stepTitle}>Location Details</Text>
 
       {/* Location Search */}
-      <View style={styles.locationSearchRow}>
-        <Search size={18} color={Colors.textMuted} />
-        <TextInput
-          style={styles.locationSearchInput}
-          placeholder="Search location, area, city..."
-          placeholderTextColor={Colors.textMuted}
-          value={locationQuery}
-          onChangeText={setLocationQuery}
-          onSubmitEditing={searchLocation}
-          returnKeyType="search"
-          editable={!isSearchingLocation}
-        />
-        <TouchableOpacity
-          style={styles.locationSearchBtn}
-          onPress={searchLocation}
-          disabled={isSearchingLocation}
-        >
-          {isSearchingLocation ? (
-            <ActivityIndicator size="small" color={Colors.white} />
-          ) : (
-            <Text style={styles.locationSearchBtnText}>Go</Text>
-          )}
-        </TouchableOpacity>
+      <View style={{ position: 'relative', zIndex: 10 }}>
+        <View style={styles.locationSearchRow}>
+          <Search size={18} color={Colors.textMuted} />
+          <TextInput
+            style={styles.locationSearchInput}
+            placeholder="Search location, area, city..."
+            placeholderTextColor={Colors.textMuted}
+            value={locationQuery}
+            onChangeText={setLocationQuery}
+            onSubmitEditing={searchLocation}
+            returnKeyType="search"
+            editable={!isSearchingLocation}
+          />
+          <TouchableOpacity
+            style={styles.locationSearchBtn}
+            onPress={searchLocation}
+            disabled={isSearchingLocation}
+          >
+            {isSearchingLocation ? (
+              <ActivityIndicator size="small" color={Colors.white} />
+            ) : (
+              <Text style={styles.locationSearchBtnText}>Go</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {/* Search suggestions dropdown */}
+        {locationSuggestions.length > 0 && (
+          <View style={{
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            right: 0,
+            backgroundColor: Colors.white,
+            borderRadius: BorderRadius.md,
+            borderWidth: 1,
+            borderColor: Colors.border,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.12,
+            shadowRadius: 8,
+            elevation: 8,
+            overflow: 'hidden',
+          }}>
+            {locationSuggestions.map((s, i) => (
+              <TouchableOpacity
+                key={i}
+                onPress={() => pickSuggestion(s)}
+                style={{
+                  paddingHorizontal: 14,
+                  paddingVertical: 12,
+                  borderBottomWidth: i < locationSuggestions.length - 1 ? 1 : 0,
+                  borderBottomColor: Colors.border,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 10,
+                }}
+                activeOpacity={0.7}
+              >
+                <Search size={14} color={Colors.textMuted} />
+                <Text style={{ fontSize: FontSize.sm, color: Colors.text, flex: 1 }} numberOfLines={2}>
+                  {s.displayName}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
       </View>
 
       {/* Real Map (OpenStreetMap) */}

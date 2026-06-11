@@ -229,6 +229,11 @@ export default function AddSpaceScreen() {
   const [showDocTypeModal, setShowDocTypeModal] = useState(false);
   const [locationQuery, setLocationQuery] = useState('');
   const [isSearchingLocation, setIsSearchingLocation] = useState(false);
+  const [locationSuggestions, setLocationSuggestions] = useState<Array<{
+    displayName: string;
+    lat: number;
+    lng: number;
+  }>>([]);
   const [markerCoord, setMarkerCoord] = useState({ latitude: 12.9716, longitude: 77.5946 });
   const mapRef = useRef<LeafletMapHandle>(null);
   const [uploadedDocs, setUploadedDocs] = useState<Array<{ name: string; uri: string }>>([]);
@@ -361,30 +366,57 @@ export default function AddSpaceScreen() {
     mapRef.current?.animateToRegion({ ...coord, latitudeDelta: 0.01 });
   };
 
+  // Build a human-readable address from a Nominatim address object.
+  // Priority: local neighbourhood/suburb name first, then road, then city, then state.
+  // This prevents coarse admin zones (e.g. "Zone 14") overriding the real area name.
+  const buildAddress = (addr: Record<string, string>, fallback: string): string => {
+    const neighbourhood =
+      addr.quarter ||
+      addr.neighbourhood ||
+      addr.suburb ||
+      addr.village ||
+      addr.hamlet ||
+      addr.locality;
+    const road = addr.road || addr.pedestrian || addr.footway || addr.path;
+    const city = addr.city || addr.town || addr.county;
+    const state = addr.state;
+    const parts = [neighbourhood, road, city, state].filter(Boolean);
+    return parts.length > 0 ? parts.join(', ') : fallback;
+  };
+
+  // Search: fetch up to 5 results and show a dropdown so the user picks the right one.
   const searchLocation = async () => {
     if (!locationQuery.trim()) return;
     setIsSearchingLocation(true);
+    setLocationSuggestions([]);
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationQuery)}&format=json&limit=1&addressdetails=1`,
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationQuery)}&format=json&limit=5&addressdetails=1&countrycodes=in`,
         { headers: { 'User-Agent': 'ParkSwift/1.0' } }
       );
       const results = await res.json();
-      if (results.length > 0) {
-        const place = results[0];
-        const lat = parseFloat(place.lat);
-        const lng = parseFloat(place.lon);
-        const addr = place.address || {};
-        const parts = [
-          addr.road,
-          addr.suburb || addr.neighbourhood,
-          addr.city || addr.town || addr.village,
-          addr.state,
-        ].filter(Boolean);
-        applyLocation(lat, lng, parts.join(', ') || place.display_name);
-      } else {
+      if (results.length === 0) {
         Alert.alert('Not Found', 'No location found. Try a different name.');
+        return;
       }
+      if (results.length === 1) {
+        // Only one result — apply directly, no need for a picker
+        const place = results[0];
+        applyLocation(
+          parseFloat(place.lat),
+          parseFloat(place.lon),
+          buildAddress(place.address || {}, place.display_name)
+        );
+        return;
+      }
+      // Multiple results — show dropdown
+      setLocationSuggestions(
+        results.map((p: any) => ({
+          displayName: buildAddress(p.address || {}, p.display_name),
+          lat: parseFloat(p.lat),
+          lng: parseFloat(p.lon),
+        }))
+      );
     } catch {
       Alert.alert('Search Failed', 'Unable to search. Check your connection.');
     } finally {
@@ -392,22 +424,23 @@ export default function AddSpaceScreen() {
     }
   };
 
+  const pickSuggestion = (s: { displayName: string; lat: number; lng: number }) => {
+    setLocationSuggestions([]);
+    setLocationQuery(s.displayName);
+    applyLocation(s.lat, s.lng, s.displayName);
+  };
+
+  // Reverse geocode: same priority order — neighbourhood before road to avoid admin zone names.
   const reverseGeocode = async (lat: number, lng: number) => {
+    setLocationSuggestions([]); // close any open dropdown
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=16&addressdetails=1`,
         { headers: { 'User-Agent': 'ParkSwift/1.0' } }
       );
       const data = await res.json();
       if (data.address) {
-        const addr = data.address;
-        const parts = [
-          addr.road,
-          addr.suburb || addr.neighbourhood,
-          addr.city || addr.town || addr.village,
-          addr.state,
-        ].filter(Boolean);
-        applyLocation(lat, lng, parts.join(', ') || data.display_name);
+        applyLocation(lat, lng, buildAddress(data.address, data.display_name));
       }
     } catch {}
   };
@@ -770,6 +803,8 @@ export default function AddSpaceScreen() {
               setLocationQuery={setLocationQuery}
               isSearchingLocation={isSearchingLocation}
               searchLocation={searchLocation}
+              locationSuggestions={locationSuggestions}
+              pickSuggestion={pickSuggestion}
               markerCoord={markerCoord}
               reverseGeocode={reverseGeocode}
               mapRef={mapRef}

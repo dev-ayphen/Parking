@@ -236,8 +236,9 @@ export default function AddSpaceScreen() {
   }>>([]);
   const [markerCoord, setMarkerCoord] = useState({ latitude: 12.9716, longitude: 77.5946 });
   const mapRef = useRef<LeafletMapHandle>(null);
-  const [uploadedDocs, setUploadedDocs] = useState<Array<{ name: string; uri: string }>>([]);
-  // Real media URIs for space photos/video (uploaded after the space is created).
+  // id is set for docs already on the server (edit mode prefill) — these are not re-uploaded on save.
+  const [uploadedDocs, setUploadedDocs] = useState<Array<{ name: string; uri: string; id?: number }>>([]);
+  // Space photos/video — may be a local device URI (newly picked) or a Supabase URL (edit prefill).
   const [frontPhotoUri, setFrontPhotoUri] = useState<string | null>(null);
   const [areaPhotoUri, setAreaPhotoUri] = useState<string | null>(null);
   const [areaVideoUri, setAreaVideoUri] = useState<string | null>(null);
@@ -346,6 +347,26 @@ export default function AddSpaceScreen() {
           acceptNonViolation: true,
         });
         setMarkerCoord({ latitude: lat, longitude: lng });
+
+        // Prefill existing photos — show the Supabase URLs as previews so the user
+        // can see what's already uploaded (they can tap to replace if needed).
+        if (sp.frontPhotoUrl) setFrontPhotoUri(sp.frontPhotoUrl);
+        if (sp.areaPhotoUrl) setAreaPhotoUri(sp.areaPhotoUrl);
+        if (sp.videoUrl) setAreaVideoUri(sp.videoUrl);
+
+        // Prefill existing documents — fetch the list with signed URLs.
+        try {
+          const docsRes = await api.get(`/spaces/${editId}/documents`);
+          const docs: Array<{ documentLabel: string; fileUrl: string; id: number }> =
+            docsRes?.documents ?? [];
+          if (docs.length > 0 && !cancelled) {
+            setUploadedDocs(
+              docs.map((d) => ({ name: d.documentLabel || 'Document', uri: d.fileUrl, id: d.id }))
+            );
+          }
+        } catch {
+          // Non-critical — missing docs list doesn't block editing
+        }
       } catch (e) {
         if (!cancelled) Alert.alert('Error', 'Could not load space details for editing.');
       } finally {
@@ -607,9 +628,11 @@ export default function AddSpaceScreen() {
         if (ext === 'mp4') return { ext: 'mp4', type: 'video/mp4' };
         return { ext: 'jpg', type: 'image/jpeg' };
       };
-      if (frontPhotoUri) { const g = guess(frontPhotoUri); mediaFiles.push({ field: 'frontPhoto', uri: frontPhotoUri, name: `front.${g.ext}`, type: g.type }); }
-      if (areaPhotoUri)  { const g = guess(areaPhotoUri);  mediaFiles.push({ field: 'areaPhoto',  uri: areaPhotoUri,  name: `area.${g.ext}`,  type: g.type }); }
-      if (areaVideoUri)  { const g = guess(areaVideoUri);  mediaFiles.push({ field: 'areaVideo',  uri: areaVideoUri,  name: `video.${g.ext}`, type: g.type }); }
+      // Only upload newly picked local files — skip Supabase URLs that are already on the server.
+      const isLocal = (uri: string) => uri.startsWith('file://') || uri.startsWith('content://') || uri.startsWith('/');
+      if (frontPhotoUri && isLocal(frontPhotoUri)) { const g = guess(frontPhotoUri); mediaFiles.push({ field: 'frontPhoto', uri: frontPhotoUri, name: `front.${g.ext}`, type: g.type }); }
+      if (areaPhotoUri  && isLocal(areaPhotoUri))  { const g = guess(areaPhotoUri);  mediaFiles.push({ field: 'areaPhoto',  uri: areaPhotoUri,  name: `area.${g.ext}`,  type: g.type }); }
+      if (areaVideoUri  && isLocal(areaVideoUri))  { const g = guess(areaVideoUri);  mediaFiles.push({ field: 'areaVideo',  uri: areaVideoUri,  name: `video.${g.ext}`, type: g.type }); }
 
       if (mediaFiles.length > 0) {
         try {
@@ -619,8 +642,9 @@ export default function AddSpaceScreen() {
         }
       }
 
-      // Upload each proof document to backend → Supabase private bucket
+      // Upload only NEW proof documents (those without an id are freshly picked from device).
       for (const doc of uploadedDocs) {
+        if (doc.id) continue; // already on server — skip re-upload
         try {
           const ext = (doc.uri.split('.').pop() || 'jpg').toLowerCase();
           const mimeType = ext === 'png' ? 'image/png' : ext === 'pdf' ? 'application/pdf' : 'image/jpeg';

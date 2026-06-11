@@ -10,6 +10,7 @@ import {
   FileText,
   Trash2,
   Video,
+  CloudCheck,
 } from 'lucide-react-native';
 import FormInput from '../FormInput';
 import { styles } from './addSpaceStyles';
@@ -63,8 +64,8 @@ type Props = {
   setValue: UseFormSetValue<SpaceFormData>;
   showSpaceTypeModal: boolean;
   setShowSpaceTypeModal: (v: boolean) => void;
-  uploadedDocs: Array<{ name: string; uri: string }>;
-  setUploadedDocs: React.Dispatch<React.SetStateAction<Array<{ name: string; uri: string }>>>;
+  uploadedDocs: Array<{ name: string; uri: string; id?: number }>;
+  setUploadedDocs: React.Dispatch<React.SetStateAction<Array<{ name: string; uri: string; id?: number }>>>;
   handlePickDocument: () => void;
   // Space media pickers + current selections
   frontPhotoUri?: string | null;
@@ -220,10 +221,16 @@ export default function Step4Documents({
 
         {uploadedDocs.map((doc, index) => (
           <View key={index} style={styles.uploadedDocRow}>
-            <FileText size={16} color={Colors.textSecondary} />
-            <Text style={styles.uploadedDocName} numberOfLines={1}>
-              {doc.name}
-            </Text>
+            {doc.id
+              ? <CloudCheck size={16} color={Colors.success} />
+              : <FileText size={16} color={Colors.textSecondary} />
+            }
+            <View style={{ flex: 1 }}>
+              <Text style={styles.uploadedDocName} numberOfLines={1}>{doc.name}</Text>
+              {doc.id && (
+                <Text style={{ fontSize: 11, color: Colors.success }}>Already uploaded ✓</Text>
+              )}
+            </View>
             <TouchableOpacity
               onPress={() => setUploadedDocs((prev) => prev.filter((_, i) => i !== index))}
             >

@@ -54,6 +54,30 @@ export const api = {
 
   delete: <T = any>(path: string, init?: Omit<RequestInit, 'method'>) =>
     apiCall<T>(buildUrl(path), { ...init, method: 'DELETE' }),
+
+  /**
+   * Upload one or more files as multipart/form-data.
+   * Auth header is added automatically; Content-Type is left to fetch.
+   *
+   * @param files   files to attach, e.g. [{ field:'file', uri, name, type }]
+   * @param fields  optional extra text fields appended to the form
+   */
+  upload: <T = any>(
+    path: string,
+    files: Array<{ field: string; uri: string; name: string; type: string }>,
+    fields?: Record<string, string>,
+    method: 'POST' | 'PUT' = 'POST'
+  ) => {
+    const form = new FormData();
+    for (const f of files) {
+      // React Native FormData file shape.
+      form.append(f.field, { uri: f.uri, name: f.name, type: f.type } as any);
+    }
+    if (fields) {
+      for (const [k, v] of Object.entries(fields)) form.append(k, v);
+    }
+    return apiCall<T>(buildUrl(path), { method, body: form as any });
+  },
 };
 
 export { ApiError };

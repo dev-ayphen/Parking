@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { db } from '../config/database';
+import { storageService } from './storage.service';
+import { BUCKETS } from '../config/supabase';
 
 // Validation schemas
 const completeProfileSchema = z.object({
@@ -133,6 +135,42 @@ export const userService = {
       }
       throw error;
     }
+  },
+
+  /**
+   * Upload a new profile photo to the public bucket and store its URL on the user.
+   * Old photo (if stored in our bucket) is deleted best-effort.
+   */
+  updateProfilePhoto: async (
+    userId: number,
+    file: { buffer: Buffer; originalname: string; mimetype: string }
+  ) => {
+    const existing = await db.user.findUnique({
+      where: { id: userId },
+      select: { photoUrl: true },
+    });
+
+    const stored = await storageService.uploadPublic({
+      buffer: file.buffer,
+      originalName: file.originalname,
+      mimeType: file.mimetype,
+      folder: `profiles/${userId}`,
+    });
+
+    const user = await db.user.update({
+      where: { id: userId },
+      data: { photoUrl: stored.url },
+      select: { id: true, photoUrl: true },
+    });
+
+    // Best-effort cleanup of the previous object (only if it's one of ours).
+    const old = existing?.photoUrl;
+    if (old && old.includes(`/${BUCKETS.PUBLIC}/`)) {
+      const key = old.split(`/${BUCKETS.PUBLIC}/`)[1];
+      if (key) await storageService.remove(key, BUCKETS.PUBLIC).catch(() => {});
+    }
+
+    return { success: true, photoUrl: user.photoUrl };
   },
 
   completeProfile: async (userId: number, data: any) => {

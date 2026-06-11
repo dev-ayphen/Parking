@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, Modal, FlatList } from 'react-native';
+import { View, Text, TouchableOpacity, Modal, FlatList, Image } from 'react-native';
 import { Control, Controller, FieldErrors, UseFormSetValue, UseFormWatch } from 'react-hook-form';
 import {
   ChevronDown,
@@ -66,6 +66,13 @@ type Props = {
   uploadedDocs: Array<{ name: string; uri: string }>;
   setUploadedDocs: React.Dispatch<React.SetStateAction<Array<{ name: string; uri: string }>>>;
   handlePickDocument: () => void;
+  // Space media pickers + current selections
+  frontPhotoUri?: string | null;
+  areaPhotoUri?: string | null;
+  areaVideoUri?: string | null;
+  onPickFrontPhoto?: () => void;
+  onPickAreaPhoto?: () => void;
+  onPickAreaVideo?: () => void;
 };
 
 export default function Step4Documents({
@@ -78,6 +85,12 @@ export default function Step4Documents({
   uploadedDocs,
   setUploadedDocs,
   handlePickDocument,
+  frontPhotoUri,
+  areaPhotoUri,
+  areaVideoUri,
+  onPickFrontPhoto,
+  onPickAreaPhoto,
+  onPickAreaVideo,
 }: Props) {
   return (
     <View style={styles.formCard}>
@@ -230,31 +243,29 @@ export default function Step4Documents({
         </Text>
         <View style={styles.uploadGrid}>
           <TouchableOpacity
-            style={[styles.uploadBox, watch('frontPhoto') && styles.uploadBoxActive]}
-            onPress={() =>
-              setValue('frontPhoto', !watch('frontPhoto'), { shouldValidate: true })
-            }
+            style={[styles.uploadBox, frontPhotoUri && styles.uploadBoxActive]}
+            onPress={onPickFrontPhoto}
           >
-            {watch('frontPhoto') ? (
-              <CheckCircle size={28} color={Colors.success} />
+            {frontPhotoUri ? (
+              <Image source={{ uri: frontPhotoUri }} style={styles.uploadPreview} />
             ) : (
               <Camera size={28} color={Colors.textMuted} />
             )}
             <Text style={styles.uploadBoxText}>Front Photo</Text>
-            <Text style={styles.uploadBoxSubtext}>Required</Text>
+            <Text style={styles.uploadBoxSubtext}>{frontPhotoUri ? 'Tap to change' : 'Required'}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.uploadBox, watch('areaPhoto') && styles.uploadBoxActive]}
-            onPress={() => setValue('areaPhoto', !watch('areaPhoto'))}
+            style={[styles.uploadBox, areaPhotoUri && styles.uploadBoxActive]}
+            onPress={onPickAreaPhoto}
           >
-            {watch('areaPhoto') ? (
-              <CheckCircle size={28} color={Colors.success} />
+            {areaPhotoUri ? (
+              <Image source={{ uri: areaPhotoUri }} style={styles.uploadPreview} />
             ) : (
               <Camera size={28} color={Colors.textMuted} />
             )}
             <Text style={styles.uploadBoxText}>Area Photo</Text>
-            <Text style={styles.uploadBoxSubtext}>Optional</Text>
+            <Text style={styles.uploadBoxSubtext}>{areaPhotoUri ? 'Tap to change' : 'Optional'}</Text>
           </TouchableOpacity>
         </View>
         {errors.frontPhoto && (
@@ -268,18 +279,18 @@ export default function Step4Documents({
           <TouchableOpacity
             style={[
               styles.uploadBox,
-              watch('areaVideo') && styles.uploadBoxActive,
+              areaVideoUri && styles.uploadBoxActive,
               { maxWidth: '48%' },
             ]}
-            onPress={() => setValue('areaVideo', !watch('areaVideo'))}
+            onPress={onPickAreaVideo}
           >
-            {watch('areaVideo') ? (
+            {areaVideoUri ? (
               <CheckCircle size={28} color={Colors.success} />
             ) : (
               <Video size={28} color={Colors.textMuted} />
             )}
             <Text style={styles.uploadBoxText}>Area Video</Text>
-            <Text style={styles.uploadBoxSubtext}>Optional</Text>
+            <Text style={styles.uploadBoxSubtext}>{areaVideoUri ? 'Selected' : 'Optional'}</Text>
           </TouchableOpacity>
         </View>
         <Text style={styles.uploadDocHint}>{VIDEO_LIMITS.hintLabel}</Text>

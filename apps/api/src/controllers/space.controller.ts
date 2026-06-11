@@ -28,6 +28,24 @@ export const spaceController = {
     }
   },
 
+  /** POST /spaces/:id/media — multipart: frontPhoto, areaPhoto, areaVideo (any subset) */
+  uploadMedia: async (req: Request, res: Response) => {
+    try {
+      assertAuth(req);
+      const spaceId = parseInt(req.params.id, 10);
+      const f = req.files as Record<string, Express.Multer.File[]> | undefined;
+      const pick = (name: string) => (f?.[name]?.[0] ? f[name][0] : undefined);
+      const result = await spaceService.uploadMedia(spaceId, req.user.id, {
+        frontPhoto: pick('frontPhoto'),
+        areaPhoto: pick('areaPhoto'),
+        areaVideo: pick('areaVideo'),
+      });
+      res.status(200).json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
   createSpace: async (req: Request, res: Response) => {
     try {
       assertAuth(req);

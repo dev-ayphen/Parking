@@ -1,7 +1,7 @@
 import { db } from '../config/database';
 import { redis } from '../config/redis';
-import path from 'path';
-import fs from 'fs';
+import { storageService } from './storage.service';
+import { BUCKETS } from '../config/supabase';
 
 const REDIS_DOC_TTL = 60 * 60; // 1 hour
 
@@ -174,19 +174,35 @@ export const uploadSpaceDocument = async (
   return doc;
 };
 
-/** List documents for a space. Uses Redis to cache the result. */
+/**
+ * List documents for a space. Caches the raw DB rows (which hold bare storage keys
+ * in `fileUrl`), then attaches a FRESH signed URL on every call so expiring URLs
+ * are never cached.
+ */
 export const listSpaceDocuments = async (spaceId: number) => {
   const cacheKey = docStatusKey(spaceId);
+  let docs: any[];
+
   const cached = await redis.get(cacheKey).catch(() => null);
-  if (cached) return JSON.parse(cached);
+  if (cached) {
+    docs = JSON.parse(cached);
+  } else {
+    docs = await db.spaceDocument.findMany({
+      where: { spaceId },
+      orderBy: { createdAt: 'desc' },
+    });
+    await redis.set(cacheKey, JSON.stringify(docs), 'EX', REDIS_DOC_TTL).catch(() => {});
+  }
 
-  const docs = await db.spaceDocument.findMany({
-    where: { spaceId },
-    orderBy: { createdAt: 'desc' },
-  });
-
-  await redis.set(cacheKey, JSON.stringify(docs), 'EX', REDIS_DOC_TTL).catch(() => {});
-  return docs;
+  // Resolve each stored key to a short-lived signed URL (private bucket).
+  return Promise.all(
+    docs.map(async (d) => ({
+      ...d,
+      fileUrl: await storageService
+        .resolveUrl(d.fileUrl, BUCKETS.PRIVATE)
+        .catch(() => d.fileUrl), // fall back to raw key if signing fails
+    }))
+  );
 };
 
 /** Admin: verify or reject a document. */
@@ -221,9 +237,11 @@ export const deleteSpaceDocument = async (docId: number, ownerId: number) => {
   });
   if (!doc || doc.space.ownerId !== ownerId) throw { status: 403, message: 'Not found or access denied' };
 
-  // Remove file from disk
-  const filePath = path.join(process.cwd(), doc.fileUrl.replace(/^\//, ''));
-  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  // Remove file from Supabase (best-effort — never block DB cleanup on storage errors).
+  // Skip legacy rows whose fileUrl is a full URL or old /uploads path.
+  if (doc.fileUrl && !/^https?:\/\//.test(doc.fileUrl) && !doc.fileUrl.startsWith('/uploads')) {
+    await storageService.remove(doc.fileUrl, BUCKETS.PRIVATE).catch(() => {});
+  }
 
   await db.spaceDocument.delete({ where: { id: docId } });
   await invalidateDocCache(doc.spaceId);

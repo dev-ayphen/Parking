@@ -9,10 +9,12 @@ import {View,
   TextInput,
   Alert,
   KeyboardAvoidingView,
-  ActivityIndicator} from 'react-native';
+  ActivityIndicator,
+  Image} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Paperclip, ChevronDown, CheckCircle2 } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { Paperclip, ChevronDown, CheckCircle2, X } from 'lucide-react-native';
 import PageHeader from '../../../components/PageHeader';
 import { api } from '../../../services/api';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../../theme';
@@ -50,6 +52,8 @@ export default function CreateTicketScreen() {
   const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [prefilling, setPrefilling] = useState(true);
+  const [attachments, setAttachments] = useState<string[]>([]); // local URIs
+  const [attaching, setAttaching] = useState(false);
 
   // Prefill contact details from user profile
   useEffect(() => {
@@ -68,6 +72,27 @@ export default function CreateTicketScreen() {
     })();
   }, []);
 
+  const handlePickAttachment = async () => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission needed', 'Allow photo access to attach a screenshot.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.8,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+      setAttachments((prev) => [...prev, result.assets[0].uri].slice(0, 5));
+    } catch {
+      Alert.alert('Error', 'Failed to pick file');
+    }
+  };
+
+  const removeAttachment = (uri: string) =>
+    setAttachments((prev) => prev.filter((u) => u !== uri));
+
   const handleSubmit = async () => {
     if (!subject.trim() || !description.trim()) {
       Alert.alert('Missing details', 'Subject and description are required.');
@@ -75,11 +100,27 @@ export default function CreateTicketScreen() {
     }
     try {
       setSubmitting(true);
+
+      // Upload any attachments first → get public URLs to include with the ticket.
+      let attachmentUrls: string[] = [];
+      if (attachments.length > 0) {
+        setAttaching(true);
+        const files = attachments.map((uri, i) => {
+          const ext = (uri.split('.').pop() || 'jpg').toLowerCase();
+          const type = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+          return { field: 'files', uri, name: `attachment_${i}.${ext}`, type };
+        });
+        const up = await api.upload('/uploads/evidence', files);
+        attachmentUrls = up.urls || [];
+        setAttaching(false);
+      }
+
       const json = await api.post('/support', {
         subject: subject.trim(),
         description: description.trim(),
         category: category.value,
         priority: priority.value,
+        attachmentUrls,
       });
       if (!json.success) {
         Alert.alert('Error', json.error || 'Failed to create ticket');
@@ -243,10 +284,34 @@ export default function CreateTicketScreen() {
               />
             </View>
 
-            <TouchableOpacity style={styles.attachmentButton} activeOpacity={0.7}>
+            <TouchableOpacity
+              style={styles.attachmentButton}
+              activeOpacity={0.7}
+              onPress={handlePickAttachment}
+              disabled={attachments.length >= 5}
+            >
               <Paperclip size={18} color={Colors.textSecondary} />
-              <Text style={styles.attachmentText}>Attach File/Screenshot (Optional)</Text>
+              <Text style={styles.attachmentText}>
+                {attachments.length >= 5 ? 'Maximum 5 files' : 'Attach File/Screenshot (Optional)'}
+              </Text>
             </TouchableOpacity>
+
+            {attachments.length > 0 && (
+              <View style={styles.attachmentThumbs}>
+                {attachments.map((uri) => (
+                  <View key={uri} style={styles.thumbWrap}>
+                    <Image source={{ uri }} style={styles.thumb} />
+                    <TouchableOpacity
+                      style={styles.thumbRemove}
+                      onPress={() => removeAttachment(uri)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <X size={12} color="#FFFFFF" strokeWidth={3} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -367,6 +432,32 @@ const styles = StyleSheet.create({
     height: 48,
     borderRadius: BorderRadius.md,                  // 12 = md ✓
     backgroundColor: Colors.surfaceBg,
+  },
+  attachmentThumbs: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.md,
+    marginTop: Spacing.md,
+  },
+  thumbWrap: {
+    position: 'relative',
+  },
+  thumb: {
+    width: 64,
+    height: 64,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceBg,
+  },
+  thumbRemove: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: Colors.textPrimary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   attachmentButton: {
     flexDirection: 'row',

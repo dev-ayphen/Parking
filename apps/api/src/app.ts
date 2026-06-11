@@ -1,7 +1,6 @@
 import express, { Express, Request, Response, NextFunction, ErrorRequestHandler } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
-import path from 'path';
 import jwt from 'jsonwebtoken';
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { env } from './config/env';
@@ -40,8 +39,8 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve uploaded documents (space docs, etc.)
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+// NOTE: Files are now stored in Supabase Storage (see services/storage.service.ts),
+// not on local disk — the legacy `/uploads` static handler has been removed.
 
 // ============================================================================
 // ROUTES

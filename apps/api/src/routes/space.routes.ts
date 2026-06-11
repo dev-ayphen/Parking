@@ -3,7 +3,7 @@ import { authenticate, requireRole } from '../middleware/auth';
 import { spaceCreationLimiter } from '../middleware/rateLimit';
 import { validate } from '../middleware/validate';
 import { searchSpacesQuerySchema } from '../validations/space.validation';
-import { uploadDoc } from '../middleware/upload';
+import { uploadDoc, uploadSpaceMedia } from '../middleware/upload';
 import { spaceController } from '../controllers/space.controller';
 import { documentController } from '../controllers/document.controller';
 
@@ -23,6 +23,9 @@ router.get('/', authenticate, requireRole('ADMIN'), spaceController.getAllSpaces
 
 // Space creation — authenticated + rate-limited (anti-spam for fake listings)
 router.post('/', authenticate, spaceCreationLimiter, spaceController.createSpace);
+
+// Space media (photos + video) — uploaded after creation, owner-only
+router.post('/:id/media', authenticate, uploadSpaceMedia, spaceController.uploadMedia);
 
 // Space mutation — authenticated + ownership enforced in service layer
 router.put('/:id', authenticate, spaceController.updateSpace);

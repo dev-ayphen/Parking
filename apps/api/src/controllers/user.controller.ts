@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { userService } from '../services/user.service';
-import { sendError, assertAuth } from '../utils/errors';
+import { sendError, assertAuth, BadRequest } from '../utils/errors';
+import { ErrorCode } from '../utils/errorCodes';
 
 export const userController = {
   getProfile: async (req: Request, res: Response) => {
@@ -17,6 +18,18 @@ export const userController = {
     try {
       assertAuth(req);
       const result = await userService.updateProfile(req.user.id, req.body);
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
+  /** POST /users/me/photo — multipart/form-data with `file` (image) */
+  uploadPhoto: async (req: Request, res: Response) => {
+    try {
+      assertAuth(req);
+      if (!req.file) throw BadRequest('No image uploaded', ErrorCode.VALIDATION_ERROR);
+      const result = await userService.updateProfilePhoto(req.user.id, req.file);
       res.json(result);
     } catch (error) {
       sendError(res, error);

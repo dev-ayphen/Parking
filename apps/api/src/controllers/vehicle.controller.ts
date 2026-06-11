@@ -1,8 +1,29 @@
 import { Request, Response } from 'express';
 import { vehicleService } from '../services/vehicle.service';
 import { createVehicleSchema } from '../validations/vehicle.validation';
+import { sendError, assertAuth, BadRequest } from '../utils/errors';
+import { ErrorCode } from '../utils/errorCodes';
 
 export const vehicleController = {
+  /** POST /vehicles/:id/media — multipart: frontPhoto, sidePhoto, rcBook (any subset) */
+  uploadMedia: async (req: Request, res: Response) => {
+    try {
+      assertAuth(req);
+      const vehicleId = parseInt(req.params.id, 10);
+      if (isNaN(vehicleId)) throw BadRequest('Invalid vehicle ID', ErrorCode.INVALID_INPUT);
+      const f = req.files as Record<string, Express.Multer.File[]> | undefined;
+      const pick = (name: string) => (f?.[name]?.[0] ? f[name][0] : undefined);
+      const result = await vehicleService.uploadMedia(vehicleId, req.user.id, {
+        frontPhoto: pick('frontPhoto'),
+        sidePhoto: pick('sidePhoto'),
+        rcBook: pick('rcBook'),
+      });
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
   listVehicles: async (req: Request, res: Response) => {
     try {
       const userId = req.user?.id;

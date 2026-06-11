@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useTheme } from '../../hooks/useTheme';
-import { Spacing, FontSize, FontWeight, Colors } from '../../theme/colors';
+import { Spacing, FontSize, FontWeight } from '../../theme/colors';
 
 interface PersonalizedGreetingProps {
   userName: string;

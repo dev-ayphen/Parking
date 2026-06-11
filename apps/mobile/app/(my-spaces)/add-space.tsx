@@ -190,6 +190,10 @@ export default function AddSpaceScreen() {
   const [markerCoord, setMarkerCoord] = useState({ latitude: 12.9716, longitude: 77.5946 });
   const mapRef = useRef<LeafletMapHandle>(null);
   const [uploadedDocs, setUploadedDocs] = useState<Array<{ name: string; uri: string }>>([]);
+  // Real media URIs for space photos/video (uploaded after the space is created).
+  const [frontPhotoUri, setFrontPhotoUri] = useState<string | null>(null);
+  const [areaPhotoUri, setAreaPhotoUri] = useState<string | null>(null);
+  const [areaVideoUri, setAreaVideoUri] = useState<string | null>(null);
   const [showAvailabilityModal, setShowAvailabilityModal] = useState(false);
   const [modalAvailability, setModalAvailability] = useState('');
   const [modalStartTime, setModalStartTime] = useState('');
@@ -326,6 +330,53 @@ export default function AddSpaceScreen() {
     }
   };
 
+  // Pick a space photo (front/area) and remember its URI + set the form flag.
+  const pickSpacePhoto = async (
+    kind: 'front' | 'area',
+    field: 'frontPhoto' | 'areaPhoto'
+  ) => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission Required', 'Please allow access to your photo library.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.8,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+      const uri = result.assets[0].uri;
+      if (kind === 'front') setFrontPhotoUri(uri);
+      else setAreaPhotoUri(uri);
+      setValue(field, true, { shouldValidate: true });
+    } catch {
+      Alert.alert('Error', 'Failed to pick photo');
+    }
+  };
+
+  // Pick a short area video.
+  const pickAreaVideo = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission Required', 'Please allow access to your photo library.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+        quality: 0.8,
+        videoMaxDuration: 30,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+      setAreaVideoUri(result.assets[0].uri);
+      setValue('areaVideo', true);
+    } catch {
+      Alert.alert('Error', 'Failed to pick video');
+    }
+  };
+
   // Auto-format typed digits into HH:MM (e.g. "0930" → "09:30")
   const formatTimeInput = (raw: string): string => {
     const digits = raw.replace(/\D/g, '').slice(0, 4);
@@ -406,6 +457,30 @@ export default function AddSpaceScreen() {
 
       const responseData = await api.post('/spaces', payload);
       const space = responseData.space;
+
+      // Upload real photos/video to the new space (best-effort — space already exists).
+      const mediaFiles: Array<{ field: string; uri: string; name: string; type: string }> = [];
+      const guess = (uri: string) => {
+        const ext = (uri.split('.').pop() || '').toLowerCase();
+        if (ext === 'png') return { ext: 'png', type: 'image/png' };
+        if (ext === 'webp') return { ext: 'webp', type: 'image/webp' };
+        if (ext === 'mov') return { ext: 'mov', type: 'video/quicktime' };
+        if (ext === 'mp4') return { ext: 'mp4', type: 'video/mp4' };
+        return { ext: 'jpg', type: 'image/jpeg' };
+      };
+      if (frontPhotoUri) { const g = guess(frontPhotoUri); mediaFiles.push({ field: 'frontPhoto', uri: frontPhotoUri, name: `front.${g.ext}`, type: g.type }); }
+      if (areaPhotoUri)  { const g = guess(areaPhotoUri);  mediaFiles.push({ field: 'areaPhoto',  uri: areaPhotoUri,  name: `area.${g.ext}`,  type: g.type }); }
+      if (areaVideoUri)  { const g = guess(areaVideoUri);  mediaFiles.push({ field: 'areaVideo',  uri: areaVideoUri,  name: `video.${g.ext}`, type: g.type }); }
+
+      if (mediaFiles.length > 0) {
+        try {
+          await api.upload(`/spaces/${space.id}/media`, mediaFiles);
+        } catch (e) {
+          // Don't fail the whole flow — surface a soft warning; owner can re-add media later.
+          if (__DEV__) console.log('[ADD-SPACE] media upload failed', e);
+        }
+      }
+
       setSubmittedSpace({
         id: space.id,
         name: space.name,
@@ -606,6 +681,12 @@ export default function AddSpaceScreen() {
               uploadedDocs={uploadedDocs}
               setUploadedDocs={setUploadedDocs}
               handlePickDocument={handlePickDocument}
+              frontPhotoUri={frontPhotoUri}
+              areaPhotoUri={areaPhotoUri}
+              areaVideoUri={areaVideoUri}
+              onPickFrontPhoto={() => pickSpacePhoto('front', 'frontPhoto')}
+              onPickAreaPhoto={() => pickSpacePhoto('area', 'areaPhoto')}
+              onPickAreaVideo={pickAreaVideo}
             />
           )}
 

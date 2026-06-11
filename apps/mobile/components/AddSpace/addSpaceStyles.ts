@@ -234,6 +234,12 @@ export const styles = StyleSheet.create({
     backgroundColor: Colors.successBg,
     borderStyle: 'solid',
   },
+  uploadPreview: {
+    width: 56,
+    height: 56,
+    borderRadius: BorderRadius.sm,
+    marginBottom: 6,
+  },
   uploadBoxText: {
     fontSize: FontSize.sm,
     fontWeight: FontWeight.semibold,

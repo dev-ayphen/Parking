@@ -136,7 +136,7 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 12,
     color: '#64748B',
-    fontWeight: FontWeight.regular,
+    fontWeight: FontWeight.normal,
     lineHeight: 17,
   },
   illustrationBox: {

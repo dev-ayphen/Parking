@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { userController } from '../controllers/user.controller';
 import { authenticate } from '../middleware/auth';
+import { uploadImage } from '../middleware/upload';
 
 const router = Router();
 
@@ -8,6 +9,7 @@ const router = Router();
 router.get('/me', authenticate, userController.getProfile);
 router.put('/me', authenticate, userController.updateProfile);
 router.put('/me/complete-profile', authenticate, userController.completeProfile);
+router.post('/me/photo', authenticate, uploadImage, userController.uploadPhoto);
 
 // Public route - no authentication needed
 router.get('/:id', userController.getPublicProfile);

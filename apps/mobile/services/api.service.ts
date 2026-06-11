@@ -91,11 +91,22 @@ export async function apiCall<T = any>(
   const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.TIMEOUT);
 
   try {
-    // Get token from secure storage if not already provided in headers
+    // Get token from secure storage if not already provided in headers.
+    // For FormData bodies, do NOT set Content-Type — fetch must add the
+    // multipart boundary itself, or the server can't parse the upload.
+    const isFormData =
+      typeof FormData !== 'undefined' && options.body instanceof FormData;
+
     let headers: Record<string, string> = {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...(options.headers as Record<string, string>),
     };
+
+    if (isFormData) {
+      // Strip any caller-supplied JSON content-type so the boundary is generated.
+      delete headers['Content-Type'];
+      delete (headers as any)['content-type'];
+    }
 
     // Add token to Authorization header if available and not already set
     if (!headers.Authorization && !headers.authorization) {

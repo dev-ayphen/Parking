@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { vehicleController } from '../controllers/vehicle.controller';
 import { authenticate } from '../middleware/auth';
+import { uploadVehicleMedia } from '../middleware/upload';
 
 const router = Router();
 
@@ -11,5 +12,6 @@ router.get('/', vehicleController.listVehicles);
 router.post('/', vehicleController.addVehicle);
 router.put('/:id', vehicleController.updateVehicle);
 router.delete('/:id', vehicleController.deleteVehicle);
+router.post('/:id/media', uploadVehicleMedia, vehicleController.uploadMedia);
 
 export default router;

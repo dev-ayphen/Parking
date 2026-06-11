@@ -14,6 +14,7 @@ import legalRouter from './legal.routes';
 import incidentRouter from './incident.routes';
 import abuseRouter from './abuse.routes';
 import userPreferencesRouter from './userPreferences.routes';
+import uploadRouter from './upload.routes';
 
 const router = Router();
 
@@ -32,5 +33,6 @@ router.use('/legal', legalRouter);
 router.use('/incidents', incidentRouter);
 router.use('/abuse-reports', abuseRouter);
 router.use('/user-preferences', userPreferencesRouter);
+router.use('/uploads', uploadRouter);
 
 export default router;

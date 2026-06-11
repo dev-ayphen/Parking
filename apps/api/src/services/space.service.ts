@@ -1,6 +1,8 @@
 import { Prisma } from '@prisma/client';
 import { db } from '../config/database';
 import { CreateSpaceInput, SearchSpacesQuery } from '../validations/space.validation';
+import { storageService } from './storage.service';
+import { BUCKETS } from '../config/supabase';
 
 const ACTIVE_BOOKING_STATUSES = ['PENDING_APPROVAL', 'APPROVED', 'ACTIVE'];
 
@@ -42,7 +44,49 @@ async function enrichSpacesWithStats(spaces: any[]): Promise<any[]> {
   });
 }
 
+type SpaceMediaFiles = {
+  frontPhoto?: { buffer: Buffer; originalname: string; mimetype: string };
+  areaPhoto?: { buffer: Buffer; originalname: string; mimetype: string };
+  areaVideo?: { buffer: Buffer; originalname: string; mimetype: string };
+};
+
 export const spaceService = {
+  /**
+   * Upload space photos/video to the PUBLIC bucket (display media) and store
+   * permanent URLs on the space. Owner-only. Replaces any existing media.
+   */
+  uploadMedia: async (spaceId: number, ownerId: number, files: SpaceMediaFiles) => {
+    const space = await db.space.findFirst({ where: { id: spaceId, ownerId } });
+    if (!space) throw { status: 403, message: 'Space not found or access denied' };
+
+    const folder = `spaces/${spaceId}`;
+    const data: Record<string, string> = {};
+
+    if (files.frontPhoto) {
+      const s = await storageService.uploadPublic({ ...files.frontPhoto, originalName: files.frontPhoto.originalname, mimeType: files.frontPhoto.mimetype, folder });
+      if (s.url) data.frontPhotoUrl = s.url;
+    }
+    if (files.areaPhoto) {
+      const s = await storageService.uploadPublic({ ...files.areaPhoto, originalName: files.areaPhoto.originalname, mimeType: files.areaPhoto.mimetype, folder });
+      if (s.url) data.areaPhotoUrl = s.url;
+    }
+    if (files.areaVideo) {
+      const s = await storageService.uploadPublic({ ...files.areaVideo, originalName: files.areaVideo.originalname, mimeType: files.areaVideo.mimetype, folder });
+      if (s.url) data.videoUrl = s.url;
+    }
+
+    if (Object.keys(data).length === 0) {
+      throw { status: 400, message: 'No media files provided' };
+    }
+
+    const updated = await db.space.update({
+      where: { id: spaceId },
+      data,
+      select: { id: true, frontPhotoUrl: true, areaPhotoUrl: true, videoUrl: true },
+    });
+    return { success: true, space: updated };
+  },
+
   /**
    * Search verified parking spaces.
    *
@@ -251,12 +295,13 @@ export const spaceService = {
         endTime: data.endTime || null,
         requiresAdminReview: data.spaceType === 'Open Frontage Area',
         amenities: data.amenities || [],
-        frontPhotoUrl: data.frontPhoto ? `space_${Date.now()}_front.jpg` : null,
-        areaPhotoUrl: data.areaPhoto ? `space_${Date.now()}_area.jpg` : null,
-        videoUrl: data.areaVideo ? `space_${Date.now()}_video.mp4` : null,
+        // Real media is uploaded separately via POST /spaces/:id/media after creation.
+        frontPhotoUrl: null,
+        areaPhotoUrl: null,
+        videoUrl: null,
         visibility: data.visibility || null,
         docType: data.docType,
-        docPhotoUrl: data.docType ? `space_${Date.now()}_doc.jpg` : null,
+        docPhotoUrl: null,
         status: 'PENDING',
         features: [],
       },

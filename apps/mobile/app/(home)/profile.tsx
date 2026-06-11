@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -14,9 +14,11 @@ import {
   ActivityIndicator,
   Animated,
   Keyboard,
+  Image,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import { User, Phone, Mail, Camera, ShieldAlert, X } from 'lucide-react-native';
 import { api } from '../../services/api';
 import { PageHeader, ScreenLoader } from '../../components';
@@ -40,6 +42,7 @@ const ProfileScreen = () => {
   const insets = useSafeAreaInsets();
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [photoUploading, setPhotoUploading] = useState(false);
 
   // ── Edit modal state ────────────────────────────────────────────
   const [modalVisible, setModalVisible] = useState(false);
@@ -71,6 +74,44 @@ const ProfileScreen = () => {
       Alert.alert('Error', 'Failed to load profile');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePickPhoto = async () => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission needed', 'Allow photo access to update your picture.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      setPhotoUploading(true);
+
+      // Derive a filename + mime from the picked asset.
+      const uriExt = (asset.uri.split('.').pop() || 'jpg').toLowerCase();
+      const ext = uriExt === 'png' ? 'png' : uriExt === 'webp' ? 'webp' : 'jpg';
+      const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+
+      const res = await api.upload(
+        '/users/me/photo',
+        [{ field: 'file', uri: asset.uri, name: `profile.${ext}`, type: mime }]
+      );
+
+      if (res.success && res.photoUrl) {
+        setUser((u) => (u ? { ...u, photoUrl: res.photoUrl } : u));
+      }
+    } catch (e) {
+      Alert.alert('Upload failed', (e as Error).message || 'Could not update photo.');
+    } finally {
+      setPhotoUploading(false);
     }
   };
 
@@ -170,9 +211,19 @@ const ProfileScreen = () => {
             <TouchableOpacity
               style={styles.avatarContainer}
               activeOpacity={0.8}
-              onPress={() => Alert.alert('Edit Photo', 'Choose a new profile picture.')}
+              onPress={handlePickPhoto}
+              disabled={photoUploading}
             >
-              <User size={32} color={Colors.primary} strokeWidth={2.5} />
+              {user.photoUrl ? (
+                <Image source={{ uri: user.photoUrl }} style={styles.avatarImage} />
+              ) : (
+                <User size={32} color={Colors.primary} strokeWidth={2.5} />
+              )}
+              {photoUploading && (
+                <View style={styles.avatarUploading}>
+                  <ActivityIndicator color={Colors.white} size="small" />
+                </View>
+              )}
               <View style={styles.editAvatarBadge}>
                 <Camera size={14} color={Colors.white} strokeWidth={2.5} />
               </View>
@@ -403,6 +454,20 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: Colors.primaryBg,
     position: 'relative',
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 36,
+  },
+  avatarUploading: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 36,
   },
   editAvatarBadge: {
     position: 'absolute',
@@ -497,7 +562,8 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.45)',
   },
   modalSheet: {

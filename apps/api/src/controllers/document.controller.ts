@@ -8,6 +8,7 @@ import {
   checkDocumentCompliance,
 } from '../services/document.service';
 import { auditService } from '../services/audit.service';
+import { storageService } from '../services/storage.service';
 import { sendError, BadRequest, assertAuth } from '../utils/errors';
 import { ErrorCode } from '../utils/errorCodes';
 
@@ -50,10 +51,16 @@ export const documentController = {
         throw BadRequest('documentType and documentLabel are required', ErrorCode.VALIDATION_ERROR);
       }
 
-      const fileUrl = `/uploads/space-docs/${req.file.filename}`;
+      // Documents are sensitive (KYC/RC) → private bucket; store the object KEY in the DB.
+      const stored = await storageService.uploadPrivate({
+        buffer: req.file.buffer,
+        originalName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        folder: `space-docs/${spaceId}`,
+      });
       const fileType = mimeToFileType(req.file.mimetype);
 
-      const doc = await uploadSpaceDocument(spaceId, req.user.id, documentType, documentLabel, fileUrl, fileType, req.file.size);
+      const doc = await uploadSpaceDocument(spaceId, req.user.id, documentType, documentLabel, stored.key, fileType, req.file.size);
       res.status(201).json({ success: true, document: doc });
     } catch (e) {
       sendError(res, e);

@@ -1,7 +1,56 @@
 import { db } from '../config/database';
 import { CreateVehicleInput } from '../validations/vehicle.validation';
+import { storageService } from './storage.service';
+import { BUCKETS } from '../config/supabase';
+
+type VehicleFile = { buffer: Buffer; originalname: string; mimetype: string };
 
 export const vehicleService = {
+  /**
+   * Upload vehicle media: front/side photos → public bucket (display);
+   * RC book → private bucket (sensitive doc, stored as a key for signing).
+   */
+  uploadMedia: async (
+    vehicleId: number,
+    userId: number,
+    files: { frontPhoto?: VehicleFile; sidePhoto?: VehicleFile; rcBook?: VehicleFile }
+  ) => {
+    const vehicle = await db.vehicle.findFirst({ where: { id: vehicleId, userId } });
+    if (!vehicle) throw { status: 403, message: 'Vehicle not found or access denied' };
+
+    const folder = `vehicles/${vehicleId}`;
+    const data: Record<string, string> = {};
+
+    if (files.frontPhoto) {
+      const s = await storageService.uploadPublic({ buffer: files.frontPhoto.buffer, originalName: files.frontPhoto.originalname, mimeType: files.frontPhoto.mimetype, folder });
+      if (s.url) data.frontPhotoUrl = s.url;
+    }
+    if (files.sidePhoto) {
+      const s = await storageService.uploadPublic({ buffer: files.sidePhoto.buffer, originalName: files.sidePhoto.originalname, mimeType: files.sidePhoto.mimetype, folder });
+      if (s.url) data.sidePhotoUrl = s.url;
+    }
+    if (files.rcBook) {
+      // RC book is a private document → store the object KEY (resolve to signed URL on read).
+      const s = await storageService.uploadPrivate({ buffer: files.rcBook.buffer, originalName: files.rcBook.originalname, mimeType: files.rcBook.mimetype, folder });
+      data.rcBookUrl = s.key;
+    }
+
+    if (Object.keys(data).length === 0) throw { status: 400, message: 'No media files provided' };
+
+    const updated = await db.vehicle.update({
+      where: { id: vehicleId },
+      data,
+      select: { id: true, frontPhotoUrl: true, sidePhotoUrl: true, rcBookUrl: true },
+    });
+
+    // Return a signed URL for the RC book so the client can display it immediately.
+    const rcBookUrl = updated.rcBookUrl
+      ? await storageService.resolveUrl(updated.rcBookUrl, BUCKETS.PRIVATE).catch(() => null)
+      : null;
+
+    return { success: true, vehicle: { ...updated, rcBookUrl } };
+  },
+
   listVehicles: async (userId: number) => {
     if (!userId || userId === 0) {
       throw new Error('User ID is required');

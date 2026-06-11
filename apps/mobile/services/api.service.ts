@@ -141,8 +141,18 @@ export async function apiCall<T = any>(
 
     clearTimeout(timeoutId);
 
-    // Parse response
-    const data = await response.json();
+    // Parse response defensively — some error paths (413 too-large, proxy errors,
+    // multer rejections) return non-JSON or empty bodies, which would otherwise
+    // throw a confusing "Failed to connect" instead of the real HTTP status.
+    const raw = await response.text();
+    let data: any = null;
+    if (raw) {
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        data = { error: raw.slice(0, 300) };
+      }
+    }
 
     // Check response status
     if (!response.ok) {

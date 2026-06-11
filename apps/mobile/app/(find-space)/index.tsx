@@ -234,9 +234,12 @@ const FindSpaceScreen = () => {
         if (newVehicleSidePhotoUri)  { const g = guess(newVehicleSidePhotoUri);  mediaFiles.push({ field: 'sidePhoto',  uri: newVehicleSidePhotoUri,  name: `side.${g.ext}`,  type: g.type }); }
         if (newVehicleRCBookUri)     { const g = guess(newVehicleRCBookUri);     mediaFiles.push({ field: 'rcBook',     uri: newVehicleRCBookUri,     name: `rc.${g.ext}`,    type: g.type }); }
         try {
+          if (__DEV__) console.log('[VEHICLE] uploading media:', mediaFiles.map(m => ({ field: m.field, uri: m.uri.slice(0, 40) })));
           await api.upload(`/vehicles/${vehicleId}/media`, mediaFiles);
         } catch (e) {
-          if (__DEV__) console.log('[VEHICLE] media upload failed', e);
+          const msg = (e as Error)?.message || 'unknown error';
+          if (__DEV__) console.log('[VEHICLE] media upload FAILED:', msg, e);
+          Alert.alert('Photo upload failed', `Vehicle saved, but photos didn't upload: ${msg}. Open the vehicle to retry.`);
         }
       }
 
@@ -296,8 +299,8 @@ const FindSpaceScreen = () => {
         ownershipType: editVehicleRole === 'Owner' ? 'OWNER' : 'DRIVER',
       });
 
-      // Upload only newly picked local files (skip existing Supabase https:// URLs)
-      const isLocal = (uri: string) => uri.startsWith('file://') || uri.startsWith('content://') || uri.startsWith('/');
+      // Upload any newly picked file (skip only confirmed remote http(s) Supabase URLs).
+      const needsUpload = (uri: string) => !!uri && !/^https?:\/\//i.test(uri);
       const guess = (uri: string) => {
         const ext = (uri.split('.').pop() || '').toLowerCase();
         if (ext === 'png') return { ext: 'png', type: 'image/png' };
@@ -305,11 +308,15 @@ const FindSpaceScreen = () => {
         return { ext: 'jpg', type: 'image/jpeg' };
       };
       const editMediaFiles: Array<{ field: string; uri: string; name: string; type: string }> = [];
-      if (editFrontPhotoUri && isLocal(editFrontPhotoUri)) { const g = guess(editFrontPhotoUri); editMediaFiles.push({ field: 'frontPhoto', uri: editFrontPhotoUri, name: `front.${g.ext}`, type: g.type }); }
-      if (editSidePhotoUri  && isLocal(editSidePhotoUri))  { const g = guess(editSidePhotoUri);  editMediaFiles.push({ field: 'sidePhoto',  uri: editSidePhotoUri,  name: `side.${g.ext}`,  type: g.type }); }
-      if (editRCBookUri     && isLocal(editRCBookUri))     { const g = guess(editRCBookUri);     editMediaFiles.push({ field: 'rcBook',     uri: editRCBookUri,     name: `rcbook.${g.ext}`, type: g.type }); }
+      if (editFrontPhotoUri && needsUpload(editFrontPhotoUri)) { const g = guess(editFrontPhotoUri); editMediaFiles.push({ field: 'frontPhoto', uri: editFrontPhotoUri, name: `front.${g.ext}`, type: g.type }); }
+      if (editSidePhotoUri  && needsUpload(editSidePhotoUri))  { const g = guess(editSidePhotoUri);  editMediaFiles.push({ field: 'sidePhoto',  uri: editSidePhotoUri,  name: `side.${g.ext}`,  type: g.type }); }
+      if (editRCBookUri     && needsUpload(editRCBookUri))     { const g = guess(editRCBookUri);     editMediaFiles.push({ field: 'rcBook',     uri: editRCBookUri,     name: `rcbook.${g.ext}`, type: g.type }); }
       if (editMediaFiles.length > 0) {
-        try { await api.upload(`/vehicles/${editingVehicle.id}/media`, editMediaFiles); } catch {}
+        try {
+          await api.upload(`/vehicles/${editingVehicle.id}/media`, editMediaFiles);
+        } catch (e) {
+          Alert.alert('Photo upload failed', `Vehicle details saved, but the photos didn't upload: ${(e as Error)?.message || 'unknown error'}`);
+        }
       }
 
       Alert.alert('Success', 'Vehicle updated successfully!');

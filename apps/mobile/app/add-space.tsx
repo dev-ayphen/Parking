@@ -628,21 +628,25 @@ export default function AddSpaceScreen() {
         if (ext === 'mp4') return { ext: 'mp4', type: 'video/mp4' };
         return { ext: 'jpg', type: 'image/jpeg' };
       };
-      // Only upload newly picked local files — skip Supabase URLs that are already on the server.
-      const isLocal = (uri: string) => uri.startsWith('file://') || uri.startsWith('content://') || uri.startsWith('/');
-      if (frontPhotoUri && isLocal(frontPhotoUri)) { const g = guess(frontPhotoUri); mediaFiles.push({ field: 'frontPhoto', uri: frontPhotoUri, name: `front.${g.ext}`, type: g.type }); }
-      if (areaPhotoUri  && isLocal(areaPhotoUri))  { const g = guess(areaPhotoUri);  mediaFiles.push({ field: 'areaPhoto',  uri: areaPhotoUri,  name: `area.${g.ext}`,  type: g.type }); }
-      if (areaVideoUri  && isLocal(areaVideoUri))  { const g = guess(areaVideoUri);  mediaFiles.push({ field: 'areaVideo',  uri: areaVideoUri,  name: `video.${g.ext}`, type: g.type }); }
+      // A file needs uploading unless it's ALREADY a remote Supabase URL (edit-mode prefill).
+      // Anything else (file://, content://, ph://, /var/..., asset-library://) is a fresh
+      // local pick that must be sent. Be permissive: only SKIP confirmed http(s) URLs.
+      const needsUpload = (uri: string) => !!uri && !/^https?:\/\//i.test(uri);
+      if (frontPhotoUri && needsUpload(frontPhotoUri)) { const g = guess(frontPhotoUri); mediaFiles.push({ field: 'frontPhoto', uri: frontPhotoUri, name: `front.${g.ext}`, type: g.type }); }
+      if (areaPhotoUri  && needsUpload(areaPhotoUri))  { const g = guess(areaPhotoUri);  mediaFiles.push({ field: 'areaPhoto',  uri: areaPhotoUri,  name: `area.${g.ext}`,  type: g.type }); }
+      if (areaVideoUri  && needsUpload(areaVideoUri))  { const g = guess(areaVideoUri);  mediaFiles.push({ field: 'areaVideo',  uri: areaVideoUri,  name: `video.${g.ext}`, type: g.type }); }
 
       // Track upload failures so we surface them instead of silently "succeeding".
       const uploadErrors: string[] = [];
 
       if (mediaFiles.length > 0) {
+        if (__DEV__) console.log('[ADD-SPACE] uploading media:', mediaFiles.map(m => ({ field: m.field, uri: m.uri.slice(0, 40), type: m.type })));
         try {
-          await api.upload(`/spaces/${space.id}/media`, mediaFiles);
+          const mediaRes = await api.upload(`/spaces/${space.id}/media`, mediaFiles);
+          if (__DEV__) console.log('[ADD-SPACE] media upload OK:', JSON.stringify(mediaRes?.space));
         } catch (e) {
           const msg = (e as Error)?.message || 'unknown error';
-          if (__DEV__) console.log('[ADD-SPACE] media upload failed', e);
+          if (__DEV__) console.log('[ADD-SPACE] media upload FAILED:', msg, e);
           uploadErrors.push(`Photos/video: ${msg}`);
         }
       }

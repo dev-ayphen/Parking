@@ -130,10 +130,11 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.circleLg,            // 32 = circleLg ✓
     height: 64,
     alignItems: 'center',
-    // 'space-around' distributes equal space on both sides of every item, so the
-    // five flex slots stay perfectly even and the center Verify button is dead-center.
-    justifyContent: 'space-around',
-    paddingHorizontal: Spacing['3xl'],
+    // Every slot is flex:1 and centered, so the five items are perfectly even
+    // and the center Verify button sits dead-center. No extra horizontal padding —
+    // the flex slots already fill the bar evenly; padding would skew the spacing.
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg,
     width: '100%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
@@ -145,7 +146,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    height: '100%',
+    height: 64,
   },
   verifyButtonWrapper: {
     flex: 1,                                          // equal slot → button sits dead-center

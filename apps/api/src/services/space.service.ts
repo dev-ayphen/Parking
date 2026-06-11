@@ -355,7 +355,11 @@ export const spaceService = {
     if (data.latitude !== undefined) updateData.lat = data.latitude;
     if (data.longitude !== undefined) updateData.lng = data.longitude;
     if (data.hourlyPrice) updateData.hourlyRate = data.hourlyPrice;
+    if (data.dailyRate !== undefined) updateData.dailyRate = data.dailyRate;
+    if (data.monthlyRate !== undefined) updateData.monthlyRate = data.monthlyRate;
     if (data.availability) updateData.availability = data.availability;
+    if (data.startTime !== undefined) updateData.startTime = data.startTime;
+    if (data.endTime !== undefined) updateData.endTime = data.endTime;
     if (data.amenities) updateData.amenities = data.amenities;
     if (data.visibility) updateData.visibility = data.visibility;
     if (data.docType) updateData.docType = data.docType;

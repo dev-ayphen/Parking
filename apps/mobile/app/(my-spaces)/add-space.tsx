@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,7 +16,7 @@ import { useTheme } from '../../hooks/useTheme';
 import { CheckCircle } from 'lucide-react-native';
 import { LeafletMapHandle } from '../../components/LeafletMap';
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { PageHeader } from '../../components';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
@@ -175,6 +175,10 @@ type SpaceFormData = z.infer<typeof createSpaceSchema>;
 export default function AddSpaceScreen() {
   const theme = useTheme();
   const router = useRouter();
+  const params = useLocalSearchParams<{ edit?: string }>();
+  const editId = params.edit ? parseInt(params.edit, 10) : null;
+  const isEdit = editId !== null && !Number.isNaN(editId);
+  const [loadingEdit, setLoadingEdit] = useState(isEdit);
   const [step, setStep] = useState(1);
   const [submittedSpace, setSubmittedSpace] = useState<{
     id: number;
@@ -237,16 +241,71 @@ export default function AddSpaceScreen() {
     defaultValues: EMPTY_DEFAULTS,
   });
 
-  // Reset everything when screen is focused (handles back-navigation reuse)
+  // Reset everything when screen is focused (handles back-navigation reuse).
+  // Skip the reset in edit mode — the prefill effect below populates the form instead.
   useFocusEffect(
     useCallback(() => {
+      if (isEdit) return;
       reset(EMPTY_DEFAULTS);
       setStep(1);
       setUploadedDocs([]);
       setLocationQuery('');
       setMarkerCoord({ latitude: 12.9716, longitude: 77.5946 });
-    }, [])
+    }, [isEdit])
   );
+
+  // Edit mode: fetch the existing space and prefill the form once.
+  useEffect(() => {
+    if (!isEdit || editId === null) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoadingEdit(true);
+        const res = await api.get(`/spaces/${editId}`);
+        const sp = res?.space ?? res; // controller may wrap in { space } or return raw
+        if (!sp || cancelled) return;
+
+        const lat = sp.lat ?? 12.9716;
+        const lng = sp.lng ?? 77.5946;
+
+        reset({
+          spaceName: sp.name ?? '',
+          spaceType: sp.spaceType,
+          parkingFor: sp.parkingFor,
+          capacity: sp.capacity ?? 1,
+          address: sp.address ?? '',
+          landmark: sp.landmark ?? '',
+          latitude: lat,
+          longitude: lng,
+          hourlyPrice: sp.hourlyRate != null ? String(sp.hourlyRate) : '',
+          dailyRate: sp.dailyRate != null ? String(sp.dailyRate) : '',
+          monthlyRate: sp.monthlyRate != null ? String(sp.monthlyRate) : '',
+          availability: sp.availability,
+          startTime: sp.startTime ?? '',
+          endTime: sp.endTime ?? '',
+          amenities: sp.amenities ?? [],
+          visibility: sp.visibility ?? undefined,
+          docType: sp.docType ?? undefined,
+          // Photos already exist on the server — mark as present so validation passes
+          frontPhoto: !!sp.frontPhotoUrl,
+          areaPhoto: !!sp.areaPhotoUrl,
+          areaVideo: !!sp.videoUrl,
+          // Compliance acknowledgments were accepted at creation; pre-check them for edit
+          acceptOwnerResponsibility: true,
+          acceptLegalCompliance: true,
+          acceptNonViolation: true,
+        });
+        setMarkerCoord({ latitude: lat, longitude: lng });
+      } catch (e) {
+        if (!cancelled) Alert.alert('Error', 'Could not load space details for editing.');
+      } finally {
+        if (!cancelled) setLoadingEdit(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isEdit, editId, reset]);
 
   const applyLocation = (lat: number, lng: number, displayAddress: string) => {
     setValue('latitude', lat, { shouldValidate: true });
@@ -455,7 +514,9 @@ export default function AddSpaceScreen() {
         confirmed: true,
       };
 
-      const responseData = await api.post('/spaces', payload);
+      const responseData = isEdit
+        ? await api.put(`/spaces/${editId}`, payload)
+        : await api.post('/spaces', payload);
       const space = responseData.space;
 
       // Upload real photos/video to the new space (best-effort — space already exists).
@@ -524,10 +585,11 @@ export default function AddSpaceScreen() {
             </View>
           </View>
 
-          <Text style={styles.successTitle}>Space Submitted!</Text>
+          <Text style={styles.successTitle}>{isEdit ? 'Space Updated!' : 'Space Submitted!'}</Text>
           <Text style={styles.successSubtitle}>
-            Your space has been sent to admin for verification. You'll be notified once it's
-            approved.
+            {isEdit
+              ? "Your changes have been saved. If the space was rejected, it's been resubmitted for review."
+              : "Your space has been sent to admin for verification. You'll be notified once it's approved."}
           </Text>
 
           {/* Submission details card */}
@@ -582,11 +644,24 @@ export default function AddSpaceScreen() {
     );
   }
 
+  // While fetching the space to edit, show a spinner so fields don't flash empty
+  if (loadingEdit) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="dark-content" />
+        <PageHeader title="Edit Space" onBack={() => router.back()} />
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
       <PageHeader
-        title={`Add Space  ${step}/5`}
+        title={`${isEdit ? 'Edit Space' : 'Add Space'}  ${step}/5`}
         onBack={handleBack}
         right={
           <TouchableOpacity

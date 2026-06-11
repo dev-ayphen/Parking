@@ -201,8 +201,12 @@ export default function UsersPage() {
                   <tr key={user.id} className="hover:bg-gray-50/50 transition-colors group">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-sm">
-                          {initialsOf(user.name)}
+                        <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-sm overflow-hidden">
+                          {user.photoUrl ? (
+                            <img src={user.photoUrl} alt={user.name} className="w-full h-full object-cover rounded-full" />
+                          ) : (
+                            initialsOf(user.name)
+                          )}
                         </div>
                         <div>
                           <p className="font-bold text-gray-900 text-sm">{user.name}</p>

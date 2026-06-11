@@ -476,8 +476,23 @@ export default function AddSpaceScreen() {
         try {
           await api.upload(`/spaces/${space.id}/media`, mediaFiles);
         } catch (e) {
-          // Don't fail the whole flow — surface a soft warning; owner can re-add media later.
           if (__DEV__) console.log('[ADD-SPACE] media upload failed', e);
+        }
+      }
+
+      // Upload each proof document to backend → Supabase private bucket
+      for (const doc of uploadedDocs) {
+        try {
+          const ext = (doc.uri.split('.').pop() || 'jpg').toLowerCase();
+          const mimeType = ext === 'png' ? 'image/png' : ext === 'pdf' ? 'application/pdf' : 'image/jpeg';
+          const docType = data.docType || 'Address Proof';
+          await api.upload(
+            `/spaces/${space.id}/documents`,
+            [{ field: 'file', uri: doc.uri, name: doc.name, type: mimeType }],
+            { documentType: docType, documentLabel: doc.name }
+          );
+        } catch (e) {
+          if (__DEV__) console.log('[ADD-SPACE] doc upload failed', doc.name, e);
         }
       }
 

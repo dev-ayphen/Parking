@@ -7,6 +7,7 @@ import {
   ScrollView,
   ActivityIndicator,
   RefreshControl,
+  Image,
 } from 'react-native';
 import { Car, Trash2, ChevronRight, Camera, UploadCloud, CheckCircle2 } from 'lucide-react-native';
 import FormLabel from '../FormLabel';
@@ -32,12 +33,13 @@ interface MyVehiclesTabProps {
   setNewVehicleType: (val: string) => void;
   newVehicleCapacity: string;
   setNewVehicleCapacity: (val: string) => void;
-  newVehicleFrontPhoto: boolean;
-  setNewVehicleFrontPhoto: (val: boolean) => void;
-  newVehicleSidePhoto: boolean;
-  setNewVehicleSidePhoto: (val: boolean) => void;
-  newVehicleRCBook: boolean;
-  setNewVehicleRCBook: (val: boolean) => void;
+  // URIs for real picked photos (null = not picked)
+  newVehicleFrontPhotoUri: string | null;
+  newVehicleSidePhotoUri: string | null;
+  newVehicleRCBookUri: string | null;
+  onPickFrontPhoto: () => void;
+  onPickSidePhoto: () => void;
+  onPickRCBook: () => void;
   newVehicleRole: string;
   setNewVehicleRole: (val: string) => void;
   handleSaveVehicle: () => void;
@@ -77,12 +79,12 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
   setNewVehicleType,
   newVehicleCapacity,
   setNewVehicleCapacity,
-  newVehicleFrontPhoto,
-  setNewVehicleFrontPhoto,
-  newVehicleSidePhoto,
-  setNewVehicleSidePhoto,
-  newVehicleRCBook,
-  setNewVehicleRCBook,
+  newVehicleFrontPhotoUri,
+  newVehicleSidePhotoUri,
+  newVehicleRCBookUri,
+  onPickFrontPhoto,
+  onPickSidePhoto,
+  onPickRCBook,
   newVehicleRole,
   setNewVehicleRole,
   handleSaveVehicle,
@@ -197,11 +199,11 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
           <FormLabel required={false}>Vehicle Photos</FormLabel>
           <View style={styles.photoUploadRow}>
             <TouchableOpacity
-              style={[styles.uploadBox, newVehicleFrontPhoto && styles.uploadBoxSuccess]}
-              onPress={() => setNewVehicleFrontPhoto(!newVehicleFrontPhoto)}
+              style={[styles.uploadBox, newVehicleFrontPhotoUri && styles.uploadBoxSuccess]}
+              onPress={onPickFrontPhoto}
             >
-              {newVehicleFrontPhoto ? (
-                <CheckCircle2 size={24} color={Colors.successAlt} />
+              {newVehicleFrontPhotoUri ? (
+                <Image source={{ uri: newVehicleFrontPhotoUri }} style={{ width: 48, height: 48, borderRadius: 6, marginBottom: 4 }} />
               ) : (
                 <Camera size={24} color={Colors.textMuted} />
               )}
@@ -209,11 +211,11 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.uploadBox, newVehicleSidePhoto && styles.uploadBoxSuccess]}
-              onPress={() => setNewVehicleSidePhoto(!newVehicleSidePhoto)}
+              style={[styles.uploadBox, newVehicleSidePhotoUri && styles.uploadBoxSuccess]}
+              onPress={onPickSidePhoto}
             >
-              {newVehicleSidePhoto ? (
-                <CheckCircle2 size={24} color={Colors.successAlt} />
+              {newVehicleSidePhotoUri ? (
+                <Image source={{ uri: newVehicleSidePhotoUri }} style={{ width: 48, height: 48, borderRadius: 6, marginBottom: 4 }} />
               ) : (
                 <Camera size={24} color={Colors.textMuted} />
               )}
@@ -223,15 +225,17 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
 
           <FormLabel required={false}>RC Book (Registration)</FormLabel>
           <TouchableOpacity
-            style={[styles.fullWidthUploadBox, newVehicleRCBook && styles.uploadBoxSuccess]}
-            onPress={() => setNewVehicleRCBook(!newVehicleRCBook)}
+            style={[styles.fullWidthUploadBox, newVehicleRCBookUri && styles.uploadBoxSuccess]}
+            onPress={onPickRCBook}
           >
-            {newVehicleRCBook ? (
+            {newVehicleRCBookUri ? (
               <CheckCircle2 size={24} color={Colors.successAlt} />
             ) : (
               <UploadCloud size={24} color={Colors.textMuted} />
             )}
-            <Text style={styles.uploadBoxText}>Upload RC Book</Text>
+            <Text style={styles.uploadBoxText}>
+              {newVehicleRCBookUri ? 'RC Book Selected' : 'Upload RC Book'}
+            </Text>
           </TouchableOpacity>
 
           <FormLabel required>I am the...</FormLabel>
@@ -264,9 +268,6 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
                 setNewVehiclePlate('');
                 setNewVehicleType('Car');
                 setNewVehicleCapacity('5 Seater');
-                setNewVehicleFrontPhoto(false);
-                setNewVehicleSidePhoto(false);
-                setNewVehicleRCBook(false);
                 setNewVehicleRole('Owner');
               }}
             >
@@ -426,7 +427,11 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
               >
                 <View style={styles.vehicleInfoRow}>
                   <View style={[styles.vehicleIconBg, item.active && styles.vehicleIconBgActive]}>
-                    <Car size={22} color={item.active ? Colors.white : Colors.textSecondary} strokeWidth={2} />
+                    {item.frontPhotoUrl ? (
+                      <Image source={{ uri: item.frontPhotoUrl }} style={{ width: 38, height: 38, borderRadius: 19 }} />
+                    ) : (
+                      <Car size={22} color={item.active ? Colors.white : Colors.textSecondary} strokeWidth={2} />
+                    )}
                   </View>
                   <View style={styles.vehicleDetailsCol}>
                     <View style={styles.vehicleNameRow}>

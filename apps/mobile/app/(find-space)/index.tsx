@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
+import * as ImagePicker from 'expo-image-picker';
 import LeafletMap from '../../components/LeafletMap';
 import PageHeader from '../../components/PageHeader';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -114,9 +115,9 @@ const FindSpaceScreen = () => {
   const [newVehiclePlate, setNewVehiclePlate] = useState('');
   const [newVehicleType, setNewVehicleType] = useState('Car');
   const [newVehicleCapacity, setNewVehicleCapacity] = useState('5 Seater');
-  const [newVehicleFrontPhoto, setNewVehicleFrontPhoto] = useState(false);
-  const [newVehicleSidePhoto, setNewVehicleSidePhoto] = useState(false);
-  const [newVehicleRCBook, setNewVehicleRCBook] = useState(false);
+  const [newVehicleFrontPhotoUri, setNewVehicleFrontPhotoUri] = useState<string | null>(null);
+  const [newVehicleSidePhotoUri, setNewVehicleSidePhotoUri] = useState<string | null>(null);
+  const [newVehicleRCBookUri, setNewVehicleRCBookUri] = useState<string | null>(null);
   const [newVehicleRole, setNewVehicleRole] = useState('Owner');
 
   // Edit vehicle form state
@@ -163,6 +164,31 @@ const FindSpaceScreen = () => {
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  const pickVehiclePhoto = async (
+    setter: (uri: string | null) => void,
+    allowDocs = false
+  ) => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission Required', 'Please allow access to your photo library.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: allowDocs
+          ? ImagePicker.MediaTypeOptions.Images
+          : ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: !allowDocs,
+        quality: 0.8,
+      });
+      if (!result.canceled && result.assets?.[0]) {
+        setter(result.assets[0].uri);
+      }
+    } catch {
+      Alert.alert('Error', 'Failed to pick photo');
+    }
+  };
+
   const handleSaveVehicle = async () => {
     if (!newVehicleName.trim()) {
       Alert.alert('Error', 'Please enter a vehicle name (e.g. Maruti Swift)');
@@ -181,7 +207,7 @@ const FindSpaceScreen = () => {
     };
 
     try {
-      await api.post('/vehicles', {
+      const created = await api.post('/vehicles', {
         brandModel: newVehicleName.trim(),
         licensePlate: newVehiclePlate.toUpperCase().replace(/\s+/g, ''),
         vehicleType: newVehicleType === 'Car' ? 'CAR' : 'BIKE',
@@ -189,13 +215,33 @@ const FindSpaceScreen = () => {
         ownershipType: newVehicleRole === 'Owner' ? 'OWNER' : 'DRIVER',
       });
 
+      // Upload photos to Supabase (best-effort — don't fail the whole save if photos fail)
+      const vehicleId = created?.vehicle?.id ?? created?.id;
+      if (vehicleId && (newVehicleFrontPhotoUri || newVehicleSidePhotoUri || newVehicleRCBookUri)) {
+        const guess = (uri: string) => {
+          const ext = (uri.split('.').pop() || '').toLowerCase();
+          if (ext === 'png') return { ext: 'png', type: 'image/png' };
+          if (ext === 'webp') return { ext: 'webp', type: 'image/webp' };
+          return { ext: 'jpg', type: 'image/jpeg' };
+        };
+        const mediaFiles: Array<{ field: string; uri: string; name: string; type: string }> = [];
+        if (newVehicleFrontPhotoUri) { const g = guess(newVehicleFrontPhotoUri); mediaFiles.push({ field: 'frontPhoto', uri: newVehicleFrontPhotoUri, name: `front.${g.ext}`, type: g.type }); }
+        if (newVehicleSidePhotoUri)  { const g = guess(newVehicleSidePhotoUri);  mediaFiles.push({ field: 'sidePhoto',  uri: newVehicleSidePhotoUri,  name: `side.${g.ext}`,  type: g.type }); }
+        if (newVehicleRCBookUri)     { const g = guess(newVehicleRCBookUri);     mediaFiles.push({ field: 'rcBook',     uri: newVehicleRCBookUri,     name: `rc.${g.ext}`,    type: g.type }); }
+        try {
+          await api.upload(`/vehicles/${vehicleId}/media`, mediaFiles);
+        } catch (e) {
+          if (__DEV__) console.log('[VEHICLE] media upload failed', e);
+        }
+      }
+
       setNewVehicleName('');
       setNewVehiclePlate('');
       setNewVehicleType('Car');
       setNewVehicleCapacity('5 Seater');
-      setNewVehicleFrontPhoto(false);
-      setNewVehicleSidePhoto(false);
-      setNewVehicleRCBook(false);
+      setNewVehicleFrontPhotoUri(null);
+      setNewVehicleSidePhotoUri(null);
+      setNewVehicleRCBookUri(null);
       setNewVehicleRole('Owner');
       setShowAddVehicle(false);
       Alert.alert('Success', 'Vehicle added successfully!');
@@ -1056,12 +1102,12 @@ const FindSpaceScreen = () => {
           setNewVehicleType={setNewVehicleType}
           newVehicleCapacity={newVehicleCapacity}
           setNewVehicleCapacity={setNewVehicleCapacity}
-          newVehicleFrontPhoto={newVehicleFrontPhoto}
-          setNewVehicleFrontPhoto={setNewVehicleFrontPhoto}
-          newVehicleSidePhoto={newVehicleSidePhoto}
-          setNewVehicleSidePhoto={setNewVehicleSidePhoto}
-          newVehicleRCBook={newVehicleRCBook}
-          setNewVehicleRCBook={setNewVehicleRCBook}
+          newVehicleFrontPhotoUri={newVehicleFrontPhotoUri}
+          newVehicleSidePhotoUri={newVehicleSidePhotoUri}
+          newVehicleRCBookUri={newVehicleRCBookUri}
+          onPickFrontPhoto={() => pickVehiclePhoto(setNewVehicleFrontPhotoUri)}
+          onPickSidePhoto={() => pickVehiclePhoto(setNewVehicleSidePhotoUri)}
+          onPickRCBook={() => pickVehiclePhoto(setNewVehicleRCBookUri, true)}
           newVehicleRole={newVehicleRole}
           setNewVehicleRole={setNewVehicleRole}
           handleSaveVehicle={handleSaveVehicle}

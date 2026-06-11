@@ -664,16 +664,20 @@ export default function SpacesPage() {
                       <h3 className="font-bold text-gray-900 mb-4">Photos & Visibility</h3>
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <p className="text-xs text-gray-500 font-semibold uppercase">Front Photo</p>
-                          <p className={`text-sm font-semibold mt-1 ${detailsSpace.frontPhoto ? 'text-emerald-600' : 'text-gray-400'}`}>
-                            {detailsSpace.frontPhoto ? '✓ Uploaded' : '— Not uploaded'}
-                          </p>
+                          <p className="text-xs text-gray-500 font-semibold uppercase mb-1">Front Photo</p>
+                          {(detailsSpace as any).frontPhotoUrl ? (
+                            <img src={(detailsSpace as any).frontPhotoUrl} alt="Front" className="w-full h-32 object-cover rounded-xl border border-gray-200" />
+                          ) : (
+                            <p className="text-sm font-semibold text-gray-400">— Not uploaded</p>
+                          )}
                         </div>
                         <div>
-                          <p className="text-xs text-gray-500 font-semibold uppercase">Area Photo</p>
-                          <p className={`text-sm font-semibold mt-1 ${detailsSpace.areaPhoto ? 'text-emerald-600' : 'text-gray-400'}`}>
-                            {detailsSpace.areaPhoto ? '✓ Uploaded' : '— Not uploaded'}
-                          </p>
+                          <p className="text-xs text-gray-500 font-semibold uppercase mb-1">Area Photo</p>
+                          {(detailsSpace as any).areaPhotoUrl ? (
+                            <img src={(detailsSpace as any).areaPhotoUrl} alt="Area" className="w-full h-32 object-cover rounded-xl border border-gray-200" />
+                          ) : (
+                            <p className="text-sm font-semibold text-gray-400">— Not uploaded</p>
+                          )}
                         </div>
                         <div>
                           <p className="text-xs text-gray-500 font-semibold uppercase">Visibility</p>
@@ -841,9 +845,10 @@ export default function SpacesPage() {
                         {doc.rejectionReason && (
                           <p className="text-xs text-rose-600 mt-1">Reason: {doc.rejectionReason}</p>
                         )}
-                        {/* View file */}
+                        {/* View file — fileUrl is now a full Supabase (signed) URL.
+                            Fall back to the legacy SOCKET_URL prefix for old relative paths. */}
                         <a
-                          href={`${SOCKET_URL}${doc.fileUrl}`}
+                          href={/^https?:\/\//.test(doc.fileUrl) ? doc.fileUrl : `${SOCKET_URL}${doc.fileUrl}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 text-xs text-indigo-600 font-semibold mt-2 hover:text-indigo-800"

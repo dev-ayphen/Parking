@@ -69,6 +69,7 @@ export const userAdminService = {
         name: [u.firstName, u.lastName].filter(Boolean).join(' ') || u.phone,
         email: u.email || '—',
         phone: u.phone,
+        photoUrl: u.photoUrl || null,
         type: formatUserType(u.role, u.spacesOwned.length > 0),
         status: displayStatus,
         rawStatus: u.status,

@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
-import { Smartphone } from 'lucide-react-native';
+import { Smartphone, Check } from 'lucide-react-native';
 import { api } from '../../services/api';
 import { FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
 import { useTheme, type AppTheme } from '../../hooks/useTheme';
@@ -39,6 +39,7 @@ const LoginScreen = () => {
 
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
+  const [consentAccepted, setConsentAccepted] = useState(false);
 
   const styles = useMemo(() => makeStyles(theme), [theme]);
 
@@ -137,10 +138,10 @@ const LoginScreen = () => {
             <TouchableOpacity
               activeOpacity={0.85}
               onPress={handleSendOtp}
-              disabled={loading}
+              disabled={loading || !consentAccepted}
               style={styles.buttonWrap}
             >
-              <View style={styles.button}>
+              <View style={[styles.button, !consentAccepted && styles.buttonDisabled]}>
                 {loading ? (
                   <ActivityIndicator color={colors.white} size="small" />
                 ) : (
@@ -149,17 +150,26 @@ const LoginScreen = () => {
               </View>
             </TouchableOpacity>
 
-            {/* Terms */}
-            <Text style={styles.terms}>
-              By continuing, you agree to our{' '}
-              <Text style={styles.termsLink} onPress={() => router.push('/(auth)/terms')}>
-                Terms
+            {/* Explicit consent checkbox — required before Continue */}
+            <TouchableOpacity
+              style={styles.consentRow}
+              onPress={() => setConsentAccepted(!consentAccepted)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.consentCheckbox, consentAccepted && styles.consentCheckboxChecked]}>
+                {consentAccepted && <Check size={12} color={colors.white} strokeWidth={3} />}
+              </View>
+              <Text style={styles.consentText}>
+                I agree to the{' '}
+                <Text style={styles.termsLink} onPress={() => router.push('/(auth)/terms')}>
+                  Terms & Conditions
+                </Text>
+                {' '}and{' '}
+                <Text style={styles.termsLink} onPress={() => router.push('/(auth)/privacy')}>
+                  Privacy Policy
+                </Text>
               </Text>
-              {' '}and{' '}
-              <Text style={styles.termsLink} onPress={() => router.push('/(auth)/privacy')}>
-                Privacy Policy
-              </Text>
-            </Text>
+            </TouchableOpacity>
           </View>
         </Animated.View>
       </KeyboardAvoidingView>
@@ -278,5 +288,37 @@ const makeStyles = ({ colors, spacing, radius, fontSize, fontWeight }: AppTheme)
   termsLink: {
     color: colors.primary,
     fontWeight: FontWeight.semibold,
+  },
+  buttonDisabled: {
+    opacity: 0.45,
+  },
+  consentRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.lg,
+    marginTop: Spacing.xl,
+    paddingHorizontal: Spacing.xs,
+  },
+  consentCheckbox: {
+    width: 20,
+    height: 20,
+    borderRadius: BorderRadius.badge,
+    borderWidth: 2,
+    borderColor: colors.borderMedium,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.white,
+    marginTop: 1,
+    flexShrink: 0,
+  },
+  consentCheckboxChecked: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  consentText: {
+    fontSize: FontSize.sm,
+    color: colors.textSecondary,
+    lineHeight: 20,
+    flex: 1,
   },
 });

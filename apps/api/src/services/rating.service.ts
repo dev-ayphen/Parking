@@ -22,7 +22,7 @@ export const ratingService = {
 
     const booking = await db.booking.findUnique({
       where: { id: bookingId },
-      include: { space: { select: { ownerId: true } } },
+      include: { space: { select: { id: true, ownerId: true, name: true } } },
     });
     if (!booking) {
       throw Object.assign(new Error('Booking not found'), { statusCode: 404 });
@@ -35,6 +35,7 @@ export const ratingService = {
     if (!rateeId) {
       throw Object.assign(new Error('Space owner not found'), { statusCode: 400 });
     }
+    const isUpdate = !!(await db.rating.findUnique({ where: { bookingId }, select: { id: true } }));
 
     const result = await db.rating.upsert({
       where: { bookingId },
@@ -42,6 +43,14 @@ export const ratingService = {
       update: { rating, review },
     });
 
-    return { success: true, rating: result };
+    // Return the context the controller needs to notify the owner live.
+    return {
+      success: true,
+      rating: result,
+      ownerId: rateeId as number,
+      spaceId: (booking.space as any)?.id as number,
+      spaceName: (booking.space as any)?.name as string,
+      isUpdate, // true = parker edited an existing rating (don't re-notify)
+    };
   },
 };

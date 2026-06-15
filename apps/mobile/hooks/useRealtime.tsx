@@ -103,6 +103,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       socket.on('session:completed', (payload: any) => DeviceEventEmitter.emit('session:completed', payload));
       socket.on('transaction:update', (payload: any) => DeviceEventEmitter.emit('transaction:update', payload));
       socket.on('notification:new', (payload: any) => DeviceEventEmitter.emit('notification:new', payload));
+      socket.on('rating:new', (payload: any) => DeviceEventEmitter.emit('rating:new', payload));
     };
 
     connect();

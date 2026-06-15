@@ -38,7 +38,7 @@ export const userAdminService = {
         orderBy: { createdAt: 'desc' },
         include: {
           spacesOwned: { select: { id: true } },
-          ratingsReceived: { select: { rating: true } },
+          ratingsReceived: { where: { isHidden: false }, select: { rating: true } },
         },
       }),
       db.user.count({ where }),
@@ -92,7 +92,7 @@ export const userAdminService = {
           orderBy: { createdAt: 'desc' },
           take: 10,
         },
-        ratingsReceived: { select: { rating: true } },
+        ratingsReceived: { where: { isHidden: false }, select: { rating: true } },
         subscriptions: {
           select: { id: true, planName: true, price: true, status: true, renewalDate: true },
           orderBy: { createdAt: 'desc' },

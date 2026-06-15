@@ -10,11 +10,13 @@ export function getRatingStyle(rating: number | undefined | null): RatingStyle {
   const numRating = Number(rating) || 0;
 
   if (numRating === 0) {
+    // "New" listing — blue accent (distinct from a poor rating, which is red).
+    // A new space has NO rating; showing it in blue reads as "fresh", never "bad".
     return {
       label: 'New',
-      bgColor: '#F1F5F9', // slate-100
-      textColor: '#64748B', // slate-500
-      iconColor: '#94A3B8', // slate-400
+      bgColor: '#EFF6FF', // blue-50
+      textColor: '#2563EB', // blue-600
+      iconColor: '#3B82F6', // blue-500
       isNew: true,
     };
   }

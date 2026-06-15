@@ -12,6 +12,7 @@ export default function FindSpaceLayout() {
     >
       <Stack.Screen name="index" options={{ title: 'Find Parking' }} />
       <Stack.Screen name="space-detail" options={{ title: 'Space Details' }} />
+      <Stack.Screen name="space-reviews" options={{ title: 'Reviews' }} />
       <Stack.Screen name="vehicle-select" options={{ title: 'Select Vehicle' }} />
       <Stack.Screen name="booking-confirm" options={{ title: 'Confirm Booking' }} />
       <Stack.Screen name="booking-success" options={{ title: 'Booking Sent' }} />

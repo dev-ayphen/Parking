@@ -18,6 +18,9 @@ router.get('/my', authenticate, spaceController.getMySpaces);
 
 router.get('/:id', spaceController.getSpace);
 
+// Public — reviews list for a space (read by the "See All Reviews" screen)
+router.get('/:id/reviews', spaceController.getSpaceReviews);
+
 // Admin: all spaces
 router.get('/', authenticate, requireRole('ADMIN'), spaceController.getAllSpaces);
 

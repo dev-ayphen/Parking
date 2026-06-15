@@ -24,7 +24,7 @@ async function enrichSpacesWithStats(spaces: any[]): Promise<any[]> {
       SELECT b."spaceId" AS "spaceId", AVG(r.rating)::float AS avg, COUNT(r.id)::int AS count
       FROM "Rating" r
       JOIN "Booking" b ON r."bookingId" = b.id
-      WHERE b."spaceId" IN (${Prisma.join(ids)})
+      WHERE b."spaceId" IN (${Prisma.join(ids)}) AND r."isHidden" = false
       GROUP BY b."spaceId"
     `,
   ]);
@@ -236,7 +236,7 @@ export const spaceService = {
     // Real rating (avg of all ratings on this space's bookings) + live availability
     const [ratingAgg, activeCount] = await Promise.all([
       db.rating.aggregate({
-        where: { booking: { spaceId } },
+        where: { booking: { spaceId }, isHidden: false },
         _avg: { rating: true },
         _count: { rating: true },
       }),
@@ -445,11 +445,84 @@ export const spaceService = {
       include: {
         parker: { select: { id: true, firstName: true, lastName: true, phone: true } },
         vehicle: { select: { licensePlate: true, vehicleType: true } },
+        // The owner's booking list renders the parker's review per completed
+        // booking — without this include the review text was always blank.
+        rating: { select: { rating: true, review: true, createdAt: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    return bookings;
+    // Flatten rating onto the booking — the mobile owner list reads `rating`
+    // (number) and `review` (text) directly off each session.
+    return bookings.map((b) => ({
+      ...b,
+      rating: b.rating?.rating ?? 0,
+      review: b.rating?.review ?? null,
+    }));
+  },
+
+  /**
+   * Public reviews for a space — used by the parker-facing "See All Reviews"
+   * screen. Returns each review (stars + text + reviewer first name + date),
+   * the average, the total count, and a 1–5 star breakdown for the histogram.
+   * Reviews with no text are still counted in the average/breakdown but only
+   * text reviews are worth surfacing in the list, so we keep both.
+   */
+  getSpaceReviews: async (spaceId: number, opts: { page?: number; limit?: number } = {}) => {
+    const page = Math.max(1, Number(opts.page) || 1);
+    const limit = Math.min(50, Math.max(1, Number(opts.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    // Public ratings for this space (join Rating → Booking on spaceId).
+    // Hidden (moderated) reviews are excluded from the list, count, and breakdown.
+    const where = { booking: { spaceId }, isHidden: false };
+
+    const [ratings, total, grouped] = await Promise.all([
+      db.rating.findMany({
+        where,
+        include: {
+          rater: { select: { firstName: true, lastName: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      db.rating.count({ where }),
+      db.rating.groupBy({
+        by: ['rating'],
+        where,
+        _count: { rating: true },
+      }),
+    ]);
+
+    // Build the 1–5 breakdown (always all five keys, even if zero).
+    const breakdown: Record<1 | 2 | 3 | 4 | 5, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    let sum = 0;
+    for (const g of grouped) {
+      const star = g.rating as 1 | 2 | 3 | 4 | 5;
+      if (star >= 1 && star <= 5) breakdown[star] = g._count.rating;
+      sum += g.rating * g._count.rating;
+    }
+    const average = total > 0 ? Math.round((sum / total) * 10) / 10 : 0;
+
+    const reviews = ratings.map((r) => ({
+      id: r.id,
+      rating: r.rating,
+      review: r.review,
+      createdAt: r.createdAt,
+      // First name only — reviewers aren't fully identified to other users.
+      reviewerName: (r.rater?.firstName || 'Parker').trim(),
+    }));
+
+    return {
+      success: true,
+      average,
+      total,
+      breakdown,
+      reviews,
+      page,
+      pages: Math.max(1, Math.ceil(total / limit)),
+    };
   },
 
   getSpaceAnalytics: async (spaceId: number, ownerId: number) => {

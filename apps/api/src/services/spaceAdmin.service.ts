@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { db } from '../config/database';
 
 /**
@@ -48,6 +49,21 @@ export const spaceAdminService = {
       if (key in tally) tally[key] = c._count._all;
     });
 
+    // Per-space rating aggregate (avg + count) for the spaces on this page only.
+    // Ratings link to spaces through bookings, so we aggregate via a raw join.
+    const pageIds = (spaces as any[]).map((s) => s.id);
+    const ratingMap = new Map<number, { avg: number; count: number }>();
+    if (pageIds.length > 0) {
+      const rows = await db.$queryRaw<Array<{ spaceId: number; avg: number; count: number }>>`
+        SELECT b."spaceId" AS "spaceId", AVG(r.rating)::float AS avg, COUNT(r.id)::int AS count
+        FROM "Rating" r
+        JOIN "Booking" b ON r."bookingId" = b.id
+        WHERE b."spaceId" IN (${Prisma.join(pageIds)}) AND r."isHidden" = false
+        GROUP BY b."spaceId"
+      `;
+      rows.forEach((row) => ratingMap.set(row.spaceId, { avg: row.avg, count: row.count }));
+    }
+
     const mapped = (spaces as any[]).map((s) => ({
       id: s.id,
       name: s.name,
@@ -68,6 +84,10 @@ export const spaceAdminService = {
       status: s.status,
       requiresAdminReview: s.requiresAdminReview,
       bookingsCount: s.bookings.length,
+      ratingCount: ratingMap.get(s.id)?.count ?? 0,
+      ratingAvg: (ratingMap.get(s.id)?.count ?? 0) > 0
+        ? Math.round((ratingMap.get(s.id)!.avg || 0) * 10) / 10
+        : 0,
       owner: s.owner
         ? {
             id: s.owner.id,

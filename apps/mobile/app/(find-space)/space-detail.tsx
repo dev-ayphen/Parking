@@ -9,13 +9,16 @@ import {View,
   ActivityIndicator,
   Platform,
   Animated,
-  Image} from 'react-native';
+  Image,
+  Modal,
+  TextInput} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MapPin, Clock, Car, Shield, Zap, Droplets, Star, Camera, User, AlertTriangle, CalendarClock, Minus, Plus, PlayCircle, Image as ImageIcon } from 'lucide-react-native';
+import { MapPin, Clock, Car, Shield, Zap, Droplets, Star, Camera, User, AlertTriangle, CalendarClock, Minus, Plus, PlayCircle, Image as ImageIcon, Flag, X } from 'lucide-react-native';
 import LeafletMap from '../../components/LeafletMap';
 import PageHeader from '../../components/PageHeader';
+import ReportSubmitted from '../../components/ReportSubmitted';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { api } from '../../services/api';
 import { getRatingStyle } from '../../utils/ratingUtils';
@@ -69,6 +72,14 @@ const SpaceDetailScreen = () => {
   // Full space record fetched from the API (richer than search params)
   const [space, setSpace] = useState<any>(null);
   const [fetching, setFetching] = useState(true);
+
+  // Report listing modal
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [reportType, setReportType] = useState('FAKE_SPACE');
+  const [reportDesc, setReportDesc] = useState('');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reportRef, setReportRef] = useState<string | null>(null);
+  const [reportSubmittedAt, setReportSubmittedAt] = useState<string | null>(null);
 
   // Parse params (instant display while the full record loads)
   const spaceId = parseInt(params.spaceId as string, 10);
@@ -183,6 +194,41 @@ const SpaceDetailScreen = () => {
   }, [fadeAnim]);
 
   const isOwnSpace = space?.ownerId && currentUser?.id && space.ownerId === currentUser.id;
+
+  const SPACE_REPORT_REASONS: { value: string; label: string }[] = [
+    { value: 'FAKE_SPACE',          label: 'Fake or non-existent space' },
+    { value: 'MISLEADING_LISTING',  label: 'Wrong address / incorrect photos' },
+    { value: 'UNSAFE_AREA',         label: 'Unsafe or dangerous area' },
+    { value: 'ILLEGAL_PARKING',     label: 'Illegal parking location' },
+    { value: 'OTHER',               label: 'Other issue' },
+  ];
+
+  const handleSubmitReport = async () => {
+    if (reportSubmitting || reportRef) return; // guard re-entry / double-tap
+    if (reportDesc.trim().length < 5) {
+      Alert.alert('Too short', 'Please describe the issue (at least 5 characters).');
+      return;
+    }
+    const ownerId = space?.ownerId || space?.owner?.id;
+    if (!ownerId) return;
+    try {
+      setReportSubmitting(true);
+      const res = await api.post('/abuse-reports', {
+        reportedUserId: ownerId,
+        abuseType: reportType,
+        description: reportDesc.trim(),
+      });
+      const reportId = res?.report?.id;
+      setReportRef(reportId ? `ABU-${String(reportId).padStart(5, '0')}` : 'ABU-PENDING');
+      setReportSubmittedAt(res?.report?.createdAt || new Date().toISOString());
+      setReportModalVisible(false);
+      setReportDesc('');
+    } catch (err: any) {
+      Alert.alert('Failed', err?.message || 'Could not submit report. Try again.');
+    } finally {
+      setReportSubmitting(false);
+    }
+  };
 
   const handleBookNow = () => {
     // If user owns this space, navigate to manage
@@ -333,7 +379,22 @@ const SpaceDetailScreen = () => {
                   {!rs.isNew && <Star size={12} color={rs.iconColor} fill={rs.iconColor} />}
                   <Text style={[styles.ratingChipText, { color: rs.textColor }]}>{rs.label}</Text>
                 </View>
-                {ratingCount > 0 && <Text style={styles.metaMuted}>{ratingCount} review{ratingCount !== 1 ? 's' : ''}</Text>}
+                {ratingCount > 0 && (
+                  <TouchableOpacity
+                    onPress={() =>
+                      router.push({
+                        pathname: '/(find-space)/space-reviews',
+                        params: { spaceId, spaceName, ratingAvg: String(rating), ratingCount: String(ratingCount) },
+                      })
+                    }
+                    activeOpacity={0.6}
+                  >
+                    <Text style={styles.reviewsLink}>
+                      {ratingCount} review{ratingCount !== 1 ? 's' : ''}
+                      <Text style={styles.reviewsLinkArrow}>  ›</Text>
+                    </Text>
+                  </TouchableOpacity>
+                )}
                 {distance > 0 && <Text style={styles.metaMuted}>{distance.toFixed(1)} km</Text>}
                 {risk && (
                   <View style={[styles.riskChip, { backgroundColor: risk.bg, borderColor: risk.border }]}>
@@ -508,9 +569,96 @@ const SpaceDetailScreen = () => {
               </View>
             </View>
 
+            {/* ── Report Listing ── */}
+            {!isOwnSpace && !fetching && (
+              reportRef ? (
+                <View style={{ marginBottom: Spacing['3xl'] }}>
+                  <ReportSubmitted reference={reportRef} submittedAt={reportSubmittedAt || undefined} />
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={styles.reportLink}
+                  onPress={() => setReportModalVisible(true)}
+                  activeOpacity={0.7}
+                >
+                  <Flag size={13} color={C.textMuted} strokeWidth={2} />
+                  <Text style={styles.reportLinkText}>Report this listing</Text>
+                </TouchableOpacity>
+              )
+            )}
+
           </View>
         </Animated.View>
       </ScrollView>
+
+      {/* ── Report Listing Modal ── */}
+      <Modal visible={reportModalVisible} transparent animationType="slide" onRequestClose={() => setReportModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Report Listing</Text>
+              <TouchableOpacity onPress={() => setReportModalVisible(false)} hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}>
+                <X size={20} color={C.textSecondary} strokeWidth={2} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalSub}>Help us keep ParkSwift safe. We'll review your report within 24 hours.</Text>
+
+            {/* Auto-filled listing context — sent silently in the payload, shown read-only */}
+            <View style={styles.contextCard}>
+              <View style={styles.contextRow}>
+                <Text style={styles.contextLabel}>Space</Text>
+                <Text style={styles.contextVal} numberOfLines={1}>{spaceName}</Text>
+              </View>
+              {ownerName && (
+                <View style={styles.contextRow}>
+                  <Text style={styles.contextLabel}>Owner</Text>
+                  <Text style={styles.contextVal} numberOfLines={1}>{ownerName}</Text>
+                </View>
+              )}
+            </View>
+
+            <Text style={styles.fieldLabel}>Reason</Text>
+            {SPACE_REPORT_REASONS.map(r => (
+              <TouchableOpacity
+                key={r.value}
+                style={[styles.reasonRow, reportType === r.value && styles.reasonRowActive]}
+                onPress={() => setReportType(r.value)}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.radioOuter, reportType === r.value && styles.radioOuterActive]}>
+                  {reportType === r.value && <View style={styles.radioInner} />}
+                </View>
+                <Text style={[styles.reasonText, reportType === r.value && styles.reasonTextActive]}>{r.label}</Text>
+              </TouchableOpacity>
+            ))}
+
+            <Text style={[styles.fieldLabel, { marginTop: Spacing.xl }]}>Details</Text>
+            <TextInput
+              style={styles.descInput}
+              placeholder="Describe the issue..."
+              placeholderTextColor={C.textMuted}
+              multiline
+              numberOfLines={3}
+              value={reportDesc}
+              onChangeText={setReportDesc}
+              textAlignVertical="top"
+            />
+
+            <TouchableOpacity
+              style={[styles.submitBtn, reportSubmitting && styles.submitBtnDisabled]}
+              onPress={handleSubmitReport}
+              disabled={reportSubmitting}
+              activeOpacity={0.8}
+            >
+              {reportSubmitting
+                ? <ActivityIndicator color={C.white} size="small" />
+                : <Text style={styles.submitBtnText}>Submit Report</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* ── Sticky Footer ── */}
       <View style={styles.footer}>
@@ -617,6 +765,8 @@ const makeStyles = ({ colors: C }: AppTheme) => StyleSheet.create({
 
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, flexWrap: 'wrap', marginBottom: Spacing.xl },
   metaMuted: { fontSize: FontSize.xs, color: C.textMuted, fontWeight: FontWeight.medium },              // 11=xs ✓
+  reviewsLink: { fontSize: FontSize.xs, color: C.primary, fontWeight: FontWeight.semibold },
+  reviewsLinkArrow: { fontSize: FontSize.sm, color: C.primary, fontWeight: FontWeight.bold },
   ratingChip: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, paddingHorizontal: Spacing.sm, paddingVertical: 3, borderRadius: BorderRadius.badge },  // 6=badge ✓
   ratingChipText: { fontSize: FontSize.xs, fontWeight: FontWeight.bold },
   riskChip: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: Spacing.sm, paddingVertical: 3, borderRadius: BorderRadius.badge, borderWidth: 1 },
@@ -711,6 +861,34 @@ const makeStyles = ({ colors: C }: AppTheme) => StyleSheet.create({
 
   // Skeleton placeholder shown while background fetch is in flight
   skeletonChip: { backgroundColor: C.surfaceBg, height: 14, width: 40, borderRadius: BorderRadius.xs },  // 4=xs ✓
+
+  // Report listing link
+  reportLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.xl, marginBottom: Spacing['3xl'] },
+  reportLinkText: { fontSize: FontSize.sm, color: C.textMuted, fontWeight: FontWeight.medium },
+
+  // Report modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  modalSheet: { backgroundColor: C.white, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl, padding: Spacing['3xl'], paddingBottom: 36 },
+  modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: C.borderMuted, alignSelf: 'center', marginBottom: Spacing['2xl'] },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.md },
+  modalTitle: { fontSize: FontSize['2xl'], fontWeight: FontWeight.bold, color: C.textPrimary },
+  modalSub: { fontSize: FontSize.base, color: C.textSecondary, marginBottom: Spacing['3xl'], lineHeight: 19 },
+  contextCard: { backgroundColor: C.screenBg, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: C.border, padding: Spacing.xl, marginBottom: Spacing['3xl'] },
+  contextRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 3 },
+  contextLabel: { fontSize: FontSize.sm, color: C.textMuted, fontWeight: FontWeight.medium },
+  contextVal: { fontSize: FontSize.sm, color: C.textPrimary, fontWeight: FontWeight.semibold, flexShrink: 1, marginLeft: Spacing.lg, textAlign: 'right' },
+  fieldLabel: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: C.textSecondary, marginBottom: Spacing.lg, textTransform: 'uppercase', letterSpacing: 0.5 },
+  reasonRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg, paddingVertical: Spacing.lg, paddingHorizontal: Spacing.xl, borderRadius: BorderRadius.md, marginBottom: Spacing.sm, backgroundColor: C.screenBg, borderWidth: 1, borderColor: C.border },
+  reasonRowActive: { backgroundColor: C.primaryBg, borderColor: C.primary },
+  radioOuter: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
+  radioOuterActive: { borderColor: C.primary },
+  radioInner: { width: 9, height: 9, borderRadius: 5, backgroundColor: C.primary },
+  reasonText: { fontSize: FontSize.base, color: C.textBody, fontWeight: FontWeight.medium },
+  reasonTextActive: { color: C.primary, fontWeight: FontWeight.semibold },
+  descInput: { backgroundColor: C.screenBg, borderWidth: 1, borderColor: C.border, borderRadius: BorderRadius.lg, padding: Spacing.xl, fontSize: FontSize.base, color: C.textPrimary, minHeight: 80, marginBottom: Spacing['3xl'] },
+  submitBtn: { backgroundColor: C.error, borderRadius: BorderRadius.button, paddingVertical: Spacing['3xl'], alignItems: 'center' },
+  submitBtnDisabled: { opacity: 0.6 },
+  submitBtnText: { color: C.white, fontSize: FontSize.lg, fontWeight: FontWeight.bold },
 });
 
 export default SpaceDetailScreen;

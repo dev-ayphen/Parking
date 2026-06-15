@@ -278,6 +278,12 @@ export const adminController = {
         adminId: req.user.id, action: 'SUBSCRIPTION_PLAN_CREATED', targetType: 'SUBSCRIPTION_PLAN',
         targetId: (result as any)?.plan?.id ?? 0, payload: req.body, req,
       });
+      // Real-time heads-up to the owners who were notified about the new plan,
+      // so their notifications screen / bell badge update live.
+      const notifiedUserIds = (result as any)?.notifiedUserIds as number[] | undefined;
+      if (Array.isArray(notifiedUserIds)) {
+        notifiedUserIds.forEach((uid) => emitToUser(uid, 'notification:new', { category: 'PAYMENT' }));
+      }
       res.json(result);
     } catch (error) {
       sendError(res, error);

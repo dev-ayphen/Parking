@@ -29,6 +29,7 @@ export function useNotificationDeepLink() {
       if (!data) return;
       const screen = data.screen as string | undefined;
       const bookingId = data.bookingId ? String(data.bookingId) : undefined;
+      const ticketId = data.ticketId ? String(data.ticketId) : undefined;
 
       try {
         switch (screen) {
@@ -50,6 +51,13 @@ export function useNotificationDeepLink() {
             break;
           case 'billing':
             router.push('/(home)/manage-billing');
+            break;
+          case 'support-ticket':
+            if (ticketId) {
+              router.push({ pathname: '/(home)/support/ticket/[id]', params: { id: ticketId } });
+            } else {
+              router.push('/(home)/support/tickets');
+            }
             break;
           case 'my-spaces':
             router.push('/(my-spaces)');

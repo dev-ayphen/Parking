@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import { abuseService } from '../services/abuse.service';
 import { auditService } from '../services/audit.service';
+import { adminService } from '../services/admin.service';
+import { emitToUser } from '../app';
 import { sendError, assertAuth } from '../utils/errors';
 
 export const abuseController = {
@@ -52,6 +54,29 @@ export const abuseController = {
       assertAuth(req);
       const reportId = parseInt(req.params.id);
       const result = await abuseService.actionReport(reportId, req.user.id, req.body);
+
+      // If the action suspended/banned the user, force-log them out in real time
+      // (same event the suspend/ban admin endpoints use) so a logged-in mobile
+      // session doesn't keep working until restart. Without this the DB changed
+      // but the user kept going.
+      const { reportedUserId, appliedStatus, suspendedUntil } = result as any;
+      if (reportedUserId && appliedStatus) {
+        emitToUser(reportedUserId, 'user:status-change', {
+          status: appliedStatus,
+          reason: req.body?.adminAction || undefined,
+          suspendedUntil: suspendedUntil || undefined,
+        });
+        await adminService.notifyUser(reportedUserId, {
+          title: appliedStatus === 'BANNED' ? 'Account Banned' : 'Account Suspended',
+          message: req.body?.adminAction
+            ? String(req.body.adminAction)
+            : appliedStatus === 'BANNED'
+              ? 'Your account has been banned for policy violations.'
+              : 'Your account has been suspended for policy violations.',
+          category: 'SYSTEM',
+        });
+      }
+
       await auditService.logAdminAction({
         adminId: req.user.id, action: 'ABUSE_ACTIONED', targetType: 'ABUSE_REPORT', targetId: reportId,
         reason: req.body?.adminAction, payload: { action: req.body?.action, suspendedUntil: req.body?.suspendedUntil }, req,

@@ -484,6 +484,37 @@ export const billingAdminService = {
         sortOrder: (maxOrder._max.sortOrder ?? 0) + 1,
       },
     });
-    return { success: true, plan };
+
+    // Announce a NEW, ACTIVE plan to OWNERS who don't already have an active
+    // subscription (no point pitching a plan to existing subscribers). Inactive
+    // plans (drafts) stay silent. Push goes out via sendToMany; the screen
+    // already fetches fresh, so this is the "real-time heads-up" layer.
+    let notifiedUserIds: number[] = [];
+    if (plan.isActive) {
+      const subscribed = await db.subscription.findMany({
+        where: { status: 'ACTIVE' },
+        select: { userId: true },
+      });
+      const subscribedSet = new Set(subscribed.map((s) => s.userId));
+      const owners = await db.user.findMany({
+        where: { role: 'OWNER', status: 'ACTIVE', deletedAt: null },
+        select: { id: true },
+      });
+      notifiedUserIds = owners.map((o) => o.id).filter((id) => !subscribedSet.has(id));
+
+      if (notifiedUserIds.length > 0) {
+        await db.notification.createMany({
+          data: notifiedUserIds.map((userId) => ({
+            userId,
+            title: 'New Subscription Plan',
+            message: `${plan.name} is now available for ₹${plan.price}/${plan.billingCycle === 'YEARLY' ? 'yr' : 'mo'}. Upgrade to unlock more.`,
+            category: 'PAYMENT',
+            metadata: { planId: plan.id },
+          })),
+        });
+      }
+    }
+
+    return { success: true, plan, notifiedUserIds };
   },
 };

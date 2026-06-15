@@ -126,21 +126,35 @@ export const abuseService = {
     });
 
     // Apply user account action
+    let appliedStatus: 'BANNED' | 'SUSPENDED' | null = null;
     if (isBan) {
       await db.user.update({
         where: { id: report.reportedUserId },
         data: { status: 'BANNED' },
       });
+      appliedStatus = 'BANNED';
     } else if (isSuspend) {
       await db.user.update({
         where: { id: report.reportedUserId },
-        data: { status: 'SUSPENDED' },
+        data: {
+          status: 'SUSPENDED',
+          suspendedUntil: data.suspendedUntil ? new Date(data.suspendedUntil) : null,
+        },
       });
+      appliedStatus = 'SUSPENDED';
     } else if (isResolved) {
       // Optionally restore user if they were suspended via this report only
     }
 
-    return { success: true, report: updated };
+    // Return the affected user + the status applied so the controller can emit
+    // the realtime force-logout (same event the suspend/ban admin endpoints use).
+    return {
+      success: true,
+      report: updated,
+      reportedUserId: report.reportedUserId,
+      appliedStatus,
+      suspendedUntil: data.suspendedUntil || null,
+    };
   },
 
   getMyReports: async (userId: number) => {

@@ -20,6 +20,9 @@ function buildDeepLinkData(category?: string, metadata?: any): Record<string, un
     data.screen = category === 'BOOKING' && metadata?.target === 'OWNER'
       ? 'booking-requests'
       : 'booking-detail';
+  } else if (metadata?.ticketId) {
+    data.ticketId = metadata.ticketId;
+    data.screen = 'support-ticket';
   } else if (metadata?.spaceId) {
     data.spaceId = metadata.spaceId;
     data.screen = 'my-spaces';
@@ -322,7 +325,7 @@ export const adminService = {
 
     const mapped = (tickets as any[]).map((t) => ({
       id: t.id,
-      ticketNumber: `PS-${String(1000 + t.id)}`,
+      ticketNumber: `SUP-${String(t.id).padStart(5, '0')}`,
       subject: t.subject || t.description.slice(0, 60) + (t.description.length > 60 ? '…' : ''),
       category: t.category,
       description: t.description,
@@ -359,7 +362,7 @@ export const adminService = {
       success: true,
       ticket: {
         id: ticket.id,
-        ticketNumber: `PS-${String(1000 + ticket.id)}`,
+        ticketNumber: `SUP-${String(ticket.id).padStart(5, '0')}`,
         subject: ticket.subject,
         category: ticket.category,
         description: ticket.description,
@@ -424,6 +427,18 @@ export const adminService = {
     const ticket = await db.supportTicket.findUnique({ where: { id: ticketId } });
     if (ticket && ticket.status === 'OPEN') {
       await db.supportTicket.update({ where: { id: ticketId }, data: { status: 'IN_PROGRESS' } });
+    }
+
+    // Notify the ticket owner (DB inbox + push) so they find out about the reply
+    // even if the ticket screen isn't open — the live socket only reaches an open
+    // screen. Deep-links to the ticket.
+    if (ticket?.userId) {
+      await adminService.notifyUser(ticket.userId, {
+        title: 'Support Replied',
+        message: 'Our support team replied to your ticket. Tap to view.',
+        category: 'SUPPORT',
+        metadata: { ticketId },
+      });
     }
 
     return { success: true, reply };

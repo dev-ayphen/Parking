@@ -8,7 +8,10 @@ import {
   checkDocumentCompliance,
 } from '../services/document.service';
 import { auditService } from '../services/audit.service';
+import { adminService } from '../services/admin.service';
 import { storageService } from '../services/storage.service';
+import { db } from '../config/database';
+import { emitToUser } from '../app';
 import { sendError, BadRequest, assertAuth } from '../utils/errors';
 import { ErrorCode } from '../utils/errorCodes';
 
@@ -110,6 +113,26 @@ export const documentController = {
         payload: { spaceId: parseInt(req.params.id) },
         req,
       });
+
+      // Notify the space owner that their document was reviewed (DB + push + live
+      // socket) so they don't have to refetch to find out.
+      const space = await db.space.findUnique({
+        where: { id: (doc as any).spaceId },
+        select: { ownerId: true, name: true },
+      });
+      if (space?.ownerId) {
+        const verified = action === 'VERIFIED';
+        emitToUser(space.ownerId, 'space:status', { spaceId: (doc as any).spaceId, docReviewed: action });
+        await adminService.notifyUser(space.ownerId, {
+          title: verified ? 'Document Verified' : 'Document Rejected',
+          message: verified
+            ? `A document for "${space.name}" was verified.`
+            : `A document for "${space.name}" was rejected.${rejectionReason ? ` Reason: ${rejectionReason}` : ''} Please re-upload it.`,
+          category: 'SPACE',
+          metadata: { spaceId: (doc as any).spaceId },
+        });
+      }
+
       res.json({ success: true, document: doc });
     } catch (e) {
       sendError(res, e);

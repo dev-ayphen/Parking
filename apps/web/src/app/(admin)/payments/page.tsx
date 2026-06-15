@@ -1,181 +1,306 @@
 'use client';
 
-import Link from 'next/link';
+import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
-  CreditCard,
-  ArrowRight,
-  Info,
-  Crown,
-  Sparkles,
-  ShieldCheck,
-  Star,
-  FileText,
-  Receipt,
-  RefreshCw,
-  Banknote,
+  Loader2, Search, TrendingUp, TrendingDown, Banknote, RefreshCw, Download,
+  ChevronLeft, ChevronRight, X, Check, ArrowDownLeft, ArrowUpRight,
 } from 'lucide-react';
+import { adminApi } from '@/services/api';
+import type { AdminTransactionListItem } from '@/types/api';
 
-const REVENUE_STREAMS = [
-  {
-    icon: Crown,
-    title: 'Space owner subscriptions',
-    desc: 'Monthly / yearly Pro plans for parking-space owners.',
-    color: 'amber',
-  },
-  {
-    icon: Sparkles,
-    title: 'Premium listing boosts',
-    desc: 'Owners pay to promote their space to the top of search.',
-    color: 'indigo',
-  },
-  {
-    icon: ShieldCheck,
-    title: 'Verification badges',
-    desc: 'One-time fee for verified-owner / verified-space badges.',
-    color: 'emerald',
-  },
-  {
-    icon: Star,
-    title: 'Featured placement',
-    desc: 'Homepage and category-page featured slots.',
-    color: 'rose',
-  },
-] as const;
+const TYPE_FILTERS = ['All Transactions', 'User Payments', 'Owner Earnings', 'Refunds'];
 
-const COLOR_MAP: Record<string, string> = {
-  amber: 'bg-amber-50 text-amber-600',
-  indigo: 'bg-indigo-50 text-indigo-600',
-  emerald: 'bg-emerald-50 text-emerald-600',
-  rose: 'bg-rose-50 text-rose-600',
+const STATUS_STYLE: Record<string, string> = {
+  SUCCESS: 'bg-emerald-50 text-emerald-700',
+  PENDING: 'bg-amber-50 text-amber-700',
+  FAILED: 'bg-rose-50 text-rose-700',
 };
 
-const COMING_SOON = [
-  { icon: Receipt, label: 'Subscription invoice ledger' },
-  { icon: RefreshCw, label: 'Refund processing & logs' },
-  { icon: Banknote, label: 'Razorpay / Stripe gateway reconciliation' },
-  { icon: FileText, label: 'GST reports & finance audit exports' },
-];
+interface Overview {
+  totalRevenue30d: { value: string; trend: string; isPositive: boolean };
+  pendingPayouts: { value: string; trend: string };
+  refundsProcessed: { value: string; trend: string };
+}
 
 export default function PaymentsPage() {
-  return (
-    <div className="p-8">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Payments & Billing</h1>
-        <p className="text-gray-500 mt-1">
-          Manage subscription billing, invoices, and future payment integrations.
-        </p>
-      </div>
+  const [overview, setOverview] = useState<Overview | null>(null);
+  const [txns, setTxns] = useState<AdminTransactionListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [typeFilter, setTypeFilter] = useState('All Transactions');
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [limit] = useState(20);
 
-      {/* ─── Disclaimer card ─────────────────────────────────────────────── */}
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.25 }}
-        className="bg-white border border-gray-200 rounded-2xl p-6 max-w-4xl shadow-sm mb-6"
-      >
-        <div className="flex items-start gap-4">
-          <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
-            <Info size={20} className="text-blue-600" strokeWidth={2} />
-          </div>
-          <div className="flex-1">
-            <h2 className="text-base font-bold text-gray-900 mb-1.5">
-              Booking money is not handled by ParkSwift
-            </h2>
-            <p className="text-gray-600 text-sm leading-relaxed">
-              Parkers pay owners directly at the space (cash, UPI, Paytm). ParkSwift earns only from
-              <span className="font-semibold text-gray-900"> subscription revenue</span> — the streams listed below.
-              This page tracks ParkSwift's own income, never the money flowing between users.
-            </p>
-          </div>
+  const [payingOut, setPayingOut] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  // Refund modal
+  const [refundTxn, setRefundTxn] = useState<AdminTransactionListItem | null>(null);
+  const [refundReason, setRefundReason] = useState('');
+  const [refunding, setRefunding] = useState(false);
+
+  const pages = Math.max(1, Math.ceil(total / limit));
+
+  const fetchOverview = useCallback(async () => {
+    try {
+      const res = await adminApi.getPaymentsOverview();
+      if (res.success) setOverview(res.stats);
+    } catch (e) {
+      if (process.env.NODE_ENV === 'development') console.error('Overview:', e);
+    }
+  }, []);
+
+  const fetchTransactions = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await adminApi.listTransactions({
+        type: typeFilter === 'All Transactions' ? undefined : typeFilter,
+        search: search || undefined,
+        page,
+        limit,
+      });
+      if (res.success) {
+        setTxns(res.transactions || []);
+        setTotal(res.total || 0);
+      }
+    } catch (e) {
+      if (process.env.NODE_ENV === 'development') console.error('Transactions:', e);
+    } finally {
+      setLoading(false);
+    }
+  }, [typeFilter, search, page, limit]);
+
+  useEffect(() => { fetchOverview(); }, [fetchOverview]);
+  useEffect(() => {
+    const t = setTimeout(fetchTransactions, 250);
+    return () => clearTimeout(t);
+  }, [fetchTransactions]);
+
+  const handleProcessPayouts = async () => {
+    try {
+      setPayingOut(true);
+      await adminApi.processPayouts();
+      await Promise.all([fetchOverview(), fetchTransactions()]);
+    } catch (e) {
+      if (process.env.NODE_ENV === 'development') console.error('Payouts:', e);
+    } finally {
+      setPayingOut(false);
+    }
+  };
+
+  const handleExport = async () => {
+    try {
+      setExporting(true);
+      const blob = await adminApi.exportTransactionsCsv();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `parkswift-transactions-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      if (process.env.NODE_ENV === 'development') console.error('Export:', e);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleRefund = async () => {
+    if (!refundTxn) return;
+    try {
+      setRefunding(true);
+      await adminApi.refundTransaction(refundTxn.rawId, { reason: refundReason || undefined });
+      setRefundTxn(null);
+      setRefundReason('');
+      await Promise.all([fetchOverview(), fetchTransactions()]);
+    } catch (e) {
+      if (process.env.NODE_ENV === 'development') console.error('Refund:', e);
+    } finally {
+      setRefunding(false);
+    }
+  };
+
+  const markStatus = async (txn: AdminTransactionListItem, status: 'SUCCESS' | 'FAILED') => {
+    try {
+      await adminApi.updateTransactionStatus(txn.rawId, status);
+      await Promise.all([fetchOverview(), fetchTransactions()]);
+    } catch (e) {
+      if (process.env.NODE_ENV === 'development') console.error('Status:', e);
+    }
+  };
+
+  const STAT_CARDS = overview
+    ? [
+        { label: 'Revenue (30d)', data: overview.totalRevenue30d, icon: overview.totalRevenue30d.isPositive ? TrendingUp : TrendingDown, accent: 'text-emerald-600' },
+        { label: 'Pending Payouts', data: overview.pendingPayouts, icon: Banknote, accent: 'text-amber-600' },
+        { label: 'Refunds Processed', data: overview.refundsProcessed, icon: RefreshCw, accent: 'text-rose-600' },
+      ]
+    : [];
+
+  return (
+    <div className="max-w-7xl mx-auto p-8 space-y-6">
+      {/* Header */}
+      <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }}
+        className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Payments & Billing</h1>
+          <p className="text-gray-500 mt-1">Transactions, refunds, and owner payouts.</p>
+        </div>
+        <div className="flex gap-3">
+          <button onClick={handleExport} disabled={exporting}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+            {exporting ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />} Export CSV
+          </button>
+          <button onClick={handleProcessPayouts} disabled={payingOut}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold disabled:opacity-50">
+            {payingOut ? <Loader2 size={15} className="animate-spin" /> : <Banknote size={15} />} Process Payouts
+          </button>
         </div>
       </motion.div>
 
-      {/* ─── Current Platform Revenue Model ──────────────────────────────── */}
-      <motion.section
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.25, delay: 0.05 }}
-        className="bg-white border border-gray-200 rounded-2xl p-6 max-w-4xl shadow-sm mb-6"
-      >
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-base font-bold text-gray-900">Current Platform Revenue Model</h2>
-            <p className="text-sm text-gray-500 mt-0.5">How ParkSwift earns today</p>
-          </div>
-          <Link
-            href="/subscriptions"
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#DC0159] hover:text-[#A8003F] transition-colors"
-          >
-            Manage plans
-            <ArrowRight size={14} />
-          </Link>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {REVENUE_STREAMS.map(({ icon: Icon, title, desc, color }) => (
-            <div
-              key={title}
-              className="flex items-start gap-3 p-4 rounded-xl border border-gray-100 hover:border-gray-200 transition-colors"
-            >
-              <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${COLOR_MAP[color]}`}>
-                <Icon size={18} strokeWidth={2} />
+      {/* Stat cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {STAT_CARDS.length === 0
+          ? [0, 1, 2].map((i) => <div key={i} className="h-28 bg-gray-50 rounded-2xl animate-pulse" />)
+          : STAT_CARDS.map((c) => (
+              <div key={c.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-gray-500 font-medium">{c.label}</p>
+                  <c.icon size={18} className={c.accent} />
+                </div>
+                <p className="text-2xl font-bold text-gray-900 mt-2">{c.data.value}</p>
+                <p className="text-xs text-gray-400 mt-1">{c.data.trend}</p>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-900 mb-0.5">{title}</p>
-                <p className="text-xs text-gray-500 leading-relaxed">{desc}</p>
-              </div>
-            </div>
+            ))}
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-4 flex flex-wrap gap-3 items-center">
+        <div className="flex gap-2 flex-wrap">
+          {TYPE_FILTERS.map((f) => (
+            <button key={f} onClick={() => { setTypeFilter(f); setPage(1); }}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                typeFilter === f ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}>
+              {f}
+            </button>
           ))}
         </div>
-      </motion.section>
+        <div className="relative flex-1 min-w-[220px]">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            placeholder="Search by txn ID, user, or description..."
+            className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+        </div>
+      </div>
 
-      {/* ─── Coming soon ─────────────────────────────────────────────────── */}
-      <motion.section
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.25, delay: 0.1 }}
-        className="bg-gradient-to-br from-gray-50 to-white border border-gray-200 rounded-2xl p-6 max-w-4xl shadow-sm"
-      >
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-base font-bold text-gray-900">Coming once payment gateway is live</h2>
-            <p className="text-sm text-gray-500 mt-0.5">
-              These tools activate when Razorpay / Stripe is wired for subscription checkout.
-            </p>
+      {/* Table */}
+      <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+        {loading ? (
+          <div className="flex items-center justify-center py-16"><Loader2 className="animate-spin text-indigo-600" size={32} /></div>
+        ) : txns.length === 0 ? (
+          <div className="p-12 text-center text-gray-500 text-sm">No transactions found.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-gray-50/50 text-gray-500 text-xs uppercase tracking-wider border-b border-gray-100">
+                  <th className="px-5 py-3.5 font-semibold">Transaction</th>
+                  <th className="px-5 py-3.5 font-semibold">User</th>
+                  <th className="px-5 py-3.5 font-semibold">Amount</th>
+                  <th className="px-5 py-3.5 font-semibold">Status</th>
+                  <th className="px-5 py-3.5 font-semibold">Date</th>
+                  <th className="px-5 py-3.5 font-semibold">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {txns.map((t) => (
+                  <tr key={t.rawId} className="hover:bg-gray-50/50 transition-colors">
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-2.5">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${t.isInflow ? 'bg-emerald-50' : 'bg-rose-50'}`}>
+                          {t.isInflow ? <ArrowDownLeft size={14} className="text-emerald-600" /> : <ArrowUpRight size={14} className="text-rose-600" />}
+                        </div>
+                        <div>
+                          <p className="text-xs font-mono text-gray-500">{t.id}</p>
+                          <p className="text-sm text-gray-700 line-clamp-1">{t.description}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-5 py-4 text-sm text-gray-700">{t.user}</td>
+                    <td className="px-5 py-4">
+                      <span className={`text-sm font-bold ${t.isInflow ? 'text-emerald-700' : 'text-rose-700'}`}>{t.amountDisplay}</span>
+                    </td>
+                    <td className="px-5 py-4">
+                      <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_STYLE[t.status] || 'bg-gray-100 text-gray-600'}`}>{t.status}</span>
+                    </td>
+                    <td className="px-5 py-4 text-sm text-gray-500">{t.date}</td>
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-2">
+                        {/* Refund only inflows that succeeded */}
+                        {t.isInflow && t.status === 'SUCCESS' && (
+                          <button onClick={() => { setRefundTxn(t); setRefundReason(''); }}
+                            className="text-rose-600 hover:text-rose-700 text-xs font-semibold">Refund</button>
+                        )}
+                        {/* Pending → mark success/failed */}
+                        {t.status === 'PENDING' && (
+                          <>
+                            <button onClick={() => markStatus(t, 'SUCCESS')}
+                              className="text-emerald-600 hover:text-emerald-700 text-xs font-semibold">Mark Paid</button>
+                            <button onClick={() => markStatus(t, 'FAILED')}
+                              className="text-gray-500 hover:text-gray-700 text-xs font-semibold">Fail</button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <span className="px-2.5 py-1 bg-gray-100 text-gray-600 text-xs font-semibold rounded-full">
-            Planned
-          </span>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {COMING_SOON.map(({ icon: Icon, label }) => (
-            <div
-              key={label}
-              className="flex items-center gap-3 p-3 rounded-lg bg-white border border-gray-100"
-            >
-              <Icon size={16} className="text-gray-400" strokeWidth={2} />
-              <span className="text-sm text-gray-700">{label}</span>
-            </div>
-          ))}
-        </div>
+        )}
+      </div>
 
-        <div className="mt-5 pt-5 border-t border-gray-100 flex flex-wrap gap-3">
-          <Link
-            href="/subscriptions"
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#DC0159] hover:bg-[#A8003F] text-white rounded-lg text-sm font-semibold transition-colors"
-          >
-            <CreditCard size={16} />
-            Go to Subscriptions
-          </Link>
-          <Link
-            href="/dashboard"
-            className="inline-flex items-center px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-semibold transition-colors"
-          >
-            Back to Dashboard
-          </Link>
+      {/* Pagination */}
+      {pages > 1 && (
+        <div className="flex items-center justify-center gap-3">
+          <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
+            className="p-2 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50"><ChevronLeft size={16} /></button>
+          <span className="text-sm text-gray-600">Page {page} of {pages}</span>
+          <button onClick={() => setPage((p) => Math.min(pages, p + 1))} disabled={page === pages}
+            className="p-2 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50"><ChevronRight size={16} /></button>
         </div>
-      </motion.section>
+      )}
+
+      {/* Refund modal */}
+      {refundTxn && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-900">Issue Refund</h2>
+              <button onClick={() => setRefundTxn(null)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+            </div>
+            <div className="bg-gray-50 rounded-xl p-3 text-sm">
+              <p className="font-semibold text-gray-900">{refundTxn.id} · {refundTxn.amountDisplay}</p>
+              <p className="text-gray-500 text-xs mt-0.5">{refundTxn.user} · {refundTxn.description}</p>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5 block">Reason</label>
+              <textarea value={refundReason} onChange={(e) => setRefundReason(e.target.value)} rows={3}
+                placeholder="Reason for the refund (visible in logs)..."
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none resize-none" />
+            </div>
+            <button onClick={handleRefund} disabled={refunding}
+              className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-semibold rounded-xl text-sm flex items-center justify-center gap-2">
+              {refunding ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} Confirm Refund
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

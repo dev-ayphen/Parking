@@ -344,6 +344,20 @@ export const adminApi = {
     return res.data;
   },
 
+  // Review moderation — list + soft hide/unhide
+  listReviews: async (params?: { status?: string; search?: string; page?: number }) => {
+    const res = await apiClient.get('/admin/reviews', { params });
+    return res.data;
+  },
+  hideReview: async (id: number) => {
+    const res = await apiClient.put(`/admin/reviews/${id}/hide`);
+    return res.data;
+  },
+  unhideReview: async (id: number) => {
+    const res = await apiClient.put(`/admin/reviews/${id}/unhide`);
+    return res.data;
+  },
+
   // Case evidence — full legal-evidence bundle for a single booking
   getCaseEvidence: async (bookingId: string) => {
     const res = await apiClient.get(`/admin/cases/${encodeURIComponent(bookingId)}/evidence`);
@@ -361,6 +375,17 @@ export const adminApi = {
     limit?: number;
   }): Promise<CaseListResponse> => {
     const res = await apiClient.get('/admin/cases', { params });
+    return res.data;
+  },
+
+  // Incident reports — parker-reported parking incidents
+  listIncidents: async (params?: { status?: string; search?: string; page?: number }) => {
+    const res = await apiClient.get('/incidents', { params });
+    return res.data;
+  },
+
+  updateIncidentStatus: async (id: number, data: { status: string; resolution?: string }) => {
+    const res = await apiClient.put(`/incidents/${id}/status`, data);
     return res.data;
   },
 };

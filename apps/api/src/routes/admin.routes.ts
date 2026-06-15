@@ -3,6 +3,7 @@ import { adminController } from '../controllers/admin.controller';
 import { settingsController } from '../controllers/settings.controller';
 import { documentController } from '../controllers/document.controller';
 import { abuseController } from '../controllers/abuse.controller';
+import { ratingAdminController } from '../controllers/ratingAdmin.controller';
 import { vehicleController } from '../controllers/vehicle.controller';
 import { authenticate, requireRole } from '../middleware/auth';
 import { validate } from '../middleware/validate';
@@ -54,10 +55,25 @@ router.get('/subscription-plans', adminController.listSubscriptionPlans);
 router.post('/subscription-plans', validate(createSubscriptionPlanSchema), adminController.createSubscriptionPlan);
 router.put('/subscription-plans/:id', validate(updateSubscriptionPlanSchema), adminController.updateSubscriptionPlan);
 
+// ─── Payments & transactions ─────────────────────────────────────────
+router.get('/transactions', adminController.listTransactions);
+router.get('/transactions/:id', adminController.getTransactionDetails);
+router.post('/transactions/:id/refund', validate(refundTransactionSchema), adminController.refundTransaction);
+router.put('/transactions/:id/status', validate(updateTransactionStatusSchema), adminController.updateTransactionStatus);
+router.get('/payments/overview', adminController.getPaymentsOverview);
+router.post('/payments/process-payouts', adminController.processPayouts);
+router.post('/payments/payout', adminController.createPayout);
+router.get('/payments/export', adminController.exportTransactions);
+
 // ─── Abuse reports ───────────────────────────────────────────────────
 router.get('/abuse-reports', abuseController.listAbuseReports);
 router.get('/abuse-reports/:id', abuseController.getAbuseReport);
 router.put('/abuse-reports/:id/action', validate(actionAbuseReportSchema), abuseController.actionAbuseReport);
+
+// Review moderation — list + soft hide/unhide (never delete)
+router.get('/reviews', ratingAdminController.listReviews);
+router.put('/reviews/:id/hide', ratingAdminController.hideReview);
+router.put('/reviews/:id/unhide', ratingAdminController.unhideReview);
 
 // ─── Case evidence (read-only) ───────────────────────────────────────
 router.get('/cases', adminController.listCases);

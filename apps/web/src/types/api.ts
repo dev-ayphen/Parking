@@ -89,6 +89,8 @@ export interface AdminSpaceListItem {
   hourlyRate: number;
   status: string;
   bookingsCount: number;
+  ratingAvg: number;
+  ratingCount: number;
   owner: {
     id: number;
     name: string;

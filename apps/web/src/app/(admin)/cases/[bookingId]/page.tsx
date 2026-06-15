@@ -380,7 +380,84 @@ const DocumentsTab = ({ docs }: { docs: any[] }) => (
 
 // ─── Tab: Incidents & Abuse ─────────────────────────────────────────────────
 
-const IncidentsTab = ({ ev }: any) => (
+const IncidentsTab = ({ ev }: any) => {
+  const cv = ev.conditionVerification;
+  // All photos the parker attached across their incident reports.
+  const complaintPhotos: string[] = (ev.incidentReports || []).flatMap((i: any) => i.evidenceUrls || []);
+  const conditionPhotos: string[] = cv?.mediaUrls || [];
+  const showComparison = conditionPhotos.length > 0 || complaintPhotos.length > 0;
+
+  return (
+  <div className="space-y-4">
+    {/* Side-by-side: owner's pre-parking condition vs parker's complaint photos */}
+    {showComparison && (
+      <Card title="Condition vs Complaint — Photo Comparison">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* LEFT — owner recorded BEFORE parking */}
+          <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-bold text-blue-800 uppercase tracking-wide">Owner — Before Parking</p>
+              {cv && (
+                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                  cv.parkerAccepted ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                }`}>
+                  {cv.parkerAccepted ? 'Parker accepted' : 'Not accepted'}
+                </span>
+              )}
+            </div>
+            {cv ? (
+              <>
+                {cv.type === 'PHOTO_VIDEO' && conditionPhotos.length > 0 ? (
+                  <div className="grid grid-cols-3 gap-2">
+                    {conditionPhotos.map((url, k) => (
+                      <a key={k} href={url} target="_blank" rel="noopener noreferrer" className="block">
+                        <img src={url} alt={`condition ${k + 1}`} className="w-full h-20 object-cover rounded-lg border border-blue-200 hover:opacity-80 transition" />
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-blue-700 italic">Owner reported no existing damage.</p>
+                )}
+                {/* Timeline proof: recorded → accepted, both before the session. */}
+                <div className="mt-2.5 pt-2.5 border-t border-blue-200 space-y-1">
+                  {cv.recordedAt && (
+                    <p className="text-[11px] text-blue-700">
+                      <span className="font-semibold">Recorded by owner:</span> {fmtDate(cv.recordedAt)}
+                    </p>
+                  )}
+                  <p className="text-[11px] text-blue-700">
+                    <span className="font-semibold">Parker accepted:</span>{' '}
+                    {cv.parkerAccepted && cv.acceptedAt ? fmtDate(cv.acceptedAt) : <span className="text-amber-600">Not yet accepted</span>}
+                  </p>
+                </div>
+              </>
+            ) : (
+              <p className="text-xs text-gray-400 italic">No condition record.</p>
+            )}
+          </div>
+
+          {/* RIGHT — parker complained AFTER parking */}
+          <div className="rounded-xl border border-red-200 bg-red-50/40 p-3">
+            <p className="text-xs font-bold text-red-800 uppercase tracking-wide mb-2">Parker — Complaint Photos</p>
+            {complaintPhotos.length > 0 ? (
+              <div className="grid grid-cols-3 gap-2">
+                {complaintPhotos.map((url, k) => (
+                  <a key={k} href={url} target="_blank" rel="noopener noreferrer" className="block">
+                    <img src={url} alt={`complaint ${k + 1}`} className="w-full h-20 object-cover rounded-lg border border-red-200 hover:opacity-80 transition" />
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-400 italic">No complaint photos attached.</p>
+            )}
+          </div>
+        </div>
+        <p className="text-[11px] text-gray-400 mt-3">
+          Compare the owner&apos;s pre-parking record (left) against the parker&apos;s complaint (right) to assess responsibility for the damage.
+        </p>
+      </Card>
+    )}
+
   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
     <Card title={`Incidents (${ev.incidentReports?.length || 0})`}>
       {ev.incidentReports?.length ? (
@@ -430,7 +507,9 @@ const IncidentsTab = ({ ev }: any) => (
       )}
     </Card>
   </div>
-);
+  </div>
+  );
+};
 
 // ─── Shared bits ────────────────────────────────────────────────────────────
 

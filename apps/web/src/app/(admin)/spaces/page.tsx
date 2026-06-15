@@ -6,7 +6,7 @@ import { io as createSocket } from 'socket.io-client';
 import {
   Search, Filter, MoreVertical, MapPin, Phone,
   CheckCircle2, XCircle, Clock, ChevronLeft, ChevronRight, Loader2, Car,
-  FileText, ShieldCheck, AlertTriangle, ExternalLink, X, Eye, MapPinIcon, Users, Zap, DollarSign,
+  FileText, ShieldCheck, AlertTriangle, ExternalLink, X, Eye, MapPinIcon, Users, Zap, DollarSign, Star,
 } from 'lucide-react';
 import { adminApi } from '@/services/api';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
@@ -25,6 +25,8 @@ interface AdminSpace {
   status: string;
   requiresAdminReview?: boolean;
   bookingsCount: number;
+  ratingAvg: number;
+  ratingCount: number;
   owner: { id: number; name: string; phone: string; email: string | null } | null;
   createdAt: string;
   // Fields only present on the single-space detail response (not in the list endpoint).
@@ -362,6 +364,7 @@ export default function SpacesPage() {
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 border-b border-gray-100">Type</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 border-b border-gray-100">Rate</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 border-b border-gray-100">Bookings</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 border-b border-gray-100">Rating</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 border-b border-gray-100">Status</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 border-b border-gray-100">Actions</th>
                 </tr>
@@ -416,6 +419,21 @@ export default function SpacesPage() {
                     </td>
                     <td className="px-6 py-4">
                       <span className="text-sm font-bold text-gray-700">{space.bookingsCount}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      {space.ratingCount > 0 ? (
+                        <div className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${
+                          space.ratingAvg >= 4.0 ? 'bg-emerald-50 text-emerald-700' :
+                          space.ratingAvg >= 3.0 ? 'bg-amber-50 text-amber-700' :
+                          'bg-rose-50 text-rose-700'
+                        }`}>
+                          <Star size={11} className="fill-current" />
+                          {space.ratingAvg.toFixed(1)}
+                          <span className="font-medium opacity-70">({space.ratingCount})</span>
+                        </div>
+                      ) : (
+                        <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-600">New</span>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${

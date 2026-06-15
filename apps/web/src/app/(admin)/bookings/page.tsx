@@ -26,6 +26,7 @@ interface AdminBooking {
   duration?: number;
   amount: string;
   status: string;
+  cancelReason?: string | null;
   createdAt?: string;
 }
 
@@ -291,6 +292,9 @@ export default function BookingsPage() {
                     </td>
                     <td className="px-6 py-4">
                       <StatusBadge status={booking.status} />
+                      {booking.cancelReason && (
+                        <p className="text-[11px] text-gray-400 mt-1">{booking.cancelReason}</p>
+                      )}
                     </td>
                     <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-2">

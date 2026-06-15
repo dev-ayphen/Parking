@@ -35,6 +35,22 @@ export const abuseService = {
     const reported = await db.user.findUnique({ where: { id: data.reportedUserId } });
     if (!reported) throw Object.assign(new Error('Reported user not found'), { statusCode: 404 });
 
+    // Idempotency guard — if this reporter already has an OPEN report against the
+    // same user, return it instead of stacking duplicates (repeat taps / restarts).
+    // A report is "closed" only once an admin RESOLVES or DISMISSES it; a new,
+    // genuinely-separate issue can be reported after that.
+    const existing = await db.abuseReport.findFirst({
+      where: {
+        reportedByUserId,
+        reportedUserId: data.reportedUserId,
+        status: { notIn: ['RESOLVED', 'DISMISSED'] },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (existing) {
+      return { success: true, report: existing, alreadyReported: true };
+    }
+
     const report = await db.abuseReport.create({
       data: {
         reportedUserId: data.reportedUserId,

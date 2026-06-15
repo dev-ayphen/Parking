@@ -386,6 +386,20 @@ export const spaceService = {
     if (existing.status === 'REJECTED') {
       updateData.status = 'PENDING';
       updateData.rejectionReason = null;
+    } else if (existing.status === 'VERIFIED') {
+      // A VERIFIED space stays live for minor edits (price, hours, amenities),
+      // but MATERIAL changes — what was actually verified (identity, location,
+      // type, capacity, documents) — must go back through admin review.
+      const materialChanged =
+        (data.address !== undefined) ||
+        (data.latitude !== undefined) || (data.longitude !== undefined) ||
+        (data.spaceType !== undefined) ||
+        (data.capacity !== undefined) ||
+        (data.docType !== undefined);
+      if (materialChanged) {
+        updateData.status = 'PENDING';
+        updateData.rejectionReason = null;
+      }
     }
 
     const space = await db.space.update({
@@ -529,10 +543,21 @@ export const spaceService = {
     const space = await db.space.findFirst({ where: { id: spaceId, ownerId } });
     if (!space) throw Object.assign(new Error('Space not found or access denied'), { statusCode: 404 });
 
-    const bookings = await db.booking.findMany({ where: { spaceId } });
-
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekStart = new Date(dayStart);
+    weekStart.setDate(weekStart.getDate() - 6); // last 7 days inclusive
+
+    const [bookings, ratingAgg] = await Promise.all([
+      db.booking.findMany({ where: { spaceId } }),
+      // Real average rating for this space's bookings (excludes hidden reviews).
+      db.rating.aggregate({
+        where: { booking: { spaceId }, isHidden: false },
+        _avg: { rating: true },
+        _count: { rating: true },
+      }),
+    ]);
 
     const total = bookings.length;
     const completed = bookings.filter((b) => b.status === 'COMPLETED').length;
@@ -540,22 +565,32 @@ export const spaceService = {
     const pending = bookings.filter((b) => b.status === 'PENDING_APPROVAL').length;
     const active = bookings.filter((b) => b.status === 'ACTIVE' || b.status === 'APPROVED').length;
 
-    const totalRevenue = bookings
-      .filter((b) => b.status === 'COMPLETED')
-      .reduce((sum, b) => sum + b.totalAmount, 0);
-
-    const thisMonthBookings = bookings.filter((b) => new Date(b.createdAt) >= monthStart);
-    const thisMonthRevenue = thisMonthBookings
-      .filter((b) => b.status === 'COMPLETED')
-      .reduce((sum, b) => sum + b.totalAmount, 0);
-
     const completedBookings = bookings.filter((b) => b.status === 'COMPLETED');
+    const revenueOf = (since: Date) =>
+      completedBookings.filter((b) => new Date(b.createdAt) >= since).reduce((s, b) => s + b.totalAmount, 0);
+
+    const totalRevenue = completedBookings.reduce((s, b) => s + b.totalAmount, 0);
+    const thisMonthRevenue = revenueOf(monthStart);
+    const thisWeekRevenue = revenueOf(weekStart);
+    const todayRevenue = revenueOf(dayStart);
+
+    const thisMonthBookings = bookings.filter((b) => new Date(b.createdAt) >= monthStart).length;
+
     const avgDuration =
       completedBookings.length > 0
         ? completedBookings.reduce((sum, b) => sum + b.duration, 0) / completedBookings.length
         : 0;
 
+    // Occupancy = currently-occupied slots ÷ capacity (live snapshot).
+    const occupiedNow = bookings.filter((b) => b.status === 'ACTIVE').length;
+    const occupancyPct = space.capacity > 0 ? Math.round((occupiedNow / space.capacity) * 100) : 0;
+
+    const avgRating = ratingAgg._count.rating > 0
+      ? Math.round((ratingAgg._avg.rating || 0) * 10) / 10
+      : 0;
+
     return {
+      success: true,
       totalBookings: total,
       completedBookings: completed,
       cancelledBookings: cancelled,
@@ -563,8 +598,13 @@ export const spaceService = {
       activeBookings: active,
       totalRevenue,
       thisMonthRevenue,
-      thisMonthBookings: thisMonthBookings.length,
+      thisWeekRevenue,
+      todayRevenue,
+      thisMonthBookings,
       avgDurationHours: Math.round(avgDuration * 10) / 10,
+      occupancyPct,
+      avgRating,
+      ratingCount: ratingAgg._count.rating,
       spaceName: space.name,
       hourlyRate: space.hourlyRate,
     };

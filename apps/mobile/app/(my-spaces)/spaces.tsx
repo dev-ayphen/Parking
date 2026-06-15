@@ -11,7 +11,7 @@ import {View,
 import { toast } from '../../utils/toast';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { Plus, MapPin, Edit3, Trash2, Clock, CheckCircle, XCircle, AlertTriangle, Car, IndianRupee } from 'lucide-react-native';
+import { Plus, MapPin, Edit3, Trash2, Clock, CheckCircle, XCircle, AlertTriangle, Car, IndianRupee, BarChart3 } from 'lucide-react-native';
 import { PageHeader } from '../../components';
 import { api } from '../../services/api';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
@@ -215,9 +215,23 @@ export default function MySpacesListScreen() {
           >
             <Edit3 size={16} color={item.status === 'REJECTED' ? Colors.primary : Colors.textDark} />
             <Text style={[styles.actionBtnText, item.status === 'REJECTED' && { color: Colors.primary }]}>
-              {item.status === 'REJECTED' ? 'Edit & Resubmit' : 'Edit Details'}
+              {item.status === 'REJECTED' ? 'Edit & Resubmit' : 'Edit'}
             </Text>
           </TouchableOpacity>
+
+          {/* Analytics — only meaningful once a space is live */}
+          {item.status === 'VERIFIED' && (
+            <>
+              <View style={styles.actionDivider} />
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={() => router.push({ pathname: '/(my-spaces)/analytics', params: { spaceId: String(item.id), spaceName: item.name } })}
+              >
+                <BarChart3 size={16} color={Colors.textDark} />
+                <Text style={styles.actionBtnText}>Analytics</Text>
+              </TouchableOpacity>
+            </>
+          )}
 
           <View style={styles.actionDivider} />
 
@@ -231,7 +245,7 @@ export default function MySpacesListScreen() {
               : <Trash2 size={16} color={Colors.error} />
             }
             <Text style={[styles.actionBtnText, { color: Colors.error }]}>
-              {isDeleting ? 'Deleting...' : 'Delete'}
+              {isDeleting ? '...' : 'Delete'}
             </Text>
           </TouchableOpacity>
         </View>

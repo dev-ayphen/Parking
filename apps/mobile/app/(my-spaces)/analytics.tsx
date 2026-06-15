@@ -1,60 +1,130 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {View,
   Text,
   StyleSheet,
   StatusBar,
-  ScrollView} from 'react-native';
+  ScrollView,
+  ActivityIndicator,
+  TouchableOpacity,
+  RefreshControl} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { TrendingUp, Calendar, Car, Eye, Star } from 'lucide-react-native';
+import { TrendingUp, TrendingDown, Calendar, Car, Star, CheckCircle2, Clock } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import PageHeader from '../../components/PageHeader';
+import { api } from '../../services/api';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 
-const THEME_COLOR = Colors.primary;
+interface Analytics {
+  totalBookings: number;
+  completedBookings: number;
+  cancelledBookings: number;
+  pendingBookings: number;
+  activeBookings: number;
+  totalRevenue: number;
+  thisMonthRevenue: number;
+  thisWeekRevenue: number;
+  todayRevenue: number;
+  avgDurationHours: number;
+  occupancyPct: number;
+  avgRating: number;
+  ratingCount: number;
+  spaceName: string;
+  hourlyRate: number;
+}
+
+const inr = (n: number) => `₹${(n || 0).toLocaleString('en-IN')}`;
+const monthLabel = new Date().toLocaleDateString('en-IN', { month: 'long' });
 
 const AnalyticsScreen = () => {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const spaceName = params.spaceName as string || 'Space Analytics';
+  const spaceId = params.spaceId as string;
+  const spaceName = (params.spaceName as string) || 'Space Analytics';
+
+  const [data, setData] = useState<Analytics | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(false);
+
+  const fetchAnalytics = useCallback(async (isRefresh = false) => {
+    if (!spaceId) { setLoading(false); setError(true); return; }
+    try {
+      isRefresh ? setRefreshing(true) : setLoading(true);
+      const res = await api.get(`/spaces/${spaceId}/analytics`);
+      if (res?.success) { setData(res); setError(false); }
+      else setError(true);
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [spaceId]);
+
+  useEffect(() => { fetchAnalytics(); }, [fetchAnalytics]);
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <PageHeader title="Analytics" onBack={() => router.back()} />
+        <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>
+      </SafeAreaView>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <PageHeader title="Analytics" onBack={() => router.back()} />
+        <View style={styles.center}>
+          <Text style={styles.errorText}>Couldn&apos;t load analytics.</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={() => fetchAnalytics()}>
+            <Text style={styles.retryBtnText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const hasBookings = data.totalBookings > 0;
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-
-      {/* Header */}
       <PageHeader title="Analytics" onBack={() => router.back()} />
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchAnalytics(true)} tintColor={Colors.primary} />}
+      >
+        <Text style={styles.spaceNameLabel} numberOfLines={1}>{data.spaceName || spaceName}</Text>
 
-        {/* Hero Revenue Card */}
+        {/* Hero Revenue Card — all real */}
         <LinearGradient colors={[Colors.textPrimary, ExtendedColors.darkCard]} style={styles.heroCard}>
           <View style={styles.heroHeader}>
-            <Text style={styles.heroLabel}>Total Revenue (May)</Text>
-            <View style={styles.trendBadge}>
-              <TrendingUp size={12} color={Colors.successAlt} />
-              <Text style={styles.trendText}>+15.2%</Text>
-            </View>
+            <Text style={styles.heroLabel}>Revenue ({monthLabel})</Text>
           </View>
-          <Text style={styles.heroValue}>₹5,200</Text>
-          <Text style={styles.heroSubtext}>Next Payout: May 25</Text>
+          <Text style={styles.heroValue}>{inr(data.thisMonthRevenue)}</Text>
+          <Text style={styles.heroSubtext}>Lifetime: {inr(data.totalRevenue)}</Text>
           <View style={styles.heroDivider} />
           <View style={styles.heroFooter}>
             <View style={styles.heroFooterItem}>
               <Text style={styles.heroFooterLabel}>This Week</Text>
-              <Text style={styles.heroFooterValue}>₹1,450</Text>
+              <Text style={styles.heroFooterValue}>{inr(data.thisWeekRevenue)}</Text>
             </View>
             <View style={styles.heroFooterDivider} />
             <View style={styles.heroFooterItem}>
               <Text style={styles.heroFooterLabel}>Today</Text>
-              <Text style={styles.heroFooterValue}>₹437</Text>
+              <Text style={styles.heroFooterValue}>{inr(data.todayRevenue)}</Text>
             </View>
           </View>
         </LinearGradient>
 
         <Text style={styles.sectionTitle}>Performance Metrics</Text>
 
-        {/* Stats Grid */}
+        {/* Stats Grid — all real */}
         <View style={styles.statsGrid}>
           <View style={styles.statsCard}>
             <View style={[styles.statsIconWrapper, { backgroundColor: ExtendedColors.analyticsBg }]}>
@@ -62,7 +132,7 @@ const AnalyticsScreen = () => {
             </View>
             <View>
               <Text style={styles.statsLabel}>Total Bookings</Text>
-              <Text style={styles.statsValue}>15</Text>
+              <Text style={styles.statsValue}>{data.totalBookings}</Text>
             </View>
           </View>
 
@@ -72,7 +142,7 @@ const AnalyticsScreen = () => {
             </View>
             <View>
               <Text style={styles.statsLabel}>Occupancy</Text>
-              <Text style={styles.statsValue}>68%</Text>
+              <Text style={styles.statsValue}>{data.occupancyPct}%</Text>
             </View>
           </View>
 
@@ -82,59 +152,45 @@ const AnalyticsScreen = () => {
             </View>
             <View>
               <Text style={styles.statsLabel}>Avg Rating</Text>
-              <Text style={styles.statsValue}>4.8 <Text style={{fontSize: FontSize.sm, color: Colors.textSecondary}}>/5</Text></Text>
+              <Text style={styles.statsValue}>
+                {data.ratingCount > 0
+                  ? <>{data.avgRating}<Text style={{ fontSize: FontSize.sm, color: Colors.textSecondary }}> /5</Text></>
+                  : <Text style={{ fontSize: FontSize.md, color: Colors.textSecondary }}>New</Text>}
+              </Text>
             </View>
           </View>
 
           <View style={styles.statsCard}>
-            <View style={[styles.statsIconWrapper, { backgroundColor: ExtendedColors.purpleTint }]}>
-              <Eye size={18} color={ExtendedColors.purpleDeep} />
+            <View style={[styles.statsIconWrapper, { backgroundColor: Colors.infoBg }]}>
+              <Clock size={18} color={Colors.info} />
             </View>
             <View>
-              <Text style={styles.statsLabel}>Profile Views</Text>
-              <Text style={styles.statsValue}>142</Text>
+              <Text style={styles.statsLabel}>Avg Duration</Text>
+              <Text style={styles.statsValue}>{data.avgDurationHours}h</Text>
             </View>
           </View>
         </View>
 
-        <Text style={styles.sectionTitle}>Recent Activity</Text>
+        <Text style={styles.sectionTitle}>Booking Breakdown</Text>
 
-        {/* Recent Activity List */}
+        {/* Real status breakdown (replaces the old fake activity feed) */}
         <View style={styles.activityCard}>
-          <View style={styles.activityRow}>
-            <View style={[styles.activityIcon, { backgroundColor: Colors.successBgAlt }]}>
-              <TrendingUp size={14} color={Colors.successAlt} />
+          {hasBookings ? (
+            <>
+              <BreakdownRow icon={<CheckCircle2 size={14} color={Colors.successAlt} />} bg={Colors.successBgAlt} label="Completed" value={data.completedBookings} />
+              <View style={styles.divider} />
+              <BreakdownRow icon={<Clock size={14} color={Colors.warning} />} bg={Colors.warningBg} label="Active / Upcoming" value={data.activeBookings} />
+              <View style={styles.divider} />
+              <BreakdownRow icon={<Calendar size={14} color={Colors.info} />} bg={Colors.infoBg} label="Pending Requests" value={data.pendingBookings} />
+              <View style={styles.divider} />
+              <BreakdownRow icon={<TrendingDown size={14} color={Colors.error} />} bg={Colors.errorBg} label="Cancelled / Rejected" value={data.cancelledBookings} />
+            </>
+          ) : (
+            <View style={styles.emptyBox}>
+              <Calendar size={28} color={Colors.borderLight} />
+              <Text style={styles.emptyText}>No bookings yet. Stats will appear as parkers book this space.</Text>
             </View>
-            <View style={styles.activityInfo}>
-              <Text style={styles.activityTitle}>Earnings Processed</Text>
-              <Text style={styles.activityTime}>2 hours ago</Text>
-            </View>
-            <Text style={styles.activityAmount}>+₹437.50</Text>
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.activityRow}>
-            <View style={[styles.activityIcon, { backgroundColor: Colors.warningBg }]}>
-              <Star size={14} color={Colors.warning} />
-            </View>
-            <View style={styles.activityInfo}>
-              <Text style={styles.activityTitle}>New 5-Star Rating</Text>
-              <Text style={styles.activityTime}>Yesterday, 4:30 PM</Text>
-            </View>
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.activityRow}>
-            <View style={[styles.activityIcon, { backgroundColor: Colors.infoBg }]}>
-              <Calendar size={14} color={Colors.info} />
-            </View>
-            <View style={styles.activityInfo}>
-              <Text style={styles.activityTitle}>Booking Completed</Text>
-              <Text style={styles.activityTime}>May 24, 11:00 AM</Text>
-            </View>
-          </View>
+          )}
         </View>
 
         <View style={{ height: 40 }} />
@@ -143,11 +199,28 @@ const AnalyticsScreen = () => {
   );
 };
 
+const BreakdownRow = ({ icon, bg, label, value }: { icon: React.ReactNode; bg: string; label: string; value: number }) => (
+  <View style={styles.activityRow}>
+    <View style={[styles.activityIcon, { backgroundColor: bg }]}>{icon}</View>
+    <View style={styles.activityInfo}>
+      <Text style={styles.activityTitle}>{label}</Text>
+    </View>
+    <Text style={styles.activityAmount}>{value}</Text>
+  </View>
+);
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.screenBg,
   },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing['3xl'] },
+  errorText: { fontSize: FontSize.md, color: Colors.textSecondary, marginBottom: Spacing.xl },
+  retryBtn: { backgroundColor: Colors.primaryLight, paddingHorizontal: Spacing['4xl'], paddingVertical: Spacing.xl, borderRadius: BorderRadius.button },
+  retryBtnText: { color: Colors.primary, fontWeight: FontWeight.bold, fontSize: FontSize.md },
+  spaceNameLabel: { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.xl },
+  emptyBox: { alignItems: 'center', paddingVertical: Spacing['4xl'], gap: Spacing.md },
+  emptyText: { fontSize: FontSize.sm, color: Colors.textSecondary, textAlign: 'center', paddingHorizontal: Spacing['3xl'], lineHeight: 18 },
   content: {
     padding: Spacing['3xl'],
   },

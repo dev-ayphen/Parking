@@ -55,3 +55,6 @@ dump.rdb
 
 # Expo
 .expo/
+
+# TypeScript incremental build cache
+*.tsbuildinfo

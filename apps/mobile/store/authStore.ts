@@ -80,6 +80,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: async () => {
+    // Clear the push token server-side FIRST (while the auth token is still
+    // valid) so the next person on this device doesn't inherit our pushes.
+    // Best-effort: never block logout on it.
+    try {
+      const token = await getAuthToken();
+      if (token) {
+        await fetch(`${API_BASE}/users/me/push-token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ token: null }),
+        });
+      }
+    } catch {
+      // ignore — logout must always proceed
+    }
+
     await clearAuthData();
     set({ user: null, token: null });
   },

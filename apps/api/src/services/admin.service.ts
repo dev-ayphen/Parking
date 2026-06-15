@@ -3,6 +3,31 @@ import { formatUserType, formatDateShort, formatDateMid, timeAgo } from '../util
 import { userAdminService } from './userAdmin.service';
 import { spaceAdminService } from './spaceAdmin.service';
 import { billingAdminService } from './billingAdmin.service';
+import { pushService } from './push.service';
+
+/**
+ * Map a notification's category + metadata to the deep-link data the mobile app
+ * uses to route a notification tap to the right screen. Kept here so every
+ * notifyUser() call routes consistently.
+ */
+function buildDeepLinkData(category?: string, metadata?: any): Record<string, unknown> {
+  const data: Record<string, unknown> = { category: category || 'GENERAL' };
+  const bookingId = metadata?.bookingId;
+  if (bookingId) {
+    data.bookingId = bookingId;
+    // BOOKING notifications routed to the owner (new request) open the requests
+    // list; everything else booking-related opens that booking's detail.
+    data.screen = category === 'BOOKING' && metadata?.target === 'OWNER'
+      ? 'booking-requests'
+      : 'booking-detail';
+  } else if (metadata?.spaceId) {
+    data.spaceId = metadata.spaceId;
+    data.screen = 'my-spaces';
+  } else if (category === 'PAYMENT') {
+    data.screen = 'billing';
+  }
+  return data;
+}
 
 /**
  * Aggregated admin service facade. Delegates user/space/billing to focused
@@ -66,6 +91,13 @@ export const adminService = {
       REJECTED: 'Rejected',
     };
 
+    const cancelReasonDisplay: Record<string, string> = {
+      NO_SHOW: 'No Show',
+      USER_CANCELLED: 'Parker Cancelled',
+      OWNER_CANCELLED: 'Owner Cancelled',
+      ADMIN_CANCELLED: 'Admin Cancelled',
+    };
+
     const mapped = (bookings as any[]).map((b) => ({
       id: `BKG-${String(b.id).slice(-4).toUpperCase()}`,
       rawId: b.id,
@@ -88,6 +120,8 @@ export const adminService = {
       duration: `${b.duration} hr${b.duration > 1 ? 's' : ''}`,
       amount: `₹${b.totalAmount}`,
       status: statusDisplay[b.status] ?? b.status,
+      // Human-readable cancellation reason for the admin table (null unless cancelled).
+      cancelReason: b.status === 'CANCELLED' ? (cancelReasonDisplay[b.cancelReason] ?? null) : null,
       createdAt: b.createdAt,
     }));
 
@@ -214,15 +248,37 @@ export const adminService = {
   },
 
   notifyUser: async (userId: number, payload: { title: string; message: string; category?: string; metadata?: any }) => {
-    return db.notification.create({
-      data: {
-        userId,
-        title: payload.title,
-        message: payload.message,
-        category: payload.category || 'GENERAL',
-        metadata: payload.metadata || {},
-      },
-    });
+    // A notification is a SIDE EFFECT — it must never break the action that
+    // triggered it (a booking still succeeds even if the notification row or
+    // push fails). Controllers `await` this, so we swallow errors here rather
+    // than relying on every caller to wrap it in try/catch.
+    try {
+      const notification = await db.notification.create({
+        data: {
+          userId,
+          title: payload.title,
+          message: payload.message,
+          category: payload.category || 'GENERAL',
+          metadata: payload.metadata || {},
+        },
+      });
+
+      // Fire-and-forget push so users hear it even with the app closed. This is
+      // the SINGLE source of push for notifications — every notifyUser() call
+      // gets a push for free, with deep-link data derived from metadata.
+      pushService
+        .sendToUser(userId, {
+          title: payload.title,
+          body: payload.message,
+          data: buildDeepLinkData(payload.category, payload.metadata),
+        })
+        .catch(() => {});
+
+      return notification;
+    } catch (err) {
+      console.error('[NOTIFY] notifyUser failed', { userId, err: (err as Error)?.message });
+      return null;
+    }
   },
 
   listSupportTickets: async (query: any) => {
@@ -549,6 +605,11 @@ export const adminService = {
         category,
       })),
     });
+
+    // Fire-and-forget push to every recipient with the app installed.
+    pushService
+      .sendToMany(users.map((u) => u.id), { title, body: message, data: { category } })
+      .catch(() => {});
 
     return { success: true, sent: users.length, audience, broadcastedAt: new Date().toISOString(), title, message, category };
   },

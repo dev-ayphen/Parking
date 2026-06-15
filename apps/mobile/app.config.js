@@ -22,6 +22,18 @@ module.exports = {
     scheme: 'parkswift',
     icon: './assets/icon.png',
     userInterfaceStyle: 'light',
+    // ──────────────────────────────────────────────────────────────────────
+    // PUSH NOTIFICATIONS — production credentials.
+    // `projectId` is REQUIRED for getExpoPushTokenAsync() in a production/EAS
+    // build (it works without one only inside Expo Go). Run `eas init` to create
+    // the project, then paste the generated id here (or set EAS_PROJECT_ID in env).
+    // Until this is real, production builds cannot obtain a push token.
+    // ──────────────────────────────────────────────────────────────────────
+    extra: {
+      eas: {
+        projectId: process.env.EAS_PROJECT_ID || '', // TODO: set via `eas init`
+      },
+    },
     splash: {
       backgroundColor: '#ffffff',
     },

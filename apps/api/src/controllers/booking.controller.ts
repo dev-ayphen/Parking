@@ -29,7 +29,7 @@ export const bookingController = {
           title: 'New Booking Request',
           message: `A parker has requested ${result.duration ?? ''}h on ${result.space?.name || 'your space'}.`,
           category: 'BOOKING',
-          metadata: { bookingId: result.id },
+          metadata: { bookingId: result.id, target: 'OWNER' },
         });
       }
       await logEvent('INFO', 'bookings', `Booking ${result.id} created`, { parkerId: req.user.id, spaceId: result.spaceId }, req.user.id);
@@ -115,12 +115,53 @@ export const bookingController = {
   cancelBooking: async (req: Request, res: Response) => {
     try {
       assertAuth(req);
-      const result = await bookingService.cancelBooking(req.params.id, req.user.id, req.user.role, req);
-      // Notify the space owner so they can dismiss any open request modal
-      const ownerId = (result as any)?.ownerId;
-      if (ownerId) {
-        emitToUser(ownerId, 'booking:cancelled', { bookingId: req.params.id });
+      const reason = req.body?.reason?.trim() || undefined;
+      const result = await bookingService.cancelBooking(req.params.id, req.user.id, req.user.role, reason, req);
+
+      const { ownerId, parkerId, spaceName, cancelledBy } = result as any;
+      const bookingId = req.params.id;
+
+      // Notify the OTHER party — DB notification (inbox) + push + live socket.
+      // Whoever did NOT initiate the cancel gets told. This is the fix for the
+      // "owner's app closed, parker cancels, owner never finds out" gap.
+      if (cancelledBy === 'PARKER' && ownerId) {
+        emitToUser(ownerId, 'booking:cancelled', { bookingId });
+        await adminService.notifyUser(ownerId, {
+          title: 'Booking Cancelled',
+          message: `The parker cancelled their booking for ${spaceName}.${reason ? ` Reason: ${reason}` : ''}`,
+          category: 'BOOKING',
+          metadata: { bookingId },
+        });
+      } else if (cancelledBy === 'OWNER' && parkerId) {
+        emitToUser(parkerId, 'booking:cancelled', { bookingId });
+        await adminService.notifyUser(parkerId, {
+          title: 'Booking Cancelled by Owner',
+          message: `The owner cancelled your booking for ${spaceName}.${reason ? ` Reason: ${reason}` : ''} Please book another space.`,
+          category: 'BOOKING',
+          metadata: { bookingId },
+        });
+      } else if (cancelledBy === 'ADMIN') {
+        // Admin cancellation — tell both sides.
+        if (ownerId) {
+          emitToUser(ownerId, 'booking:cancelled', { bookingId });
+          await adminService.notifyUser(ownerId, {
+            title: 'Booking Cancelled',
+            message: `A booking for ${spaceName} was cancelled by support.`,
+            category: 'BOOKING',
+            metadata: { bookingId },
+          });
+        }
+        if (parkerId) {
+          emitToUser(parkerId, 'booking:cancelled', { bookingId });
+          await adminService.notifyUser(parkerId, {
+            title: 'Booking Cancelled',
+            message: `Your booking for ${spaceName} was cancelled by support.`,
+            category: 'BOOKING',
+            metadata: { bookingId },
+          });
+        }
       }
+
       res.json(result);
     } catch (error) {
       sendError(res, error);
@@ -135,6 +176,12 @@ export const bookingController = {
       const parkerId = (result as any)?.booking?.parkerId;
       if (parkerId) {
         emitToUser(parkerId, 'session:started', { bookingId: req.params.id });
+        await adminService.notifyUser(parkerId, {
+          title: 'Session Started',
+          message: 'Your parking session is now active. Enjoy your spot!',
+          category: 'BOOKING',
+          metadata: { bookingId: req.params.id },
+        });
       }
       res.json(result);
     } catch (error) {
@@ -171,9 +218,13 @@ export const bookingController = {
       // Notify parker that session is complete — triggers navigation to session-complete screen
       const parkerId = (result as any)?.booking?.parkerId ?? (result as any)?.parkerId;
       if (parkerId) {
-        emitToUser(parkerId, 'session:completed', {
-          bookingId: req.params.id,
-          totalAmount: (result as any)?.booking?.totalAmount ?? (result as any)?.totalAmount,
+        const totalAmount = (result as any)?.booking?.totalAmount ?? (result as any)?.totalAmount;
+        emitToUser(parkerId, 'session:completed', { bookingId: req.params.id, totalAmount });
+        await adminService.notifyUser(parkerId, {
+          title: 'Session Complete',
+          message: `Your parking session ended.${totalAmount != null ? ` Total: ₹${totalAmount}.` : ''} Download your invoice from the booking.`,
+          category: 'BOOKING',
+          metadata: { bookingId: req.params.id },
         });
       }
       res.json(result);

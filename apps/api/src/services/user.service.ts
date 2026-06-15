@@ -238,7 +238,21 @@ export const userService = {
     }
   },
 
-  updatePushToken: async (userId: number, token: string) => {
+  updatePushToken: async (userId: number, token: string | null) => {
+    // Clearing the token (logout) — just null it for this user.
+    if (!token) {
+      await db.user.update({ where: { id: userId }, data: { expoPushToken: null } });
+      return;
+    }
+
+    // Device-swap dedupe: a physical device has ONE Expo token. If another user
+    // previously registered this same token (shared/handed-down phone), clear it
+    // from them first — otherwise a push meant for this user would also reach the
+    // previous owner. The token belongs to whoever logged in last.
+    await db.user.updateMany({
+      where: { expoPushToken: token, id: { not: userId } },
+      data: { expoPushToken: null },
+    });
     await db.user.update({ where: { id: userId }, data: { expoPushToken: token } });
   },
 

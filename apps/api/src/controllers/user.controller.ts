@@ -46,12 +46,25 @@ export const userController = {
     }
   },
 
-  /** POST /users/me/push-token — register or refresh Expo push token */
+  /** POST /users/me/push-token — register, refresh, or clear (on logout) the Expo push token */
   registerPushToken: async (req: Request, res: Response) => {
     try {
       assertAuth(req);
       const { token } = req.body;
-      if (!token || typeof token !== 'string') throw BadRequest('token is required', ErrorCode.VALIDATION_ERROR);
+
+      // A null/empty token is a valid "clear my token" request (logout).
+      if (token === null || token === undefined || token === '') {
+        await userService.updatePushToken(req.user.id, null);
+        return res.json({ success: true });
+      }
+
+      if (typeof token !== 'string') {
+        throw BadRequest('token must be a string', ErrorCode.VALIDATION_ERROR);
+      }
+      // Only accept real Expo tokens — keeps garbage out of the DB.
+      if (!/^Expo(nent)?PushToken\[.+\]$/.test(token)) {
+        throw BadRequest('Invalid Expo push token format', ErrorCode.VALIDATION_ERROR);
+      }
       await userService.updatePushToken(req.user.id, token);
       res.json({ success: true });
     } catch (error) {

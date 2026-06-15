@@ -3,7 +3,8 @@ import { emitToUser } from '../app';
 import { auditService } from './audit.service';
 import { adminService } from './admin.service';
 
-const APPROVAL_WINDOW_MS = 2 * 60 * 1000; // 2 minutes
+const APPROVAL_WINDOW_MS = 2 * 60 * 1000;        // owner must respond to a request within 2 min
+const NO_SHOW_GRACE_MS = 30 * 60 * 1000;          // parker grace period past their ETA before no-show
 
 export const bookingExpiryService = {
   /**
@@ -72,13 +73,88 @@ export const bookingExpiryService = {
     }
   },
 
+  /**
+   * No-show release: finds APPROVED bookings where the parker never started the
+   * session (no sessionStartedAt) and is now more than 30 minutes past their ETA.
+   * Marks them CANCELLED, frees the space (capacity counts APPROVED slots), and
+   * notifies both sides. This is what stops a no-show from blocking a spot forever.
+   *
+   * Signal choice: we key off `eta` (the arrival time the parker committed to) +
+   * a grace buffer — fairer than a fixed timer from approval, and `eta` is always
+   * set. `sessionStartedAt === null` guarantees the session never actually began.
+   */
+  releaseNoShows: async () => {
+    const cutoff = new Date(Date.now() - NO_SHOW_GRACE_MS);
+
+    const noShows = await db.booking.findMany({
+      where: {
+        status: 'APPROVED',
+        sessionStartedAt: null, // session never started → parker never verified arrival
+        eta: { lt: cutoff },    // more than the grace period past their promised arrival
+      },
+      include: {
+        space: { select: { name: true, ownerId: true } },
+        parker: { select: { id: true, firstName: true } },
+      },
+    });
+
+    if (noShows.length === 0) return;
+
+    for (const booking of noShows) {
+      await db.booking.update({
+        where: { id: booking.id },
+        // Tagged NO_SHOW so analytics can separate parker no-shows from
+        // intentional cancellations — without needing a new booking status.
+        data: { status: 'CANCELLED', cancelReason: 'NO_SHOW', sessionOtp: null },
+      });
+
+      await auditService.logBookingEvent({
+        bookingId: booking.id,
+        event: 'BOOKING_CANCELLED',
+        fromStatus: 'APPROVED',
+        toStatus: 'CANCELLED',
+        actorId: 0,
+        actorRole: 'SYSTEM',
+        payload: { reason: 'NO_SHOW', detail: 'Parker did not arrive within 30 minutes of ETA' },
+      });
+
+      const parkerId = booking.parkerId;
+      const ownerId = booking.space?.ownerId;
+      const spaceName = booking.space?.name ?? 'the space';
+
+      // Notify parker — their approved booking was released for not showing up.
+      await adminService.notifyUser(parkerId, {
+        title: 'Booking Cancelled — No Arrival',
+        message: `Your approved booking for ${spaceName} was cancelled because you didn't arrive within 30 minutes of your ETA.`,
+        category: 'BOOKING',
+        metadata: { bookingId: booking.id },
+      });
+      emitToUser(parkerId, 'booking:cancelled', { bookingId: booking.id });
+
+      // Notify owner — their space is free again.
+      if (ownerId) {
+        await adminService.notifyUser(ownerId, {
+          title: 'Space Released',
+          message: `An approved booking for ${spaceName} was auto-cancelled — the parker didn't arrive. Your space is available again.`,
+          category: 'BOOKING',
+          metadata: { bookingId: booking.id },
+        });
+        emitToUser(ownerId, 'booking:cancelled', { bookingId: booking.id });
+      }
+
+      console.log(`[NO_SHOW] Booking ${booking.id} cancelled (parker ${parkerId} never arrived)`);
+    }
+  },
+
   /** Start the 30-second background expiry loop. Call once on server startup. */
   startExpiryLoop: () => {
-    // Run immediately on start, then every 30 seconds
-    bookingExpiryService.expireStaleBookings().catch(() => {});
-    setInterval(() => {
+    const tick = () => {
+      // Both checks run each tick; each is independent and self-contained.
       bookingExpiryService.expireStaleBookings().catch(() => {});
-    }, 30_000);
-    console.log('✅ Booking expiry loop started (every 30s, window=2min)');
+      bookingExpiryService.releaseNoShows().catch(() => {});
+    };
+    tick(); // run immediately on start
+    setInterval(tick, 30_000);
+    console.log('✅ Booking expiry loop started (every 30s: 2min request window + 30min no-show release)');
   },
 };

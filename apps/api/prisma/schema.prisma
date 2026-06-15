@@ -270,6 +270,10 @@ model Booking {
   totalAmount       Float
   paymentMode       String   @default("DIRECT_AT_SPACE")
   status            String   @default("PENDING_APPROVAL") // PENDING_APPROVAL | APPROVED | ACTIVE | COMPLETED | CANCELLED | REJECTED
+  // Why a CANCELLED booking was cancelled — lets analytics separate intentional
+  // cancellations from no-shows without needing a whole new status.
+  // null (not cancelled) | NO_SHOW | USER_CANCELLED | OWNER_CANCELLED | ADMIN_CANCELLED
+  cancelReason      String?
   sessionOtp        String?
   sessionStartedAt  DateTime?
   sessionEndedAt    DateTime?
@@ -321,6 +325,9 @@ model ConditionVerification {
   mediaUrls           String[]
   parkerAccepted      Boolean  @default(false)
   acceptedAt          DateTime?
+  // When the OWNER recorded the condition — lets admin prove the sequence:
+  // owner recorded → parker accepted → session started, all before any damage claim.
+  createdAt           DateTime @default(now())
 }
 
 model Rating {
@@ -334,6 +341,15 @@ model Rating {
   rating    Int      // 0-5
   review    String?
   createdAt DateTime @default(now())
+
+  // Soft-hide for moderation — a hidden review is excluded from all public
+  // reads (averages, lists, breakdown) but never deleted, so it stays auditable
+  // and can be restored. Set by an admin, never the user.
+  isHidden  Boolean   @default(false)
+  hiddenBy  String?   // admin label/email who hid it
+  hiddenAt  DateTime?
+
+  @@index([isHidden])
 }
 
 model SubscriptionPlan {

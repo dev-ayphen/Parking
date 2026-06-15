@@ -105,6 +105,10 @@ export default function BookingStatusScreen() {
     const unsub5 = onEvent('booking:expired', (data: any) => {
       if (String(data.bookingId) === String(bookingId)) fetchBooking();
     });
+    // Auto-cancellation (e.g. parker no-show released by the server).
+    const unsub6 = onEvent('booking:cancelled', (data: any) => {
+      if (String(data.bookingId) === String(bookingId)) fetchBooking();
+    });
 
     return () => {
       unsub1();
@@ -112,6 +116,7 @@ export default function BookingStatusScreen() {
       unsub3();
       unsub4();
       unsub5();
+      unsub6();
     };
   }, [bookingId, fetchBooking, onEvent]);
 
@@ -393,13 +398,23 @@ export default function BookingStatusScreen() {
           </TouchableOpacity>
         )}
         {booking.status === 'APPROVED' && (
-          <TouchableOpacity
-            style={styles.btnPrimary}
-            onPress={handleArrived}
-            disabled={actionLoading}
-          >
-            {actionLoading ? <ActivityIndicator color={C.white} /> : <Text style={styles.btnPrimaryText}>I Have Arrived</Text>}
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity
+              style={styles.btnPrimary}
+              onPress={handleArrived}
+              disabled={actionLoading}
+            >
+              {actionLoading ? <ActivityIndicator color={C.white} /> : <Text style={styles.btnPrimaryText}>I Have Arrived</Text>}
+            </TouchableOpacity>
+            {/* Parker can still back out before arriving (traffic, changed plans). */}
+            <TouchableOpacity
+              style={[styles.btnTextDanger]}
+              onPress={handleCancel}
+              disabled={actionLoading}
+            >
+              <Text style={styles.btnTextDangerLabel}>Cancel Booking</Text>
+            </TouchableOpacity>
+          </>
         )}
         {(booking.status === 'REJECTED' || booking.status === 'CANCELLED') && (
           <TouchableOpacity
@@ -532,4 +547,6 @@ const makeStyles = ({ colors: C }: AppTheme) => StyleSheet.create({
     alignItems: 'center',
   },
   btnOutlineDangerText: { color: C.error, fontSize: FontSize.xl, fontWeight: FontWeight.bold },  // 16 = xl ✓
+  btnTextDanger: { paddingVertical: Spacing.xl, alignItems: 'center', marginTop: Spacing.sm },
+  btnTextDangerLabel: { color: C.error, fontSize: FontSize.md, fontWeight: FontWeight.semibold },
 });

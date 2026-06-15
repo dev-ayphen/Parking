@@ -13,7 +13,9 @@ import {View,
   DeviceEventEmitter,
   Linking} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Check, X, Camera, Phone, ShieldCheck, Clock, CheckCircle, Car, MapPin } from 'lucide-react-native';
+import { Image } from 'react-native';
+import { Check, X, Camera, Phone, ShieldCheck, Clock, CheckCircle, Car, MapPin, Plus } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect } from 'expo-router';
 import { PageHeader } from '../../components';
 import { api } from '../../services/api';
@@ -52,8 +54,9 @@ export default function VerifyScreen() {
 
   // Arrival verification flow
   const [verifyTarget, setVerifyTarget] = useState<OwnerRequest | null>(null);
-  const [verifyStep, setVerifyStep] = useState<'DAMAGE' | 'OTP'>('DAMAGE');
+  const [verifyStep, setVerifyStep] = useState<'DAMAGE' | 'PHOTOS' | 'OTP'>('DAMAGE');
   const [submittingVerify, setSubmittingVerify] = useState(false);
+  const [damagePhotos, setDamagePhotos] = useState<string[]>([]); // local URIs before upload
   const [enteredOtp, setEnteredOtp] = useState('');
   const [verifyingOtp, setVerifyingOtp] = useState(false);
 
@@ -86,11 +89,17 @@ export default function VerifyScreen() {
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { fetchRequests(); }, [fetchRequests]));
+  // Fetch on focus + poll every 8s while focused — self-healing fallback for
+  // missed socket events (the owner must not miss an arrival or cancellation).
+  useFocusEffect(useCallback(() => {
+    fetchRequests();
+    const poll = setInterval(() => fetchRequests(), 8000);
+    return () => clearInterval(poll);
+  }, [fetchRequests]));
 
   // Live refresh on new booking / arrival / when the parker generates their OTP
   useEffect(() => {
-    const events = ['booking:new', 'parker:arrived', 'parker:eta-update', 'verification:ready', 'session:started', 'notification:new'];
+    const events = ['booking:new', 'parker:arrived', 'parker:eta-update', 'verification:ready', 'session:started', 'booking:cancelled', 'booking:expired', 'notification:new'];
     const subs = events.map((evt) => DeviceEventEmitter.addListener(evt, () => fetchRequests(true)));
     return () => subs.forEach((s) => s.remove());
   }, [fetchRequests]);
@@ -126,6 +135,30 @@ export default function VerifyScreen() {
     }
   };
 
+  // Owner cancels an already-APPROVED booking (accidental accept, emergency,
+  // spot turned out to be occupied). Confirms first — this is destructive.
+  const cancelApproved = (booking: OwnerRequest) => {
+    Alert.alert(
+      'Cancel This Booking?',
+      `This will cancel ${booking.parkerName}'s approved booking and free up your space. They'll be notified.`,
+      [
+        { text: 'Keep It', style: 'cancel' },
+        {
+          text: 'Cancel Booking',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.put(`/bookings/${booking.id}/cancel`, { reason: 'Cancelled by space owner' });
+              fetchRequests(true);
+            } catch (e) {
+              Alert.alert('Error', (e as Error).message);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const openVerify = (booking: OwnerRequest) => {
     setVerifyTarget(booking);
     setVerifyStep('DAMAGE');
@@ -135,17 +168,69 @@ export default function VerifyScreen() {
   const closeVerify = () => {
     setVerifyTarget(null);
     setVerifyStep('DAMAGE');
+    setDamagePhotos([]);
     setEnteredOtp('');
   };
 
-  const submitDamage = async (verificationType: 'NO_CONCERN' | 'PHOTO_VIDEO') => {
+  // "No Visible Damage" → record immediately and move to OTP.
+  const submitNoConcern = async () => {
     if (!verifyTarget) return;
     try {
       setSubmittingVerify(true);
-      await api.post(`/bookings/${verifyTarget.id}/verification`, { verificationType, mediaUrls: [] });
+      await api.post(`/bookings/${verifyTarget.id}/verification`, {
+        verificationType: 'NO_CONCERN',
+        mediaUrls: [],
+      });
       setVerifyStep('OTP');
     } catch (e) {
       Alert.alert('Error', (e as Error).message);
+    } finally {
+      setSubmittingVerify(false);
+    }
+  };
+
+  const pickDamagePhoto = async () => {
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      // Prefer the camera (snap the damage on the spot); fall back to library.
+      const result = perm.granted
+        ? await ImagePicker.launchCameraAsync({ quality: 0.6 })
+        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.6 });
+      if (result.canceled || !result.assets?.[0]) return;
+      setDamagePhotos((prev) => [...prev, result.assets[0].uri].slice(0, 6));
+    } catch {
+      Alert.alert('Error', 'Could not capture photo.');
+    }
+  };
+
+  const removeDamagePhoto = (uri: string) =>
+    setDamagePhotos((prev) => prev.filter((u) => u !== uri));
+
+  // "Damage Found" → upload the captured photos to Supabase, then record the
+  // verification with their URLs and move to OTP.
+  const submitDamagePhotos = async () => {
+    if (!verifyTarget) return;
+    if (damagePhotos.length === 0) {
+      Alert.alert('Add a Photo', 'Please capture at least one photo of the existing damage.');
+      return;
+    }
+    try {
+      setSubmittingVerify(true);
+      const files = damagePhotos.map((uri, i) => {
+        const ext = (uri.split('.').pop() || 'jpg').toLowerCase();
+        const type = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+        return { field: 'files', uri, name: `condition_${i}.${ext}`, type };
+      });
+      const up = await api.upload('/uploads/evidence', files);
+      const mediaUrls: string[] = up.urls || [];
+
+      await api.post(`/bookings/${verifyTarget.id}/verification`, {
+        verificationType: 'PHOTO_VIDEO',
+        mediaUrls,
+      });
+      setVerifyStep('OTP');
+    } catch (e) {
+      Alert.alert('Upload Failed', (e as Error)?.message || 'Could not upload photos. Try again.');
     } finally {
       setSubmittingVerify(false);
     }
@@ -308,6 +393,9 @@ export default function VerifyScreen() {
                   <ShieldCheck size={18} color={Colors.white} style={{ marginRight: 8 }} />
                   <Text style={styles.verifyBtnText}>Verify Arrival & Start</Text>
                 </TouchableOpacity>
+                <TouchableOpacity style={styles.cancelApprovedBtn} onPress={() => cancelApproved(req)}>
+                  <Text style={styles.cancelApprovedText}>Cancel Booking</Text>
+                </TouchableOpacity>
               </View>
             ))}
           </>
@@ -354,7 +442,7 @@ export default function VerifyScreen() {
 
                 <TouchableOpacity
                   style={styles.damageOption}
-                  onPress={() => submitDamage('NO_CONCERN')}
+                  onPress={submitNoConcern}
                   disabled={submittingVerify}
                 >
                   <CheckCircle size={22} color={Colors.success} />
@@ -366,13 +454,13 @@ export default function VerifyScreen() {
 
                 <TouchableOpacity
                   style={styles.damageOption}
-                  onPress={() => submitDamage('PHOTO_VIDEO')}
+                  onPress={() => setVerifyStep('PHOTOS')}
                   disabled={submittingVerify}
                 >
                   <Camera size={22} color={Colors.warning} />
                   <View style={{ flex: 1, marginLeft: 12 }}>
                     <Text style={styles.damageOptionTitle}>Damage Found</Text>
-                    <Text style={styles.damageOptionDesc}>Record existing damage before starting.</Text>
+                    <Text style={styles.damageOptionDesc}>Photograph the existing damage first.</Text>
                   </View>
                 </TouchableOpacity>
 
@@ -382,6 +470,46 @@ export default function VerifyScreen() {
 
                 <TouchableOpacity style={styles.cancelLink} onPress={closeVerify} disabled={submittingVerify}>
                   <Text style={styles.cancelLinkText}>Cancel</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {verifyStep === 'PHOTOS' && (
+              <>
+                <Text style={styles.modalTitle}>Photograph the Damage</Text>
+                <Text style={styles.modalSubtitle}>
+                  Capture each damaged area before the session starts. The parker reviews these and they're kept on record.
+                </Text>
+
+                <View style={styles.photoGrid}>
+                  {damagePhotos.map((uri) => (
+                    <View key={uri} style={styles.photoThumb}>
+                      <Image source={{ uri }} style={styles.photoImg} />
+                      <TouchableOpacity style={styles.photoRemove} onPress={() => removeDamagePhoto(uri)}>
+                        <X size={12} color={Colors.white} strokeWidth={3} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                  {damagePhotos.length < 6 && (
+                    <TouchableOpacity style={styles.photoAdd} onPress={pickDamagePhoto} disabled={submittingVerify}>
+                      <Plus size={20} color={Colors.textMuted} />
+                      <Text style={styles.photoAddText}>Add</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.verifyBtn, (submittingVerify || damagePhotos.length === 0) && { opacity: 0.6 }]}
+                  onPress={submitDamagePhotos}
+                  disabled={submittingVerify || damagePhotos.length === 0}
+                >
+                  {submittingVerify
+                    ? <ActivityIndicator color={Colors.white} />
+                    : <Text style={styles.verifyBtnText}>Save & Continue</Text>}
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.cancelLink} onPress={() => setVerifyStep('DAMAGE')} disabled={submittingVerify}>
+                  <Text style={styles.cancelLinkText}>Back</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -481,6 +609,8 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary, paddingVertical: Spacing['2xl'], borderRadius: BorderRadius.md,  // 12 = md ✓
   },
   verifyBtnText: { color: Colors.white, fontWeight: FontWeight.bold, fontSize: FontSize.lg },  // 15 = lg ✓
+  cancelApprovedBtn: { alignItems: 'center', paddingVertical: Spacing.lg, marginTop: Spacing.xs },
+  cancelApprovedText: { color: Colors.error, fontWeight: FontWeight.semibold, fontSize: FontSize.md },
   modalOverlay: { flex: 1, backgroundColor: Colors.overlay, justifyContent: 'flex-end' },   // 'rgba(0,0,0,0.5)' ✓
   modalContent: {
     backgroundColor: Colors.white, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl, padding: Spacing['4xl'], paddingBottom: Spacing['7xl'],  // 24 = xl ✓
@@ -504,6 +634,12 @@ const styles = StyleSheet.create({
   damageOptionDesc: { fontSize: FontSize.base, color: Colors.textSecondary, marginTop: Spacing.micro },  // 13 = base ✓
   cancelLink: { alignItems: 'center', paddingVertical: Spacing['2xl'], marginTop: Spacing.xs },
   cancelLinkText: { fontSize: FontSize.lg, fontWeight: FontWeight.semibold, color: Colors.textSecondary },  // 15 = lg ✓
+  photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md, marginVertical: Spacing.xl },
+  photoThumb: { width: 72, height: 72, borderRadius: BorderRadius.md, overflow: 'hidden', position: 'relative' },
+  photoImg: { width: '100%', height: '100%', backgroundColor: Colors.surfaceBg },
+  photoRemove: { position: 'absolute', top: 3, right: 3, width: 18, height: 18, borderRadius: 9, backgroundColor: ExtendedColors.darkOverlay, alignItems: 'center', justifyContent: 'center' },
+  photoAdd: { width: 72, height: 72, borderRadius: BorderRadius.md, borderWidth: 1.5, borderColor: Colors.border, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.screenBg, gap: 2 },
+  photoAddText: { fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: FontWeight.medium },
   successBanner: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.successBg,
     padding: Spacing.xl, borderRadius: BorderRadius.sm, marginBottom: Spacing.screenH,  // 8 = sm ✓

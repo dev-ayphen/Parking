@@ -182,6 +182,7 @@ export const caseEvidenceService = {
         consent: true, // BookingConsent
         incidents: true,
         rating: true,
+        verification: true, // ConditionVerification — owner's pre-park condition photos
       },
     });
 
@@ -375,6 +376,17 @@ export const caseEvidenceService = {
         adminActionLog: adminActions,
         abuseReports,
         incidentReports: booking.incidents,
+        // Owner's pre-parking vehicle condition record — compared against the
+        // parker's incident photos in the admin case view.
+        conditionVerification: booking.verification
+          ? {
+              type: (booking.verification as any).verificationType,
+              mediaUrls: (booking.verification as any).mediaUrls || [],
+              parkerAccepted: (booking.verification as any).parkerAccepted,
+              acceptedAt: (booking.verification as any).acceptedAt,
+              recordedAt: (booking.verification as any).createdAt, // when owner recorded it
+            }
+          : null,
         rating: booking.rating,
         notifications: relatedNotifications,
       },

@@ -54,11 +54,18 @@ export default function ActiveSessionsScreen() {
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { fetchSessions(); }, [fetchSessions]));
+  // Fetch on focus + poll every 8s while focused. The poll is a self-healing
+  // fallback for missed socket events (flaky network / socket reconnecting) —
+  // mirrors the parker's active-session screen so the owner isn't left stale.
+  useFocusEffect(useCallback(() => {
+    fetchSessions();
+    const poll = setInterval(() => fetchSessions(), 8000);
+    return () => clearInterval(poll);
+  }, [fetchSessions]));
 
   // Live refresh on session lifecycle events
   useEffect(() => {
-    const events = ['session:started', 'session:completed', 'parker:leaving', 'notification:new'];
+    const events = ['session:started', 'session:completed', 'parker:leaving', 'booking:cancelled', 'notification:new'];
     const subs = events.map((evt) => DeviceEventEmitter.addListener(evt, () => fetchSessions(true)));
     return () => subs.forEach((s) => s.remove());
   }, [fetchSessions]);

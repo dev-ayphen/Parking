@@ -1,7 +1,6 @@
 import { Request } from 'express';
 import { db } from '../config/database';
 import { auditService } from './audit.service';
-import { pushService } from './push.service';
 
 export const bookingService = {
   createBooking: async (parkerId: number, data: any, req?: Request) => {
@@ -98,15 +97,6 @@ export const bookingService = {
       req,
     });
 
-    const ownerId = (booking.space as any)?.ownerId;
-    if (ownerId) {
-      pushService.sendToUser(ownerId, {
-        title: 'New Booking Request',
-        body: `A parker wants to book "${(booking.space as any)?.name}". Approve or decline.`,
-        data: { bookingId: booking.id, screen: 'booking-requests' },
-      }).catch(() => {});
-    }
-
     return booking;
   },
 
@@ -192,6 +182,9 @@ export const bookingService = {
         parker: { select: { id: true, firstName: true, lastName: true, phone: true } },
         verification: true,
         rating: { select: { id: true, rating: true, review: true, createdAt: true } },
+        // One incident per booking (bookingId is @unique) — lets the receipt screen
+        // show the existing report on reload instead of offering "report" again.
+        incidents: { select: { id: true, reportType: true, status: true, createdAt: true } },
       },
     });
     if (!booking) throw Object.assign(new Error('Booking not found'), { statusCode: 404 });
@@ -235,11 +228,6 @@ export const bookingService = {
       bookingId, event: 'BOOKING_APPROVED', fromStatus: booking.status, toStatus: 'APPROVED',
       actorId: ownerId, actorRole: 'OWNER', req,
     });
-    pushService.sendToUser(booking.parkerId, {
-      title: 'Booking Approved',
-      body: 'Your parking booking has been approved. Show up on time!',
-      data: { bookingId, screen: 'booking-detail' },
-    }).catch(() => {});
     return { success: true, booking: updated };
   },
 
@@ -263,41 +251,59 @@ export const bookingService = {
       bookingId, event: 'BOOKING_REJECTED', fromStatus: booking.status, toStatus: 'REJECTED',
       actorId: ownerId, actorRole: 'OWNER', req,
     });
-    pushService.sendToUser(booking.parkerId, {
-      title: 'Booking Declined',
-      body: 'Your parking request was declined. Try another space nearby.',
-      data: { bookingId, screen: 'booking-detail' },
-    }).catch(() => {});
     return { success: true, booking: updated };
   },
 
-  cancelBooking: async (bookingId: string, userId: number, userRole: string, req?: Request) => {
+  cancelBooking: async (bookingId: string, userId: number, userRole: string, reason?: string, req?: Request) => {
     const booking = await db.booking.findUnique({
       where: { id: bookingId },
-      include: { space: { select: { ownerId: true } } },
+      include: { space: { select: { ownerId: true, name: true } } },
     });
     if (!booking) throw Object.assign(new Error('Booking not found'), { statusCode: 404 });
 
+    const ownerId = (booking.space as any)?.ownerId ?? null;
     const isParker = booking.parkerId === userId;
+    const isOwner = ownerId === userId;
     const isAdmin = userRole === 'ADMIN';
-    if (!isParker && !isAdmin) {
+    if (!isParker && !isOwner && !isAdmin) {
       throw Object.assign(
-        new Error('Only the booking creator or an admin can cancel this booking'),
+        new Error('Only the parker, the space owner, or an admin can cancel this booking'),
         { statusCode: 403 }
       );
     }
-    if (['COMPLETED', 'REJECTED', 'CANCELLED'].includes(booking.status)) {
-      throw Object.assign(new Error('Booking is already ' + booking.status.toLowerCase()), { statusCode: 400 });
+    // Cancellable while the session hasn't started. Once ACTIVE, exit must go
+    // through the proper leaving/release flow, not a cancel.
+    if (!['PENDING_APPROVAL', 'APPROVED'].includes(booking.status)) {
+      throw Object.assign(
+        new Error('This booking can no longer be cancelled (' + booking.status.toLowerCase() + ')'),
+        { statusCode: 400 }
+      );
     }
+
+    // Tag WHO cancelled, so analytics can separate parker-initiated, owner-
+    // initiated, and admin cancellations (no-shows are tagged separately by the
+    // expiry loop). Keeps a single CANCELLED status while staying queryable.
+    const cancelReason = isAdmin ? 'ADMIN_CANCELLED' : isOwner ? 'OWNER_CANCELLED' : 'USER_CANCELLED';
     const updated = await db.booking.update({
       where: { id: bookingId },
-      data: { status: 'CANCELLED' },
+      data: { status: 'CANCELLED', cancelReason, sessionOtp: null },
     });
     await auditService.logBookingEvent({
       bookingId, event: 'BOOKING_CANCELLED', fromStatus: booking.status, toStatus: 'CANCELLED',
-      actorId: userId, actorRole: isAdmin ? 'ADMIN' : 'PARKER', req,
+      actorId: userId, actorRole: isAdmin ? 'ADMIN' : isOwner ? 'OWNER' : 'PARKER', req,
+      payload: { reason: cancelReason, ...(reason ? { detail: reason } : {}) },
     });
-    return { success: true, booking: updated, ownerId: (booking.space as any)?.ownerId ?? null };
+
+    // Tell the controller who to notify (the OTHER party) and by whom it was cancelled.
+    return {
+      success: true,
+      booking: updated,
+      ownerId,
+      parkerId: booking.parkerId,
+      spaceName: (booking.space as any)?.name ?? 'the space',
+      cancelledBy: isAdmin ? 'ADMIN' : isOwner ? 'OWNER' : 'PARKER',
+      reason: reason || null,
+    };
   },
 
   verifySessionOtp: async (bookingId: string, data: any, userId?: number, req?: Request) => {
@@ -324,11 +330,6 @@ export const bookingService = {
       bookingId, event: 'SESSION_STARTED', fromStatus: booking.status, toStatus: 'ACTIVE',
       actorId: userId ?? booking.parkerId, actorRole: 'OWNER', req,
     });
-    pushService.sendToUser(booking.parkerId, {
-      title: 'Session Started',
-      body: 'Your parking session is now active. Enjoy your spot!',
-      data: { bookingId, screen: 'booking-detail' },
-    }).catch(() => {});
     return { success: true, booking: updated };
   },
 
@@ -386,11 +387,6 @@ export const bookingService = {
       bookingId, event: 'SESSION_ENDED', fromStatus: booking.status, toStatus: 'COMPLETED',
       actorId: booking.parkerId, actorRole: 'PARKER', req,
     });
-    pushService.sendToUser(booking.parkerId, {
-      title: 'Session Complete',
-      body: `Your parking session ended. Total: ₹${totalAmount}. Download your invoice!`,
-      data: { bookingId, screen: 'booking-detail' },
-    }).catch(() => {});
     return {
       success: true,
       booking: updated,
@@ -417,28 +413,20 @@ export const bookingService = {
     const verificationType = data?.verificationType === 'PHOTO_VIDEO' ? 'PHOTO_VIDEO' : 'NO_CONCERN';
     const mediaUrls: string[] = Array.isArray(data?.mediaUrls) ? data.mediaUrls : [];
 
-    // NO_CONCERN needs no parker acknowledgement; PHOTO_VIDEO must be acknowledged.
+    // The parker must explicitly review and accept the recorded condition in
+    // BOTH cases (no-damage and damage), so we always start unaccepted and wait
+    // for their "Accept & Continue". This keeps a clear, auditable consent that
+    // they saw what the owner recorded before the session began.
     const verification = await db.conditionVerification.upsert({
       where: { bookingId },
-      create: {
-        bookingId,
-        verificationType,
-        mediaUrls,
-        parkerAccepted: verificationType === 'NO_CONCERN',
-        acceptedAt: verificationType === 'NO_CONCERN' ? new Date() : null,
-      },
-      update: {
-        verificationType,
-        mediaUrls,
-        parkerAccepted: verificationType === 'NO_CONCERN',
-        acceptedAt: verificationType === 'NO_CONCERN' ? new Date() : null,
-      },
+      create: { bookingId, verificationType, mediaUrls, parkerAccepted: false, acceptedAt: null },
+      update: { verificationType, mediaUrls, parkerAccepted: false, acceptedAt: null },
     });
 
     await auditService.logBookingEvent({
       bookingId, event: 'VERIFICATION_SUBMITTED', actorId: ownerId, actorRole: 'OWNER', req,
     });
-    return { success: true, verification, parkerId: booking.parkerId, requiresAcknowledgement: verificationType === 'PHOTO_VIDEO' };
+    return { success: true, verification, parkerId: booking.parkerId, requiresAcknowledgement: true };
   },
 
   acceptVerification: async (bookingId: string, parkerId: number, req?: Request) => {

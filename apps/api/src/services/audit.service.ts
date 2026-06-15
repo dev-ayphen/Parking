@@ -35,6 +35,8 @@ export type AdminAction =
   | 'DOC_REJECTED'
   | 'REFUND_ISSUED'
   | 'ABUSE_ACTIONED'
+  | 'REVIEW_HIDDEN'
+  | 'REVIEW_RESTORED'
   | 'BROADCAST_SENT'
   | 'SUBSCRIPTION_PLAN_CREATED'
   | 'SUBSCRIPTION_PLAN_UPDATED';
@@ -46,6 +48,7 @@ export type TargetType =
   | 'DOCUMENT'
   | 'TRANSACTION'
   | 'ABUSE_REPORT'
+  | 'RATING'
   | 'SUBSCRIPTION_PLAN'
   | 'BROADCAST';
 

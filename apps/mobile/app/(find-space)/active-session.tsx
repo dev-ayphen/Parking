@@ -9,12 +9,15 @@ import {View,
   ScrollView,
   RefreshControl,
   Alert,
-  Linking} from 'react-native';
+  Linking,
+  Modal,
+  TextInput} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Phone, MessageSquare, AlertTriangle, ShieldCheck } from 'lucide-react-native';
+import { Phone, MessageSquare, AlertTriangle, ShieldCheck, Flag, X, Headphones, CheckSquare } from 'lucide-react-native';
 import { api } from '../../services/api';
 import PageHeader from '../../components/PageHeader';
+import ReportSubmitted from '../../components/ReportSubmitted';
 import { useRealtime } from '../../hooks/useRealtime';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 
@@ -32,6 +35,14 @@ export default function ActiveSessionScreen() {
 
   const [generatedOtp, setGeneratedOtp] = useState<string | null>(null);
   const [generatingOtp, setGeneratingOtp] = useState(false);
+
+  // Report abuse modal
+  const [abuseModalVisible, setAbuseModalVisible] = useState(false);
+  const [abuseType, setAbuseType] = useState('OFFLINE_PAYMENT_DEMAND');
+  const [abuseDesc, setAbuseDesc] = useState('');
+  const [abuseSubmitting, setAbuseSubmitting] = useState(false);
+  const [abuseRef, setAbuseRef] = useState<string | null>(null);
+  const [abuseSubmittedAt, setAbuseSubmittedAt] = useState<string | null>(null);
 
   // isRefresh=true → pull-to-refresh spinner; silent=true → background poll (no spinners)
   const fetchBooking = useCallback(async (isRefresh = false) => {
@@ -89,11 +100,17 @@ export default function ActiveSessionScreen() {
     const unsub3 = onEvent('session:completed', (data: any) => {
       if (String(data.bookingId) === String(bookingId)) fetchBooking();
     });
+    // Booking cancelled out from under the parker (e.g. server no-show release
+    // while they were waiting). Refetch so the status effect below can react.
+    const unsub4 = onEvent('booking:cancelled', (data: any) => {
+      if (String(data.bookingId) === String(bookingId)) fetchBooking();
+    });
 
     return () => {
       unsub1();
       unsub2();
       unsub3();
+      unsub4();
     };
   }, [bookingId, fetchBooking, onEvent]);
 
@@ -104,6 +121,18 @@ export default function ActiveSessionScreen() {
       router.replace({ pathname: '/(find-space)/session-complete', params: { bookingId } });
     }
   }, [booking?.status, bookingId, router]);
+
+  // The booking ended without a session (cancelled/expired no-show). Don't leave
+  // the parker stuck on "Waiting for owner" — tell them and send them home.
+  useEffect(() => {
+    if (booking?.status === 'CANCELLED' || booking?.status === 'EXPIRED') {
+      Alert.alert(
+        'Booking Ended',
+        'This booking was cancelled because the session never started. If you arrived late, please make a new booking.',
+        [{ text: 'OK', onPress: () => router.replace('/(home)') }],
+      );
+    }
+  }, [booking?.status, router]);
 
   const handleAcknowledge = async () => {
     try {
@@ -139,6 +168,40 @@ export default function ActiveSessionScreen() {
     if (generatedOtp || generatingOtp) return;
     handleGenerateOtp();
   }, [booking, verification, generatedOtp, generatingOtp, handleGenerateOtp]);
+
+  const ABUSE_REASONS = [
+    { value: 'OFFLINE_PAYMENT_DEMAND', label: 'Owner asking for cash payment' },
+    { value: 'HARASSMENT',             label: 'Harassment or rude behavior' },
+    { value: 'UNSAFE_AREA',            label: 'Unsafe or threatening behavior' },
+    { value: 'OTHER',                  label: 'Other issue' },
+  ];
+
+  const handleSubmitAbuse = async () => {
+    if (abuseSubmitting || abuseRef) return; // guard re-entry / double-tap
+    if (abuseDesc.trim().length < 5) {
+      Alert.alert('Too short', 'Please describe the issue (at least 5 characters).');
+      return;
+    }
+    const ownerId = booking?.space?.owner?.id || booking?.space?.ownerId;
+    if (!ownerId) return;
+    try {
+      setAbuseSubmitting(true);
+      const res = await api.post('/abuse-reports', {
+        reportedUserId: ownerId,
+        abuseType: abuseType,
+        description: abuseDesc.trim(),
+      });
+      const reportId = res?.report?.id;
+      setAbuseRef(reportId ? `ABU-${String(reportId).padStart(5, '0')}` : 'ABU-PENDING');
+      setAbuseSubmittedAt(res?.report?.createdAt || new Date().toISOString());
+      setAbuseModalVisible(false);
+      setAbuseDesc('');
+    } catch (err: any) {
+      Alert.alert('Failed', err?.message || 'Could not submit report. Try again.');
+    } finally {
+      setAbuseSubmitting(false);
+    }
+  };
 
   const handleLeaving = async () => {
     try {
@@ -208,17 +271,18 @@ export default function ActiveSessionScreen() {
           </View>
         )}
 
-        {/* SUBSTATE 2a: Vehicle Condition Result — parker acknowledges */}
+        {/* SUBSTATE 2a: Vehicle Condition Result — parker reviews & accepts */}
         {requiresAcknowledgement && (
           <View style={styles.card}>
+            <Text style={styles.conditionHeading}>Vehicle Inspection</Text>
             {verification.type === 'PHOTO_VIDEO' ? (
               <>
                 <View style={styles.warningHeader}>
                   <AlertTriangle size={24} color={Colors.warning} />
-                  <Text style={styles.warningTitle}>Damage Photos Uploaded</Text>
+                  <Text style={styles.warningTitle}>Existing Damage Recorded</Text>
                 </View>
                 <Text style={styles.cardBody}>
-                  The space owner recorded the vehicle's condition before parking. Please review the photos — the owner is not responsible for these existing marks.
+                  The owner photographed existing damage before parking. Please review — the owner is not responsible for these existing marks.
                 </Text>
                 {verification.mediaUrls && verification.mediaUrls.length > 0 && (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.mediaStrip}>
@@ -230,15 +294,21 @@ export default function ActiveSessionScreen() {
               </>
             ) : (
               <>
-                <View style={styles.okHeader}>
-                  <ShieldCheck size={24} color={Colors.success} />
-                  <Text style={styles.okTitle}>No Concerns Recorded</Text>
+                <View style={styles.okBadge}>
+                  <ShieldCheck size={16} color={Colors.success} strokeWidth={2.5} />
+                  <Text style={styles.okBadgeText}>No Existing Damage Reported</Text>
                 </View>
                 <Text style={styles.cardBody}>
-                  The space owner checked your vehicle and recorded no concerns about its condition. You're good to start your session.
+                  The owner inspected your vehicle and reported no existing damage.
                 </Text>
               </>
             )}
+            <View style={styles.reviewRow}>
+              <CheckSquare size={16} color={Colors.primary} />
+              <Text style={styles.reviewRowText}>
+                I have reviewed the vehicle condition{verification.type === 'NO_CONCERN' ? ' and have no concerns' : ''}.
+              </Text>
+            </View>
           </View>
         )}
 
@@ -309,7 +379,7 @@ export default function ActiveSessionScreen() {
                 <Text style={styles.contactBtnText}>Call</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.contactBtn}
+                style={[styles.contactBtn, { borderRightWidth: 0 }]}
                 onPress={() => {
                   const num = booking.space?.owner?.phoneNumber;
                   if (num) Linking.openURL(`sms:${num}`);
@@ -322,13 +392,135 @@ export default function ActiveSessionScreen() {
             </View>
           </View>
         )}
+
+        {/* Need Help? — support vs report are distinct paths (support ticket vs abuse report) */}
+        {isActive && (
+          <View style={styles.helpSection}>
+            <Text style={styles.helpLabel}>Need Help?</Text>
+            <View style={styles.helpCard}>
+              <TouchableOpacity
+                style={styles.helpRow}
+                onPress={() => router.push('/(home)/support/create-ticket')}
+                activeOpacity={0.7}
+              >
+                <View style={styles.helpRowLeft}>
+                  <Headphones size={16} color={Colors.primary} strokeWidth={2} />
+                  <View>
+                    <Text style={styles.helpRowText}>Contact Support</Text>
+                    <Text style={styles.helpRowSub}>OTP, payment or app issues</Text>
+                  </View>
+                </View>
+                <Text style={styles.helpRowArrow}>›</Text>
+              </TouchableOpacity>
+              <View style={styles.helpDivider} />
+              <TouchableOpacity
+                style={styles.helpRow}
+                onPress={() => setAbuseModalVisible(true)}
+                activeOpacity={0.7}
+                disabled={!!abuseRef}
+              >
+                <View style={styles.helpRowLeft}>
+                  <Flag size={16} color={abuseRef ? Colors.textMuted : Colors.error} strokeWidth={2} />
+                  <View>
+                    <Text style={styles.helpRowText}>Report an Issue</Text>
+                    <Text style={styles.helpRowSub}>Cash demand, harassment, unsafe</Text>
+                  </View>
+                </View>
+                {!abuseRef && <Text style={styles.helpRowArrow}>›</Text>}
+              </TouchableOpacity>
+            </View>
+
+            {/* Post-submission receipt — reference + timestamp */}
+            {abuseRef && (
+              <View style={{ marginTop: Spacing.md }}>
+                <ReportSubmitted reference={abuseRef} submittedAt={abuseSubmittedAt || undefined} />
+              </View>
+            )}
+          </View>
+        )}
       </ScrollView>
+
+      {/* Report Abuse Modal */}
+      <Modal visible={abuseModalVisible} transparent animationType="slide" onRequestClose={() => setAbuseModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Report Abuse</Text>
+              <TouchableOpacity onPress={() => setAbuseModalVisible(false)} hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}>
+                <X size={20} color={Colors.textSecondary} strokeWidth={2} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalSub}>We take these reports seriously. Our team will review and take action.</Text>
+
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              {/* Auto-filled booking context — sent silently in the payload, shown read-only */}
+              <View style={styles.contextCard}>
+                <View style={styles.contextRow}>
+                  <Text style={styles.contextLabel}>Booking</Text>
+                  <Text style={styles.contextVal}>#{String(bookingId).slice(-6).toUpperCase()}</Text>
+                </View>
+                <View style={styles.contextRow}>
+                  <Text style={styles.contextLabel}>Space</Text>
+                  <Text style={styles.contextVal} numberOfLines={1}>{booking?.space?.name || '—'}</Text>
+                </View>
+                <View style={styles.contextRow}>
+                  <Text style={styles.contextLabel}>Owner</Text>
+                  <Text style={styles.contextVal} numberOfLines={1}>
+                    {booking?.space?.owner
+                      ? [booking.space.owner.firstName, booking.space.owner.lastName].filter(Boolean).join(' ') || '—'
+                      : '—'}
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={styles.fieldLabel}>Reason</Text>
+              {ABUSE_REASONS.map(r => (
+                <TouchableOpacity
+                  key={r.value}
+                  style={[styles.reasonRow, abuseType === r.value && styles.reasonRowActive]}
+                  onPress={() => setAbuseType(r.value)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.radioOuter, abuseType === r.value && styles.radioOuterActive]}>
+                    {abuseType === r.value && <View style={styles.radioInner} />}
+                  </View>
+                  <Text style={[styles.reasonText, abuseType === r.value && styles.reasonTextActive]}>{r.label}</Text>
+                </TouchableOpacity>
+              ))}
+
+              <Text style={[styles.fieldLabel, { marginTop: Spacing.xl }]}>Details</Text>
+              <TextInput
+                style={styles.descInput}
+                placeholder="Describe what happened..."
+                placeholderTextColor={Colors.textMuted}
+                multiline
+                numberOfLines={3}
+                value={abuseDesc}
+                onChangeText={setAbuseDesc}
+                textAlignVertical="top"
+              />
+
+              <TouchableOpacity
+                style={[styles.submitBtn, abuseSubmitting && styles.submitBtnDisabled]}
+                onPress={handleSubmitAbuse}
+                disabled={abuseSubmitting}
+                activeOpacity={0.8}
+              >
+                {abuseSubmitting
+                  ? <ActivityIndicator color={Colors.white} size="small" />
+                  : <Text style={styles.submitBtnText}>Submit Report</Text>}
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       {/* Sticky Footer */}
       <View style={styles.footer}>
         {requiresAcknowledgement && (
           <TouchableOpacity style={styles.btnPrimary} onPress={handleAcknowledge} disabled={actionLoading}>
-            {actionLoading ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.btnPrimaryText}>I Understand & Continue</Text>}
+            {actionLoading ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.btnPrimaryText}>Accept & Continue</Text>}
           </TouchableOpacity>
         )}
         {requiresOtp && (
@@ -368,9 +560,17 @@ const styles = StyleSheet.create({
   },
   warningHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.xl },  // 8=md, 12=xl ✓
   warningTitle: { color: Colors.warning, fontSize: FontSize.xl, fontWeight: FontWeight.bold },                // 16=xl ✓
-  okHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.xl },
-  okTitle: { color: Colors.success, fontSize: FontSize.xl, fontWeight: FontWeight.bold },
+  okBadge: {
+    flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: Spacing.sm,
+    backgroundColor: Colors.successBg, borderWidth: 1, borderColor: Colors.success,
+    borderRadius: BorderRadius.circleXl, paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm,
+    marginBottom: Spacing.xl,
+  },
+  okBadgeText: { color: Colors.success, fontSize: FontSize.md, fontWeight: FontWeight.bold },
   cardBody: { color: Colors.textBody, fontSize: FontSize.md, lineHeight: 20, marginBottom: Spacing['3xl'] }, // 14=md, 16='3xl' ✓
+  conditionHeading: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: Spacing.lg },
+  reviewRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, backgroundColor: Colors.primaryBg, borderRadius: BorderRadius.md, padding: Spacing.xl, marginTop: Spacing.xs },
+  reviewRowText: { flex: 1, fontSize: FontSize.base, color: Colors.textBody, fontWeight: FontWeight.medium, lineHeight: 18 },
   mediaStrip: { flexDirection: 'row', marginTop: Spacing.lg },                     // 10 = lg ✓
   thumb: { width: 100, height: 100, borderRadius: BorderRadius.sm, marginRight: Spacing.lg, backgroundColor: Colors.surfaceBg }, // 8=sm, 10=lg ✓
 
@@ -447,7 +647,42 @@ const styles = StyleSheet.create({
   },
   contactBtnText: { color: Colors.textPrimary, fontWeight: FontWeight.semibold, fontSize: FontSize.md },  // 14=md ✓
 
+  // Need Help? — separate low-emphasis section (support + report)
+  helpSection: { marginTop: Spacing.screenH },
+  helpLabel: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: Spacing.md },
+  helpCard: { backgroundColor: Colors.white, borderRadius: BorderRadius.lg, borderWidth: 1, borderColor: Colors.border, overflow: 'hidden' },
+  helpRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: Spacing['2xl'], paddingHorizontal: Spacing.screenH },
+  helpDivider: { height: 1, backgroundColor: Colors.surfaceBg, marginHorizontal: Spacing.screenH },
+  helpRowLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  helpRowText: { fontSize: FontSize.md, color: Colors.textPrimary, fontWeight: FontWeight.semibold },
+  helpRowSub: { fontSize: FontSize.sm, color: Colors.textMuted, marginTop: 1 },
+  helpRowArrow: { fontSize: FontSize['3xl'], color: Colors.textMuted, fontWeight: FontWeight.normal },
+
   footer: { padding: Spacing.screenH, backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: Colors.border },  // '#E2E8F0' ✓
   btnPrimary: { backgroundColor: Colors.primary, borderRadius: BorderRadius.button, paddingVertical: Spacing['3xl'], alignItems: 'center' },  // 14=button, 16='3xl' ✓
   btnPrimaryText: { color: Colors.white, fontSize: FontSize.xl, fontWeight: FontWeight.bold },  // 16=xl ✓
+
+  // Report abuse modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  modalSheet: { backgroundColor: Colors.white, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl, padding: Spacing['3xl'], paddingBottom: 36, maxHeight: '88%' },
+  contextCard: { backgroundColor: Colors.screenBg, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.border, padding: Spacing.xl, marginBottom: Spacing['3xl'] },
+  contextRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 3 },
+  contextLabel: { fontSize: FontSize.sm, color: Colors.textMuted, fontWeight: FontWeight.medium },
+  contextVal: { fontSize: FontSize.sm, color: Colors.textPrimary, fontWeight: FontWeight.semibold, flexShrink: 1, marginLeft: Spacing.lg, textAlign: 'right' },
+  modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.borderMuted, alignSelf: 'center', marginBottom: Spacing['2xl'] },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.md },
+  modalTitle: { fontSize: FontSize['2xl'], fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  modalSub: { fontSize: FontSize.base, color: Colors.textSecondary, marginBottom: Spacing['3xl'], lineHeight: 19 },
+  fieldLabel: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: Colors.textSecondary, marginBottom: Spacing.lg, textTransform: 'uppercase' as const, letterSpacing: 0.5 },
+  reasonRow: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: Spacing.lg, paddingVertical: Spacing.lg, paddingHorizontal: Spacing.xl, borderRadius: BorderRadius.md, marginBottom: Spacing.sm, backgroundColor: Colors.screenBg, borderWidth: 1, borderColor: Colors.border },
+  reasonRowActive: { backgroundColor: Colors.primaryBg, borderColor: Colors.primary },
+  radioOuter: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: Colors.border, alignItems: 'center' as const, justifyContent: 'center' as const },
+  radioOuterActive: { borderColor: Colors.primary },
+  radioInner: { width: 9, height: 9, borderRadius: 5, backgroundColor: Colors.primary },
+  reasonText: { fontSize: FontSize.base, color: Colors.textBody, fontWeight: FontWeight.medium },
+  reasonTextActive: { color: Colors.primary, fontWeight: FontWeight.semibold },
+  descInput: { backgroundColor: Colors.screenBg, borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.lg, padding: Spacing.xl, fontSize: FontSize.base, color: Colors.textPrimary, minHeight: 80, marginBottom: Spacing['3xl'] },
+  submitBtn: { backgroundColor: Colors.error, borderRadius: BorderRadius.button, paddingVertical: Spacing['3xl'], alignItems: 'center' as const },
+  submitBtnDisabled: { opacity: 0.6 },
+  submitBtnText: { color: Colors.white, fontSize: FontSize.lg, fontWeight: FontWeight.bold },
 });

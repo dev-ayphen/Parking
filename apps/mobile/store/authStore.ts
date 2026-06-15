@@ -7,6 +7,7 @@ import {
   clearAuthData,
 } from '../utils/secureStorage';
 import { API_BASE } from '../config/api.config';
+import { resetAuthLostGuard } from '../services/api.service';
 
 export interface AuthUser {
   id: number;
@@ -59,6 +60,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setSession: async (token, user, expiresIn) => {
     await saveAuthToken(token, expiresIn);
     await saveUserId(user.id);
+    // Re-arm the session-lost guard so a future expiry can trigger one more alert.
+    resetAuthLostGuard();
     set({ token, user });
   },
 

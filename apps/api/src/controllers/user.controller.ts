@@ -80,4 +80,15 @@ export const userController = {
       sendError(res, error);
     }
   },
+
+  /** DELETE /users/me — self-service account deletion (Play Store / GDPR). */
+  deleteAccount: async (req: Request, res: Response) => {
+    try {
+      assertAuth(req);
+      const result = await userService.deleteOwnAccount(req.user.id);
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
 };

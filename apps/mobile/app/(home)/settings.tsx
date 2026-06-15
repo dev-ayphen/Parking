@@ -11,12 +11,13 @@ import {View,
   Alert} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Bell, Lock, Globe, Moon, Shield } from 'lucide-react-native';
+import { Bell, Lock, Globe, Moon, Shield, Trash2 } from 'lucide-react-native';
 import { PageHeader } from '../../components';
 import { api } from '../../services/api';
 import { toast } from '../../utils/toast';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
 import { useThemeStore } from '../../store/themeStore';
+import { useAuthStore } from '../../store/authStore';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -29,6 +30,33 @@ export default function SettingsScreen() {
   // Theme — driven by themeStore so the whole app reacts
   const { mode: themeMode, setMode: setThemeMode } = useThemeStore();
   const darkTheme = themeMode === 'dark';
+  const logout = useAuthStore((s) => s.logout);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'This permanently deletes your account and removes your spaces. This cannot be undone. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setDeleting(true);
+              await api.delete('/users/me');
+              await logout();
+              router.replace('/(auth)/login');
+            } catch (e: any) {
+              setDeleting(false);
+              Alert.alert('Could not delete', e?.message || 'Please try again.');
+            }
+          },
+        },
+      ],
+    );
+  };
 
   // Fetch saved preferences from API on mount
   useEffect(() => {
@@ -183,6 +211,23 @@ export default function SettingsScreen() {
             />
           </View>
         </View>
+
+        {/* Account — deletion (Play Store / GDPR compliance) */}
+        <Text style={styles.sectionTitle}>Account</Text>
+        <View style={styles.settingsGroup}>
+          <TouchableOpacity style={styles.dangerRow} onPress={handleDeleteAccount} disabled={deleting} activeOpacity={0.7}>
+            <View style={styles.settingLeft}>
+              <View style={[styles.iconContainer, { backgroundColor: Colors.errorBg }]}>
+                <Trash2 size={20} color={Colors.error} />
+              </View>
+              <View style={styles.settingText}>
+                <Text style={[styles.settingLabel, { color: Colors.error }]}>Delete Account</Text>
+                <Text style={styles.settingDesc}>Permanently delete your account and data</Text>
+              </View>
+            </View>
+            {deleting && <ActivityIndicator size="small" color={Colors.error} />}
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -208,6 +253,7 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: Colors.textMuted, letterSpacing: 0, marginBottom: Spacing.lg, marginTop: Spacing.screenH },  // 13 = base ✓
   settingsGroup: { backgroundColor: Colors.white, borderRadius: BorderRadius.lg, overflow: 'hidden' },  // 16 = lg ✓
   settingItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing['3xl'], gap: Spacing.xl },
+  dangerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing['3xl'], gap: Spacing.xl },
   settingLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xl, flex: 1 },
   settingText: { flex: 1 },
   iconContainer: { width: 40, height: 40, borderRadius: BorderRadius.md, backgroundColor: Colors.screenBg, alignItems: 'center', justifyContent: 'center' },  // 12 = md ✓

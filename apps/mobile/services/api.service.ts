@@ -3,6 +3,7 @@
  * Handles all HTTP requests with timeout, error handling, and retries
  */
 
+import { DeviceEventEmitter } from 'react-native';
 import { API_CONFIG } from '../config/api.config';
 import {
   getAuthToken,
@@ -11,6 +12,22 @@ import {
   isTokenExpiringSoon,
   clearAuthData,
 } from '../utils/secureStorage';
+
+/**
+ * Fired when the session can no longer be recovered (refresh failed, or a request
+ * came back 401). A global listener (useRealtime) clears auth and bounces the
+ * user to login with a clear message — instead of silently failing mid-task.
+ * Guarded so a burst of failing requests only triggers ONE logout.
+ */
+let authLostFired = false;
+function emitAuthLost() {
+  if (authLostFired) return;
+  authLostFired = true;
+  DeviceEventEmitter.emit('auth:lost');
+}
+export function resetAuthLostGuard() {
+  authLostFired = false;
+}
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -124,8 +141,11 @@ export async function apiCall<T = any>(
         if (newToken) {
           token = newToken;
         } else {
-          // Refresh failed, clear auth and let request fail
+          // Refresh failed — session is unrecoverable. Clear auth and bounce to
+          // login instead of firing a tokenless request that fails confusingly.
           await clearAuthData();
+          emitAuthLost();
+          throw new ApiError('Your session has expired. Please log in again.', 401, false, false);
         }
       }
 
@@ -160,6 +180,14 @@ export async function apiCall<T = any>(
 
     // Check response status
     if (!response.ok) {
+      // A 401 on a normal request means the token is invalid/expired and refresh
+      // didn't save us → session lost. Bounce to login rather than surfacing a
+      // raw "Unauthorized" on whatever screen the user was on.
+      if (response.status === 401) {
+        await clearAuthData();
+        emitAuthLost();
+        throw new ApiError('Your session has expired. Please log in again.', 401, false, false);
+      }
       throw new ApiError(
         data?.error || `HTTP ${response.status}`,
         response.status,

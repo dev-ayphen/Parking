@@ -11,6 +11,7 @@ router.put('/me', authenticate, userController.updateProfile);
 router.put('/me/complete-profile', authenticate, userController.completeProfile);
 router.post('/me/photo', authenticate, uploadImage, userController.uploadPhoto);
 router.post('/me/push-token', authenticate, userController.registerPushToken);
+router.delete('/me', authenticate, userController.deleteAccount);
 
 // Public route - no authentication needed
 router.get('/:id', userController.getPublicProfile);

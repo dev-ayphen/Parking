@@ -256,6 +256,51 @@ export const userService = {
     await db.user.update({ where: { id: userId }, data: { expoPushToken: token } });
   },
 
+  /**
+   * Self-service account deletion (Play Store / GDPR "right to be forgotten").
+   * Soft-deletes: keeps the row for legal/audit (ratings, incidents survive) but
+   * marks the account deleted, clears the push token, and frees the phone number
+   * for re-registration by suffixing it. Blocked if the user has anything in
+   * flight (active bookings as a parker, or live bookings on their spaces).
+   */
+  deleteOwnAccount: async (userId: number) => {
+    const IN_FLIGHT = ['PENDING_APPROVAL', 'APPROVED', 'ACTIVE'];
+
+    const [parkerActive, ownerActive] = await Promise.all([
+      db.booking.count({ where: { parkerId: userId, status: { in: IN_FLIGHT } } }),
+      db.booking.count({ where: { space: { ownerId: userId }, status: { in: IN_FLIGHT } } }),
+    ]);
+    if (parkerActive > 0) {
+      throw Object.assign(new Error('You have an active or pending booking. Complete or cancel it before deleting your account.'), { statusCode: 400 });
+    }
+    if (ownerActive > 0) {
+      throw Object.assign(new Error('You have active bookings on your spaces. Wait for them to finish before deleting your account.'), { statusCode: 400 });
+    }
+
+    const user = await db.user.findUnique({ where: { id: userId }, select: { phone: true } });
+    if (!user) throw Object.assign(new Error('User not found'), { statusCode: 404 });
+
+    await db.$transaction([
+      db.session.deleteMany({ where: { userId } }),
+      // Soft-delete + free the phone (suffix so the @unique constraint releases it
+      // for a fresh signup, while the original is still recoverable from the suffix).
+      db.user.update({
+        where: { id: userId },
+        data: {
+          deletedAt: new Date(),
+          deletedReason: 'USER_REQUESTED',
+          status: 'BANNED',
+          expoPushToken: null,
+          phone: `deleted_${userId}_${user.phone}`.slice(0, 40),
+        },
+      }),
+      // Soft-delete the user's spaces so they stop appearing in search.
+      db.space.updateMany({ where: { ownerId: userId, deletedAt: null }, data: { deletedAt: new Date() } }),
+    ]);
+
+    return { success: true, message: 'Your account has been deleted.' };
+  },
+
   getPublicProfile: async (userId: number) => {
     if (!userId || isNaN(userId)) {
       const error = new Error('Invalid user ID');

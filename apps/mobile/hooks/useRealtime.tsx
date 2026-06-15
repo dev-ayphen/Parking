@@ -119,6 +119,20 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     };
   }, [router]);
 
+  // Session-lost handler — fires when a token refresh fails or any request 401s
+  // (emitted from api.service). Independent of the socket so it works even when
+  // the socket is down. One alert, then back to login.
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('auth:lost', () => {
+      Alert.alert(
+        'Session Expired',
+        'Your session has expired. Please log in again.',
+        [{ text: 'OK', onPress: () => router.replace('/(auth)') }],
+      );
+    });
+    return () => sub.remove();
+  }, [router]);
+
   return <>{children}</>;
 }
 

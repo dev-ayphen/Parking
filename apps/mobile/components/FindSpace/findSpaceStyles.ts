@@ -85,20 +85,36 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.white,
-    borderRadius: BorderRadius.md,                  // 12 = md ✓
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.lg,
+    borderRadius: 28,                               // full pill — Google-Maps style
+    paddingHorizontal: Spacing['2xl'],
+    height: 52,
     gap: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.borderLighter,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  // When the dropdown is open, square the bottom so bar + list read as one card.
+  searchBoxActive: {
+    borderBottomLeftRadius: BorderRadius.lg,
+    borderBottomRightRadius: BorderRadius.lg,
+  },
+  searchClearBtn: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: Colors.textMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   searchInput: {
     flex: 1,
-    fontSize: FontSize.md,                          // 14 = md ✓
+    fontSize: FontSize.lg,                           // 15 — slightly larger, readable
     color: Colors.textPrimary,
+    paddingVertical: 0,                             // kill default vertical padding
   },
   searchMetaRow: {
     flexDirection: 'row',
@@ -155,32 +171,39 @@ export const styles = StyleSheet.create({
   },
   suggestionsBox: {
     backgroundColor: Colors.white,
-    borderRadius: BorderRadius.md,                  // 12 = md ✓
-    marginTop: Spacing.md,
-    maxHeight: 300,
+    borderBottomLeftRadius: BorderRadius.lg,        // 16 — matches the active search box
+    borderBottomRightRadius: BorderRadius.lg,
+    marginTop: -2,                                  // tuck under the squared search box
+    maxHeight: 320,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 14,
+    elevation: 6,
     overflow: 'hidden',
+  },
+  suggestionDivider: {
+    height: 1,
+    backgroundColor: Colors.borderLighter,
+    marginLeft: 56,                                 // indent past the icon, like Google
   },
   suggestionItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.xl,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceBg,
+    paddingVertical: Spacing.lg,
     gap: Spacing.lg,
   },
   suggestionIcon: {
     width: 32,
     height: 32,
-    borderRadius: BorderRadius.sm,                  // 8 = sm ✓
-    backgroundColor: ExtendedColors.indigoBg,
+    borderRadius: 16,
+    backgroundColor: Colors.surfaceBg,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  suggestionIconParking: {
+    backgroundColor: Colors.primaryBg,
   },
   suggestionContent: {
     flex: 1,
@@ -196,9 +219,12 @@ export const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   noSuggestions: {
+    flexDirection: 'row',
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing['3xl'],
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.md,
   },
   noSuggestionsText: {
     fontSize: FontSize.md,                          // 14 = md ✓

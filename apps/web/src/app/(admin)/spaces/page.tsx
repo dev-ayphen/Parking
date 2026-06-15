@@ -14,6 +14,13 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 const SOCKET_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api').replace(/\/api\/?$/, '');
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api';
 
+// Compact review count: 1200 → "1.2K", 1_500_000 → "1.5M".
+const fmtCount = (n: number) => {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) { const v = n / 1000; return `${v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)}K`; }
+  const v = n / 1_000_000; return `${v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)}M`;
+};
+
 interface AdminSpace {
   id: number;
   name: string;
@@ -429,7 +436,7 @@ export default function SpacesPage() {
                         }`}>
                           <Star size={11} className="fill-current" />
                           {space.ratingAvg.toFixed(1)}
-                          <span className="font-medium opacity-70">({space.ratingCount})</span>
+                          <span className="font-medium opacity-70">({fmtCount(space.ratingCount)})</span>
                         </div>
                       ) : (
                         <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-600">New</span>

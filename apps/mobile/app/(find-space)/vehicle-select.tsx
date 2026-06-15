@@ -9,10 +9,12 @@ import {View,
   Platform,
   Alert,
   FlatList,
-  RefreshControl} from 'react-native';
+  RefreshControl,
+  Modal,
+  TextInput} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
-import { Car, Plus } from 'lucide-react-native';
+import { Car, Plus, X, Bike } from 'lucide-react-native';
 import { api } from '../../services/api';
 import PageHeader from '../../components/PageHeader';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
@@ -32,6 +34,13 @@ const VehicleSelectScreen = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+
+  // Inline add-vehicle (so a first-time parker can add one without leaving booking)
+  const [addModalVisible, setAddModalVisible] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newPlate, setNewPlate] = useState('');
+  const [newType, setNewType] = useState<'Car' | 'Bike'>('Car');
+  const [savingVehicle, setSavingVehicle] = useState(false);
 
   // Parse params
   const spaceId = params.spaceId as string;
@@ -70,6 +79,47 @@ const VehicleSelectScreen = () => {
       Alert.alert('Error', 'Failed to load vehicles');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const resetAddForm = () => {
+    setNewName('');
+    setNewPlate('');
+    setNewType('Car');
+  };
+
+  // Indian plate: 2 letters + 1-2 digits + 1-3 letters + 4 digits (e.g. KA01AB1234)
+  const isValidPlate = (p: string) => /^[A-Z]{2}\d{1,2}[A-Z]{1,3}\d{4}$/.test(p);
+
+  const handleAddVehicle = async () => {
+    const plate = newPlate.toUpperCase().replace(/\s+/g, '');
+    if (!newName.trim()) {
+      Alert.alert('Required', 'Enter the vehicle make & model (e.g. Honda City).');
+      return;
+    }
+    if (!isValidPlate(plate)) {
+      Alert.alert('Invalid Plate', 'Enter a valid registration number (e.g. KA01AB1234).');
+      return;
+    }
+    try {
+      setSavingVehicle(true);
+      const created = await api.post('/vehicles', {
+        brandModel: newName.trim(),
+        licensePlate: plate,
+        vehicleType: newType === 'Car' ? 'CAR' : 'BIKE',
+        capacity: newType === 'Car' ? 5 : 2,
+        ownershipType: 'OWNER',
+      });
+      setAddModalVisible(false);
+      resetAddForm();
+      // Reload and auto-select the new vehicle so the parker can proceed.
+      const newId = created?.vehicle?.id ?? created?.id;
+      await loadVehicles(false);
+      if (newId) setSelectedVehicleId(newId);
+    } catch (e: any) {
+      Alert.alert('Could not add vehicle', e?.message || 'Please try again.');
+    } finally {
+      setSavingVehicle(false);
     }
   };
 
@@ -202,9 +252,7 @@ const VehicleSelectScreen = () => {
         {/* Add Vehicle Button */}
         <TouchableOpacity
           style={styles.addVehicleButton}
-          onPress={() => {
-            router.push({ pathname: '/(home)/my-vehicles', params: { openAdd: 'true', source: 'booking' } });
-          }}
+          onPress={() => { resetAddForm(); setAddModalVisible(true); }}
           activeOpacity={0.7}
         >
           <Plus size={20} color={Colors.textSecondary} strokeWidth={2.5} />
@@ -226,6 +274,64 @@ const VehicleSelectScreen = () => {
           <Text style={styles.continueButtonText}>Continue</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Inline Add Vehicle — quick form so first-time parkers don't leave booking */}
+      <Modal visible={addModalVisible} transparent animationType="slide" onRequestClose={() => setAddModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add Vehicle</Text>
+              <TouchableOpacity onPress={() => setAddModalVisible(false)} hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}>
+                <X size={20} color={Colors.textSecondary} strokeWidth={2} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.fieldLabel}>Vehicle Type</Text>
+            <View style={styles.typeRow}>
+              {(['Car', 'Bike'] as const).map((t) => {
+                const Icon = t === 'Car' ? Car : Bike;
+                const active = newType === t;
+                return (
+                  <TouchableOpacity key={t} style={[styles.typeChip, active && styles.typeChipActive]} onPress={() => setNewType(t)} activeOpacity={0.7}>
+                    <Icon size={18} color={active ? Colors.primary : Colors.textSecondary} strokeWidth={2} />
+                    <Text style={[styles.typeChipText, active && styles.typeChipTextActive]}>{t}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <Text style={styles.fieldLabel}>Make & Model</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. Honda City"
+              placeholderTextColor={Colors.textMuted}
+              value={newName}
+              onChangeText={setNewName}
+            />
+
+            <Text style={styles.fieldLabel}>Registration Number</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. KA01AB1234"
+              placeholderTextColor={Colors.textMuted}
+              value={newPlate}
+              onChangeText={(t) => setNewPlate(t.toUpperCase())}
+              autoCapitalize="characters"
+              maxLength={12}
+            />
+
+            <TouchableOpacity
+              style={[styles.saveBtn, savingVehicle && { opacity: 0.6 }]}
+              onPress={handleAddVehicle}
+              disabled={savingVehicle}
+              activeOpacity={0.85}
+            >
+              {savingVehicle ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.saveBtnText}>Add Vehicle</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -365,6 +471,21 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.semibold,
     color: Colors.textSecondary,
   },
+  // Add-vehicle modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  modalSheet: { backgroundColor: Colors.white, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl, padding: Spacing['3xl'], paddingBottom: 36 },
+  modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.borderMuted, alignSelf: 'center', marginBottom: Spacing['2xl'] },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing['2xl'] },
+  modalTitle: { fontSize: FontSize['2xl'], fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  fieldLabel: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: Colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: Spacing.md, marginTop: Spacing.md },
+  typeRow: { flexDirection: 'row', gap: Spacing.md },
+  typeChip: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.xl, borderRadius: BorderRadius.md, borderWidth: 1.5, borderColor: Colors.border, backgroundColor: Colors.white },
+  typeChipActive: { borderColor: Colors.primary, backgroundColor: Colors.primaryBg },
+  typeChipText: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.textSecondary },
+  typeChipTextActive: { color: Colors.primary },
+  input: { backgroundColor: Colors.screenBg, borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.md, paddingHorizontal: Spacing.xl, paddingVertical: Spacing.xl, fontSize: FontSize.base, color: Colors.textPrimary },
+  saveBtn: { backgroundColor: Colors.primary, borderRadius: BorderRadius.button, paddingVertical: Spacing['3xl'], alignItems: 'center', marginTop: Spacing['3xl'] },
+  saveBtnText: { color: Colors.white, fontSize: FontSize.lg, fontWeight: FontWeight.bold },
   stickyFooter: {
     backgroundColor: Colors.white,
     paddingHorizontal: Spacing['3xl'],

@@ -21,7 +21,7 @@ import PageHeader from '../../components/PageHeader';
 import ReportSubmitted from '../../components/ReportSubmitted';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { api } from '../../services/api';
-import { getRatingStyle } from '../../utils/ratingUtils';
+import { getRatingStyle, formatCount } from '../../utils/ratingUtils';
 import { useAuthStore } from '../../store/authStore';
 import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 import { useTheme, type AppTheme } from '../../hooks/useTheme';
@@ -390,7 +390,7 @@ const SpaceDetailScreen = () => {
                     activeOpacity={0.6}
                   >
                     <Text style={styles.reviewsLink}>
-                      {ratingCount} review{ratingCount !== 1 ? 's' : ''}
+                      {formatCount(ratingCount)} review{ratingCount !== 1 ? 's' : ''}
                       <Text style={styles.reviewsLinkArrow}>  ›</Text>
                     </Text>
                   </TouchableOpacity>

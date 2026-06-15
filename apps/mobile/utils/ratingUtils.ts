@@ -6,6 +6,22 @@ export interface RatingStyle {
   isNew: boolean;
 }
 
+/**
+ * Compact count formatting, like big review apps:
+ *   24 → "24"   ·   1200 → "1.2K"   ·   1_500_000 → "1.5M"
+ * Trailing ".0" is dropped (1000 → "1K", not "1.0K").
+ */
+export function formatCount(n: number | undefined | null): string {
+  const num = Number(n) || 0;
+  if (num < 1000) return String(num);
+  if (num < 1_000_000) {
+    const v = num / 1000;
+    return `${v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)}K`;
+  }
+  const v = num / 1_000_000;
+  return `${v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)}M`;
+}
+
 export function getRatingStyle(rating: number | undefined | null): RatingStyle {
   const numRating = Number(rating) || 0;
 

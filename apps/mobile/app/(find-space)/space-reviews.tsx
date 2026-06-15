@@ -13,6 +13,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { Star } from 'lucide-react-native';
 import { api } from '../../services/api';
 import PageHeader from '../../components/PageHeader';
+import { formatCount } from '../../utils/ratingUtils';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
 
 interface Review {
@@ -115,7 +116,7 @@ export default function SpaceReviewsScreen() {
             <View style={styles.summaryLeft}>
               <Text style={styles.avgNumber}>{average.toFixed(1)}</Text>
               {renderStars(Math.round(average), 16)}
-              <Text style={styles.totalText}>{total} review{total !== 1 ? 's' : ''}</Text>
+              <Text style={styles.totalText}>{formatCount(total)} review{total !== 1 ? 's' : ''}</Text>
             </View>
 
             <View style={styles.summaryRight}>

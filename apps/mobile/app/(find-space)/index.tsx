@@ -21,7 +21,7 @@ import * as ImagePicker from 'expo-image-picker';
 import LeafletMap from '../../components/LeafletMap';
 import PageHeader from '../../components/PageHeader';
 import { LinearGradient } from 'expo-linear-gradient';
-import { getRatingStyle } from '../../utils/ratingUtils';
+import { getRatingStyle, formatCount } from '../../utils/ratingUtils';
 import FormLabel from '../../components/FormLabel';
 import {
   ChevronLeft,
@@ -101,6 +101,7 @@ const FindSpaceScreen = () => {
   const [selectedSpace, setSelectedSpace] = useState<any>(null);
   const [showRadius, setShowRadius] = useState(true);
   const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [searching, setSearching] = useState(false);
 
   // Vehicles state - loaded from API
   const [vehicles, setVehicles] = useState<any[]>([]);
@@ -405,13 +406,15 @@ const FindSpaceScreen = () => {
     );
   };
 
-  // Real location search using Nominatim (OpenStreetMap - FREE)
+  // Real location search using Nominatim (OpenStreetMap - FREE).
+  // `addressdetails=1` gives a structured address so we can show a clean
+  // "Place name" + "area, city" pair like Google Places, instead of a raw blob.
   const searchRealLocations = async (query: string) => {
     if (!query.trim() || query.length < 2) return [];
 
     try {
       const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&countrycodes=in`,
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=5&countrycodes=in`,
         { headers: { 'User-Agent': 'ParkSwift/1.0 (parking app)', Accept: 'application/json' } }
       );
       // Nominatim returns plain-text errors (not JSON) when rate-limited/blocked
@@ -420,14 +423,31 @@ const FindSpaceScreen = () => {
       try { data = JSON.parse(text); } catch { return []; }
 
       if (Array.isArray(data)) {
-        return data.map((result) => ({
-          id: result.osm_id,
-          name: result.name,
-          description: result.address || result.type,
-          latitude: parseFloat(result.lat),
-          longitude: parseFloat(result.lon),
-          type: 'location',
-        }));
+        return data.map((result) => {
+          const a = result.address || {};
+          // Primary line = the most specific name; secondary = area + city.
+          const primary =
+            result.name ||
+            a.amenity || a.building || a.road || a.suburb || a.neighbourhood ||
+            a.city || a.town || a.village ||
+            (result.display_name ? String(result.display_name).split(',')[0] : 'Location');
+          const secondaryParts = [
+            a.suburb || a.neighbourhood || a.road,
+            a.city || a.town || a.village || a.county,
+            a.state,
+          ].filter((p) => p && p !== primary);
+          const secondary = secondaryParts.length
+            ? Array.from(new Set(secondaryParts)).join(', ')
+            : (result.display_name ? String(result.display_name).split(',').slice(1, 3).join(',').trim() : '');
+          return {
+            id: String(result.osm_id || result.place_id),
+            name: primary,
+            description: secondary,
+            latitude: parseFloat(result.lat),
+            longitude: parseFloat(result.lon),
+            type: 'location',
+          };
+        });
       }
       return [];
     } catch (error) {
@@ -616,28 +636,31 @@ const FindSpaceScreen = () => {
     }
   };
 
-  // Fetch suggestions (parking + real locations from Google Places)
+  // Fetch suggestions — parking spaces (local) + real locations (Nominatim).
   useEffect(() => {
     const fetchSuggestions = async () => {
       if (!searchQuery.trim() || searchQuery.length < 2) {
         setSuggestions([]);
+        setSearching(false);
         return;
       }
 
       const query = searchQuery.toLowerCase();
 
-      // Search parking spaces (local)
+      // Local parking matches show instantly (no network).
       const parkingSuggestions = parkingSpaces
         .filter(space => space.name.toLowerCase().includes(query))
         .map(space => ({ ...space, type: 'parking' }));
+      setSuggestions(parkingSuggestions);
 
-      // Search real locations (Google Places API)
+      // Then the geocoded locations (shows the in-bar spinner while it loads).
+      setSearching(true);
       const realLocations = await searchRealLocations(searchQuery);
-
+      setSearching(false);
       setSuggestions([...parkingSuggestions, ...realLocations]);
     };
 
-    const timer = setTimeout(fetchSuggestions, 500); // Debounce 500ms
+    const timer = setTimeout(fetchSuggestions, 300); // Debounce 300ms
     return () => clearTimeout(timer);
   }, [searchQuery, parkingSpaces]);
 
@@ -842,27 +865,32 @@ const FindSpaceScreen = () => {
 
         {/* Search Bar with Suggestions */}
         <View style={styles.searchBarContainer}>
-          <View style={styles.searchBox}>
-            <Search size={16} color={Colors.textMuted} strokeWidth={2.5} />
-            <TextInput 
+          <View style={[styles.searchBox, showSuggestions && styles.searchBoxActive]}>
+            <Search size={18} color={Colors.textSecondary} strokeWidth={2.5} />
+            <TextInput
               style={styles.searchInput}
-              placeholder="Search locations, parking..."
-              placeholderTextColor={Colors.borderMuted}
+              placeholder="Search for area, street or parking"
+              placeholderTextColor={Colors.textMuted}
               value={searchQuery}
+              returnKeyType="search"
               onChangeText={(text) => {
                 setSearchQuery(text);
                 setShowSuggestions(text.length > 0);
               }}
               onFocus={() => setShowSuggestions(searchQuery.length > 0)}
             />
-            {searchQuery.length > 0 && (
+            {searching ? (
+              <ActivityIndicator size="small" color={Colors.primary} />
+            ) : searchQuery.length > 0 ? (
               <TouchableOpacity onPress={() => {
                 setSearchQuery('');
                 setShowSuggestions(false);
-              }}>
-                <X size={16} color={Colors.textMuted} strokeWidth={2.5} />
+              }} hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+                <View style={styles.searchClearBtn}>
+                  <X size={13} color={Colors.white} strokeWidth={3} />
+                </View>
               </TouchableOpacity>
-            )}
+            ) : null}
           </View>
 
           {/* Search-center chip — tells the user where the search is centered + radius */}
@@ -895,41 +923,51 @@ const FindSpaceScreen = () => {
             <View style={styles.suggestionsBox}>
               <FlatList
                 data={suggestions}
-                keyExtractor={(item) => item.id}
+                keyExtractor={(item) => String(item.id)}
                 scrollEnabled={false}
+                ItemSeparatorComponent={() => <View style={styles.suggestionDivider} />}
                 renderItem={({ item }) => (
                   <TouchableOpacity
                     style={styles.suggestionItem}
                     onPress={() => handleSuggestionPress(item)}
+                    activeOpacity={0.6}
                   >
-                    <View style={styles.suggestionIcon}>
+                    <View style={[styles.suggestionIcon, item.type === 'parking' && styles.suggestionIconParking]}>
                       {item.type === 'parking' ? (
-                        <Text style={{ fontSize: 14 }}>🅿️</Text>
+                        <Text style={{ fontSize: 13, fontWeight: '800', color: Colors.primary }}>P</Text>
                       ) : (
-                        <MapPin size={16} color={ExtendedColors.indigoAccent} strokeWidth={2.5} />
+                        <MapPin size={16} color={Colors.textSecondary} strokeWidth={2.5} />
                       )}
                     </View>
                     <View style={styles.suggestionContent}>
-                      <Text style={styles.suggestionName}>{item.name}</Text>
-                      <Text style={styles.suggestionMeta} numberOfLines={1}>
-                        {item.type === 'parking'
-                          ? `₹${item.price}/hr • ${item.available} available`
-                          : item.description || '📍 Location'
-                        }
-                      </Text>
+                      <Text style={styles.suggestionName} numberOfLines={1}>{item.name}</Text>
+                      {!!(item.type === 'parking' ? true : item.description) && (
+                        <Text style={styles.suggestionMeta} numberOfLines={1}>
+                          {item.type === 'parking'
+                            ? `₹${item.price}/hr • ${item.available} available`
+                            : item.description}
+                        </Text>
+                      )}
                     </View>
-                    <ChevronRight size={16} color={Colors.borderMedium} strokeWidth={2.5} />
+                    <ChevronRight size={16} color={Colors.borderMuted} strokeWidth={2.5} />
                   </TouchableOpacity>
                 )}
               />
             </View>
           )}
 
-          {/* No Suggestions Message */}
+          {/* Searching / no-results state */}
           {showSuggestions && suggestions.length === 0 && searchQuery.length > 0 && (
             <View style={styles.suggestionsBox}>
               <View style={styles.noSuggestions}>
-                <Text style={styles.noSuggestionsText}>No results found</Text>
+                {searching ? (
+                  <>
+                    <ActivityIndicator size="small" color={Colors.primary} />
+                    <Text style={styles.noSuggestionsText}>Searching…</Text>
+                  </>
+                ) : (
+                  <Text style={styles.noSuggestionsText}>No results found</Text>
+                )}
               </View>
             </View>
           )}
@@ -1076,7 +1114,7 @@ const FindSpaceScreen = () => {
                   </Text>
                 </View>
                 {selectedSpace.reviews > 0 && (
-                  <Text style={styles.reviewCount}> ({selectedSpace.reviews})</Text>
+                  <Text style={styles.reviewCount}> ({formatCount(selectedSpace.reviews)})</Text>
                 )}
               </View>
             </View>

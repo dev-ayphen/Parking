@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 import { Bell, Lock, Globe, Moon, Shield } from 'lucide-react-native';
 import { PageHeader } from '../../components';
 import { api } from '../../services/api';
+import { toast } from '../../utils/toast';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
 import { useThemeStore } from '../../store/themeStore';
 
@@ -73,7 +74,7 @@ export default function SettingsScreen() {
     if (!ok) {
       // Revert and tell the user it didn't save.
       setter(current);
-      Alert.alert('Could not save', 'Please check your connection and try again.');
+      toast.error('Could not save. Check your connection.');
       return;
     }
     // One helpful note when location is turned off — it affects parking search.
@@ -155,7 +156,7 @@ export default function SettingsScreen() {
                 const ok = await updatePreference('darkTheme', val);
                 if (!ok) {
                   setThemeMode(val ? 'light' : 'dark'); // revert
-                  Alert.alert('Could not save', 'Please check your connection and try again.');
+                  toast.error('Could not save. Check your connection.');
                 }
               }}
               trackColor={{ false: Colors.border, true: Colors.primary }}

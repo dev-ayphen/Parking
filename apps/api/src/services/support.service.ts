@@ -3,7 +3,10 @@ import { db } from '../config/database';
 const VALID_CATEGORIES = ['BOOKING', 'SPACE_OWNER', 'SUBSCRIPTION', 'ACCOUNT', 'TECHNICAL', 'OTHER'];
 const VALID_PRIORITIES = ['LOW', 'NORMAL', 'HIGH', 'URGENT'];
 
-const ticketNumber = (id: number) => `PS-${String(1000 + id)}`;
+// Standardized reference format — fixed-width, zero-padded, prefixed per entity
+// type, matching ABU-xxxxx (abuse) and INC-xxxxx (incidents). One pattern users
+// learn once: SUP-00482.
+const ticketNumber = (id: number) => `SUP-${String(id).padStart(5, '0')}`;
 
 const STATUS_DISPLAY: Record<string, string> = {
   OPEN: 'Open',

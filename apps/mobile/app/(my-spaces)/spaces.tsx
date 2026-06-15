@@ -8,6 +8,7 @@ import {View,
   StatusBar,
   ActivityIndicator,
   Alert} from 'react-native';
+import { toast } from '../../utils/toast';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Plus, MapPin, Edit3, Trash2, Clock, CheckCircle, XCircle, AlertTriangle, Car, IndianRupee } from 'lucide-react-native';
@@ -118,9 +119,9 @@ export default function MySpacesListScreen() {
 
       // Remove from local list immediately
       setSpaces((prev) => prev.filter((s) => s.id !== spaceId));
-      Alert.alert('Deleted', 'Space has been deleted successfully.');
+      toast.success('Space deleted successfully.');
     } catch (e) {
-      Alert.alert('Delete Failed', (e as Error).message);
+      toast.error((e as Error).message || 'Failed to delete space.');
     } finally {
       setDeletingId(null);
     }

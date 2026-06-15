@@ -13,18 +13,24 @@ import {View,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import Svg, { Path } from 'react-native-svg';
-import { Smartphone, Check } from 'lucide-react-native';
+import Svg, { Path, Defs, RadialGradient, Stop } from 'react-native-svg';
+import { Smartphone } from 'lucide-react-native';
 import { api } from '../../services/api';
 import { FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
 import { useTheme, type AppTheme } from '../../hooks/useTheme';
 
 const { width } = Dimensions.get('window');
 
-const ParkSwiftLogo = ({ color }: { color: string }) => (
-  <Svg width={48} height={48} viewBox="0 0 512 512">
+const PinIcon = ({ size = 80 }: { size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 512 512">
+    <Defs>
+      <RadialGradient id="pinGradLogin" cx="40%" cy="30%" r="70%">
+        <Stop offset="0%" stopColor="#FF3D7F" />
+        <Stop offset="100%" stopColor="#A8003F" />
+      </RadialGradient>
+    </Defs>
     <Path
-      fill={color}
+      fill="url(#pinGradLogin)"
       d="M256 32C167.6 32 96 103.6 96 192c0 112 160 288 160 288s160-176 160-288C416 103.6 344.4 32 256 32zm0 224c-35.3 0-64-28.7-64-64s28.7-64 64-64 64 28.7 64 64-28.7 64-64 64z"
     />
   </Svg>
@@ -39,7 +45,7 @@ const LoginScreen = () => {
 
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
-  const [consentAccepted, setConsentAccepted] = useState(false);
+  const [error, setError] = useState('');
 
   const styles = useMemo(() => makeStyles(theme), [theme]);
 
@@ -58,24 +64,41 @@ const LoginScreen = () => {
     ]).start();
   }, []);
 
+  const validatePhone = (): string => {
+    if (!phone.trim()) return 'Mobile number is required.';
+    if (phone.length < 10) return 'Mobile number must be 10 digits.';
+    if (phone.length > 10) return 'Mobile number must be 10 digits.';
+    if (!/^[6-9]\d{9}$/.test(phone)) return 'Please enter a valid mobile number.';
+    return '';
+  };
+
   const handleSendOtp = async () => {
-    if (!phone || phone.length !== 10) {
-      alert('Please enter a valid 10-digit phone number');
+    const validationError = validatePhone();
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
+    setError('');
     setLoading(true);
     try {
       const data = await api.post('/auth/request-otp', { phone: '+91' + phone });
-
       setLoading(false);
       router.push({
         pathname: '/(auth)/verify-otp',
         params: { phone: '+91' + phone, devOtp: data.devOtp || '' },
       });
-    } catch (error) {
+    } catch (err: any) {
       setLoading(false);
-      alert('Error: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      if (err?.isNetworkError || err?.status === 0) {
+        setError('No internet connection. Check your network and try again.');
+      } else if (err?.status >= 500) {
+        setError('Unable to send OTP. Please try again.');
+      } else if (typeof err?.message === 'string') {
+        setError(err.message);
+      } else {
+        setError('Unable to send OTP. Please try again.');
+      }
     }
   };
 
@@ -85,6 +108,10 @@ const LoginScreen = () => {
         backgroundColor={colors.white}
         barStyle={isDark ? 'light-content' : 'dark-content'}
       />
+
+      {/* Decorative Top Background Circles */}
+      <View style={styles.topCircle} />
+      <View style={styles.smallCircle} />
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -101,8 +128,8 @@ const LoginScreen = () => {
         >
           {/* Logo + Brand */}
           <View style={styles.logoContainer}>
-            <View style={styles.logoCircle}>
-              <ParkSwiftLogo color={colors.white} />
+            <View style={styles.logoBackground}>
+              <PinIcon size={64} />
             </View>
             <Text style={styles.brandName}>
               <Text style={styles.brandDark}>Park</Text>
@@ -116,7 +143,7 @@ const LoginScreen = () => {
             <Text style={styles.subheading}>Enter your phone number to continue</Text>
 
             {/* Phone Input */}
-            <View style={styles.phoneContainer}>
+            <View style={[styles.phoneContainer, !!error && styles.phoneContainerError]}>
               <View style={styles.countryCode}>
                 <Text style={styles.countryFlag}>🇮🇳</Text>
                 <Text style={styles.countryText}>+91</Text>
@@ -124,7 +151,7 @@ const LoginScreen = () => {
               <View style={styles.inputDivider} />
               <TextInput
                 value={phone}
-                onChangeText={setPhone}
+                onChangeText={(v) => { setPhone(v); setError(''); }}
                 placeholder="Mobile number"
                 placeholderTextColor={colors.textMuted}
                 keyboardType="phone-pad"
@@ -134,14 +161,19 @@ const LoginScreen = () => {
               />
             </View>
 
+            {!!error
+              ? <Text style={styles.errorText}>{error}</Text>
+              : <View style={{ marginBottom: Spacing['3xl'] }} />
+            }
+
             {/* Continue Button */}
             <TouchableOpacity
               activeOpacity={0.85}
               onPress={handleSendOtp}
-              disabled={loading || !consentAccepted}
+              disabled={loading || phone.length !== 10}
               style={styles.buttonWrap}
             >
-              <View style={[styles.button, !consentAccepted && styles.buttonDisabled]}>
+              <View style={[styles.button, (loading || phone.length !== 10) && styles.buttonDisabled]}>
                 {loading ? (
                   <ActivityIndicator color={colors.white} size="small" />
                 ) : (
@@ -150,26 +182,17 @@ const LoginScreen = () => {
               </View>
             </TouchableOpacity>
 
-            {/* Explicit consent checkbox — required before Continue */}
-            <TouchableOpacity
-              style={styles.consentRow}
-              onPress={() => setConsentAccepted(!consentAccepted)}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.consentCheckbox, consentAccepted && styles.consentCheckboxChecked]}>
-                {consentAccepted && <Check size={12} color={colors.white} strokeWidth={3} />}
-              </View>
-              <Text style={styles.consentText}>
-                I agree to the{' '}
-                <Text style={styles.termsLink} onPress={() => router.push('/(auth)/terms')}>
-                  Terms & Conditions
-                </Text>
-                {' '}and{' '}
-                <Text style={styles.termsLink} onPress={() => router.push('/(auth)/privacy')}>
-                  Privacy Policy
-                </Text>
+            {/* Terms and conditions text */}
+            <Text style={styles.termsText}>
+              By clicking Continue, you agree to our{' '}
+              <Text style={styles.termsLink} onPress={() => router.push('/(auth)/terms')}>
+                Terms & Conditions
               </Text>
-            </TouchableOpacity>
+              {' '}and{' '}
+              <Text style={styles.termsLink} onPress={() => router.push('/(auth)/privacy')}>
+                Privacy Policy
+              </Text>
+            </Text>
           </View>
         </Animated.View>
       </KeyboardAvoidingView>
@@ -189,18 +212,41 @@ const makeStyles = ({ colors, spacing, radius, fontSize, fontWeight }: AppTheme)
     paddingHorizontal: Spacing.screenH,
     justifyContent: 'center',
   },
+  topCircle: {
+    width: width * 1.2,
+    height: width * 1.2,
+    borderRadius: width * 0.6,
+    backgroundColor: 'rgba(220,1,89,0.03)',
+    position: 'absolute',
+    top: -width * 0.6,
+    right: -width * 0.2,
+  },
+  smallCircle: {
+    width: width * 0.8,
+    height: width * 0.8,
+    borderRadius: width * 0.4,
+    backgroundColor: 'rgba(220,1,89,0.02)',
+    position: 'absolute',
+    top: width * 0.2,
+    left: -width * 0.4,
+  },
   logoContainer: {
     alignItems: 'center',
     marginBottom: 40,
   },
-  logoCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: colors.primary,
+  logoBackground: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#FFF1F6',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: Spacing['3xl'],
+    shadowColor: '#DC0159',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+    elevation: 8,
+    marginBottom: 24,
   },
   brandName: {
     fontSize: FontSize['4xl'],
@@ -230,39 +276,48 @@ const makeStyles = ({ colors, spacing, radius, fontSize, fontWeight }: AppTheme)
   phoneContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.borderMedium,
+    borderRadius: BorderRadius.lg,
+    backgroundColor: colors.white,
+    height: 60,
+    marginBottom: Spacing.md,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 },
+      android: { elevation: 2 },
+    }),
+  },
+  phoneContainerError: {
+    borderColor: colors.error,
     borderWidth: 1.5,
-    borderColor: colors.border,
-    borderRadius: BorderRadius.md,
-    backgroundColor: colors.screenBg,
-    height: 52,
-    marginBottom: Spacing['4xl'],
   },
   countryCode: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: Spacing['3xl'],
-    gap: 6,
+    gap: 8,
   },
   countryFlag: {
-    fontSize: 18,
+    fontSize: 22,
   },
   countryText: {
-    fontSize: FontSize.md,
+    fontSize: FontSize.lg,
     fontWeight: FontWeight.semibold,
-    color: colors.textSecondary,
+    color: colors.textPrimary,
   },
   inputDivider: {
     width: 1,
-    height: 24,
-    backgroundColor: colors.border,
+    height: 30,
+    backgroundColor: colors.borderMedium,
   },
   input: {
     flex: 1,
-    height: 52,
+    height: 60,
     paddingHorizontal: Spacing['3xl'],
-    fontSize: FontSize.lg,
+    fontSize: FontSize.xl,
     color: colors.textPrimary,
-    fontWeight: FontWeight.medium,
+    fontWeight: FontWeight.semibold,
+    letterSpacing: 1,
   },
   buttonWrap: {
     marginBottom: Spacing['4xl'],
@@ -292,33 +347,17 @@ const makeStyles = ({ colors, spacing, radius, fontSize, fontWeight }: AppTheme)
   buttonDisabled: {
     opacity: 0.45,
   },
-  consentRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: Spacing.lg,
-    marginTop: Spacing.xl,
-    paddingHorizontal: Spacing.xs,
-  },
-  consentCheckbox: {
-    width: 20,
-    height: 20,
-    borderRadius: BorderRadius.badge,
-    borderWidth: 2,
-    borderColor: colors.borderMedium,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.white,
-    marginTop: 1,
-    flexShrink: 0,
-  },
-  consentCheckboxChecked: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  consentText: {
+  termsText: {
     fontSize: FontSize.sm,
     color: colors.textSecondary,
     lineHeight: 20,
-    flex: 1,
+    textAlign: 'center',
+    paddingHorizontal: Spacing.xl,
+  },
+  errorText: {
+    color: colors.error,
+    fontSize: FontSize.sm,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.lg,
   },
 });

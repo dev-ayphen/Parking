@@ -22,3 +22,4 @@ export { default as FormInput } from './FormInput';
 export { default as PageHeader } from './PageHeader';
 export { default as ScreenLoader } from './ScreenLoader';
 export { default as Spinner } from './Loading/Spinner';
+export { default as ReportSubmitted } from './ReportSubmitted';

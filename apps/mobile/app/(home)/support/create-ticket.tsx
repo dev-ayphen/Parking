@@ -7,15 +7,16 @@ import {View,
   ScrollView,
   Platform,
   TextInput,
-  Alert,
   KeyboardAvoidingView,
   ActivityIndicator,
   Image} from 'react-native';
+import { toast } from '../../../utils/toast';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Paperclip, ChevronDown, CheckCircle2, X } from 'lucide-react-native';
 import PageHeader from '../../../components/PageHeader';
+import ReportSubmitted from '../../../components/ReportSubmitted';
 import { api } from '../../../services/api';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../../theme';
 
@@ -54,6 +55,8 @@ export default function CreateTicketScreen() {
   const [prefilling, setPrefilling] = useState(true);
   const [attachments, setAttachments] = useState<string[]>([]); // local URIs
   const [attaching, setAttaching] = useState(false);
+  const [submittedRef, setSubmittedRef] = useState<string | null>(null);
+  const [submittedAt, setSubmittedAt] = useState<string | null>(null);
 
   // Prefill contact details from user profile
   useEffect(() => {
@@ -76,7 +79,7 @@ export default function CreateTicketScreen() {
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('Permission needed', 'Allow photo access to attach a screenshot.');
+        toast.info('Allow photo access to attach a screenshot.');
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -86,7 +89,7 @@ export default function CreateTicketScreen() {
       if (result.canceled || !result.assets?.[0]) return;
       setAttachments((prev) => [...prev, result.assets[0].uri].slice(0, 5));
     } catch {
-      Alert.alert('Error', 'Failed to pick file');
+      toast.error('Failed to pick file');
     }
   };
 
@@ -94,8 +97,9 @@ export default function CreateTicketScreen() {
     setAttachments((prev) => prev.filter((u) => u !== uri));
 
   const handleSubmit = async () => {
+    if (submitting || submittedRef) return; // guard re-entry / double-tap
     if (!subject.trim() || !description.trim()) {
-      Alert.alert('Missing details', 'Subject and description are required.');
+      toast.error('Subject and description are required.');
       return;
     }
     try {
@@ -123,27 +127,49 @@ export default function CreateTicketScreen() {
         attachmentUrls,
       });
       if (!json.success) {
-        Alert.alert('Error', json.error || 'Failed to create ticket');
+        toast.error(json.error || 'Failed to create ticket');
         return;
       }
-      Alert.alert(
-        'Ticket Submitted',
-        `Your ticket ${json.ticket.ticketNumber} has been created. We'll get back to you shortly.`,
-        [{ text: 'View Tickets', onPress: () => router.replace('/(home)/support/tickets') }],
-      );
+      setSubmittedRef(json.ticket.ticketNumber || 'SUP-PENDING');
+      setSubmittedAt(json.ticket.createdAt || new Date().toISOString());
     } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Network error');
+      toast.error(e?.message || 'Network error');
     } finally {
       setSubmitting(false);
     }
   };
+
+  // Post-submission success screen — same ReportSubmitted receipt as abuse/incident
+  if (submittedRef) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" />
+        <PageHeader title="Ticket Created" onBack={() => router.replace('/(home)/support/tickets')} />
+        <View style={styles.successWrap}>
+          <ReportSubmitted
+            title="Ticket Created"
+            reference={submittedRef}
+            submittedAt={submittedAt || undefined}
+          />
+          <Text style={styles.successHint}>Our support team will get back to you soon. You can track progress in My Tickets.</Text>
+          <TouchableOpacity
+            style={styles.successBtn}
+            onPress={() => router.replace('/(home)/support/tickets')}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.successBtnText}>View My Tickets</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
       <PageHeader title="Create Ticket" onBack={() => router.back()} />
 
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         style={{ flex: 1 }} 
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
@@ -337,6 +363,30 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.white,
+  },
+  successWrap: {
+    flex: 1,
+    backgroundColor: Colors.screenBg,
+    padding: Spacing.screenH,
+  },
+  successHint: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 19,
+    marginTop: Spacing.xl,
+    paddingHorizontal: Spacing.xs,
+  },
+  successBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.button,
+    paddingVertical: Spacing['3xl'],
+    alignItems: 'center',
+    marginTop: Spacing['3xl'],
+  },
+  successBtnText: {
+    color: Colors.white,
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.bold,
   },
   scrollView: {
     flex: 1,

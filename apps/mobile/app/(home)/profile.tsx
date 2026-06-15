@@ -6,7 +6,6 @@ import {
   StatusBar,
   TouchableOpacity,
   ScrollView,
-  Alert,
   Modal,
   TextInput,
   KeyboardAvoidingView,
@@ -23,6 +22,7 @@ import { User, Phone, Mail, Camera, ShieldAlert, X } from 'lucide-react-native';
 import { api } from '../../services/api';
 import { PageHeader, ScreenLoader } from '../../components';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import { toast } from '../../utils/toast';
 
 interface UserProfile {
   id: number;
@@ -71,7 +71,7 @@ const ProfileScreen = () => {
       const elapsed = Date.now() - startTime;
       if (elapsed < 300) await new Promise(r => setTimeout(r, 300 - elapsed));
     } catch {
-      Alert.alert('Error', 'Failed to load profile');
+      toast.error('Failed to load profile');
     } finally {
       setLoading(false);
     }
@@ -81,7 +81,7 @@ const ProfileScreen = () => {
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('Permission needed', 'Allow photo access to update your picture.');
+        toast.info('Allow photo access to update your picture.');
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -109,7 +109,7 @@ const ProfileScreen = () => {
         setUser((u) => (u ? { ...u, photoUrl: res.photoUrl } : u));
       }
     } catch (e) {
-      Alert.alert('Upload failed', (e as Error).message || 'Could not update photo.');
+      toast.error((e as Error).message || 'Could not update photo.');
     } finally {
       setPhotoUploading(false);
     }
@@ -166,7 +166,7 @@ const ProfileScreen = () => {
         await loadProfile();
       }
     } catch (err) {
-      Alert.alert('Error', (err as Error).message || 'Failed to update profile');
+      toast.error((err as Error).message || 'Failed to update profile');
     } finally {
       setSaving(false);
     }

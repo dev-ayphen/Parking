@@ -12,11 +12,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { CheckCircle2, Star, Zap, Shield } from 'lucide-react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { CheckCircle2, Star, Zap } from 'lucide-react-native';
 import PageHeader from '../../components/PageHeader';
 import { api } from '../../services/api';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
+import { toast } from '../../utils/toast';
 
 interface Plan {
   id: string;
@@ -28,24 +28,6 @@ interface Plan {
 }
 
 type BillingCycle = 'MONTHLY' | 'YEARLY';
-
-const PLAN_ACCENT: Record<string, { gradient: [string, string]; icon: React.ReactNode }> = {
-  default: {
-    gradient: [Colors.textPrimary, ExtendedColors.darkCard],
-    icon: <Shield size={20} color={Colors.white} />,
-  },
-};
-
-const getPlanAccent = (planName: string): { gradient: [string, string]; iconColor: string } => {
-  const lower = planName.toLowerCase();
-  if (lower.includes('enterprise') || lower.includes('premium')) {
-    return { gradient: [Colors.primary, '#9B0042'], iconColor: Colors.white };
-  }
-  if (lower.includes('pro') || lower.includes('business')) {
-    return { gradient: ['#1E40AF', '#1D4ED8'], iconColor: Colors.white };
-  }
-  return { gradient: [Colors.textPrimary, ExtendedColors.darkCard], iconColor: Colors.white };
-};
 
 const formatPrice = (amount: number, cycle: BillingCycle): string => {
   if (amount === 0) return 'Free';
@@ -84,7 +66,7 @@ export default function SubscriptionPlansScreen() {
       }
     } catch (e) {
       if (__DEV__) console.log('[SUBSCRIPTION_PLANS] error', e);
-      Alert.alert('Error', 'Failed to load plans. Please try again.');
+      toast.error('Failed to load plans. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -113,14 +95,11 @@ export default function SubscriptionPlansScreen() {
                 planId: plan.id,
                 billingCycle,
               });
-              Alert.alert(
-                'Subscribed!',
-                `You are now subscribed to ${plan.name}.`,
-                [{ text: 'OK', onPress: () => router.back() }]
-              );
+              toast.success(`Subscribed to ${plan.name}!`);
+              router.back();
             } catch (e) {
               if (__DEV__) console.log('[SUBSCRIBE] error', e);
-              Alert.alert('Error', 'Failed to subscribe. Please try again.');
+              toast.error('Failed to subscribe. Please try again.');
             } finally {
               setSubscribing(null);
             }
@@ -210,52 +189,51 @@ export default function SubscriptionPlansScreen() {
           const isSubscribing = subscribing === plan.id;
           const price = billingCycle === 'MONTHLY' ? plan.price : plan.yearlyPrice;
           const savings = calcSavings(plan.price, plan.yearlyPrice);
-          const accent = getPlanAccent(plan.name);
           const isFeatured =
             plan.name.toLowerCase().includes('pro') ||
             plan.name.toLowerCase().includes('enterprise');
 
           return (
             <View key={plan.id} style={[styles.planCard, isFeatured && styles.planCardFeatured]}>
-              {isFeatured && (
-                <View style={styles.featuredBadge}>
-                  <Star size={10} color={Colors.amber} fill={Colors.amber} />
-                  <Text style={styles.featuredBadgeText}>POPULAR</Text>
-                </View>
-              )}
-
               {/* Card header */}
-              <LinearGradient
-                colors={accent.gradient}
-                style={styles.planCardHeader}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              >
+              <View style={styles.planCardHeader}>
                 <View style={styles.planHeaderTop}>
                   <Text style={styles.planName}>{plan.name}</Text>
-                  {isCurrentPlan && (
-                    <View style={styles.currentBadge}>
-                      <Text style={styles.currentBadgeText}>Current Plan</Text>
-                    </View>
-                  )}
+                  <View style={styles.badgeContainer}>
+                    {isCurrentPlan && (
+                      <View style={styles.currentBadge}>
+                        <Text style={styles.currentBadgeText}>Current</Text>
+                      </View>
+                    )}
+                    {isFeatured && (
+                      <View style={styles.featuredBadge}>
+                        <Star size={10} color={Colors.primary} fill={Colors.primary} />
+                        <Text style={styles.featuredBadgeText}>POPULAR</Text>
+                      </View>
+                    )}
+                  </View>
                 </View>
-                <Text style={styles.planPrice}>
-                  {price === 0
-                    ? 'Free'
-                    : `₹${price.toLocaleString('en-IN')}`}
+                <View style={styles.priceRow}>
+                  <Text style={styles.planPrice}>
+                    {price === 0
+                      ? 'Free'
+                      : `₹${price.toLocaleString('en-IN')}`}
+                  </Text>
                   {price > 0 && (
                     <Text style={styles.planPriceCycle}>
                       /{billingCycle === 'MONTHLY' ? 'month' : 'year'}
                     </Text>
                   )}
-                </Text>
-                {billingCycle === 'YEARLY' && savings !== null && (
-                  <Text style={styles.savingsText}>Save {savings}% vs monthly</Text>
-                )}
+                  {billingCycle === 'YEARLY' && savings !== null && (
+                    <View style={styles.savingsBadge}>
+                      <Text style={styles.savingsBadgeText}>Save {savings}%</Text>
+                    </View>
+                  )}
+                </View>
                 {plan.description ? (
                   <Text style={styles.planDescription}>{plan.description}</Text>
                 ) : null}
-              </LinearGradient>
+              </View>
 
               {/* Features list */}
               <View style={styles.featuresSection}>
@@ -271,6 +249,7 @@ export default function SubscriptionPlansScreen() {
               <TouchableOpacity
                 style={[
                   styles.selectButton,
+                  isFeatured ? styles.selectButtonFeatured : styles.selectButtonStandard,
                   isCurrentPlan && styles.currentPlanButton,
                   isSubscribing && styles.selectButtonLoading,
                 ]}
@@ -279,11 +258,12 @@ export default function SubscriptionPlansScreen() {
                 activeOpacity={0.8}
               >
                 {isSubscribing ? (
-                  <ActivityIndicator size="small" color={Colors.white} />
+                  <ActivityIndicator size="small" color={isFeatured ? Colors.primary : Colors.white} />
                 ) : (
                   <Text
                     style={[
                       styles.selectButtonText,
+                      isFeatured ? styles.selectButtonFeaturedText : styles.selectButtonStandardText,
                       isCurrentPlan && styles.currentPlanButtonText,
                     ]}
                   >
@@ -395,7 +375,7 @@ const styles = StyleSheet.create({
   planCard: {
     backgroundColor: Colors.white,
     borderRadius: BorderRadius.lg,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: Colors.border,
     marginBottom: Spacing['3xl'],
     overflow: 'hidden',
@@ -403,34 +383,45 @@ const styles = StyleSheet.create({
       ios: {
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.06,
-        shadowRadius: 8,
+        shadowOpacity: 0.04,
+        shadowRadius: 6,
       },
       android: {
-        elevation: 3,
+        elevation: 2,
       },
     }),
   },
   planCardFeatured: {
     borderColor: Colors.primary,
-    borderWidth: 2,
+    borderWidth: 1.5,
+  },
+  badgeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
   },
   featuredBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     gap: Spacing.xs,
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.primaryBg,
+    paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.badge,
+    borderWidth: 1,
+    borderColor: Colors.primary,
   },
   featuredBadgeText: {
-    fontSize: FontSize.xs,
+    fontSize: FontSize.xs - 1,
     fontWeight: FontWeight.bold,
-    color: Colors.white,
-    letterSpacing: 1,
+    color: Colors.primary,
+    letterSpacing: 0.5,
   },
   planCardHeader: {
     padding: Spacing['3xl'],
+    backgroundColor: Colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
   },
   planHeaderTop: {
     flexDirection: 'row',
@@ -441,41 +432,54 @@ const styles = StyleSheet.create({
   planName: {
     fontSize: FontSize['2xl'],
     fontWeight: FontWeight.extrabold,
-    color: Colors.white,
+    color: Colors.textPrimary,
     letterSpacing: -0.3,
   },
   currentBadge: {
-    backgroundColor: ExtendedColors.whiteAlpha20,
+    backgroundColor: Colors.successBg,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.badge,
+    borderWidth: 1,
+    borderColor: Colors.success,
   },
   currentBadgeText: {
-    fontSize: FontSize.xs,
+    fontSize: FontSize.xs - 1,
     fontWeight: FontWeight.bold,
-    color: Colors.white,
+    color: Colors.success,
     letterSpacing: 0.5,
+  },
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: Spacing.xs,
+    marginBottom: Spacing.xs,
   },
   planPrice: {
     fontSize: FontSize['4xl'],
     fontWeight: FontWeight.extrabold,
-    color: Colors.white,
-    marginBottom: Spacing.xs,
+    color: Colors.textPrimary,
   },
   planPriceCycle: {
     fontSize: FontSize.md,
-    fontWeight: FontWeight.normal,
-    color: ExtendedColors.whiteAlpha70,
+    fontWeight: FontWeight.medium,
+    color: Colors.textSecondary,
   },
-  savingsText: {
-    fontSize: FontSize.sm,
-    fontWeight: FontWeight.semibold,
-    color: Colors.amber,
-    marginBottom: Spacing.xs,
+  savingsBadge: {
+    backgroundColor: Colors.successBg,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.badge,
+    marginLeft: Spacing.md,
+  },
+  savingsBadgeText: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.bold,
+    color: Colors.success,
   },
   planDescription: {
     fontSize: FontSize.sm,
-    color: ExtendedColors.whiteAlpha70,
+    color: Colors.textSecondary,
     marginTop: Spacing.md,
     lineHeight: 18,
   },
@@ -497,22 +501,36 @@ const styles = StyleSheet.create({
   selectButton: {
     marginHorizontal: Spacing['3xl'],
     marginBottom: Spacing['3xl'],
-    backgroundColor: Colors.primary,
     borderRadius: BorderRadius.button,
-    paddingVertical: Spacing['2xl'],
+    paddingVertical: Spacing.xl,
     alignItems: 'center',
     justifyContent: 'center',
+    height: 48,
+  },
+  selectButtonStandard: {
+    backgroundColor: Colors.white,
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+  },
+  selectButtonStandardText: {
+    color: Colors.primary,
+  },
+  selectButtonFeatured: {
+    backgroundColor: Colors.primaryBg,
+  },
+  selectButtonFeaturedText: {
+    color: Colors.primary,
   },
   selectButtonLoading: {
     opacity: 0.7,
   },
   currentPlanButton: {
     backgroundColor: Colors.surfaceBg,
+    borderWidth: 0,
   },
   selectButtonText: {
-    fontSize: FontSize.xl,
+    fontSize: FontSize.md,
     fontWeight: FontWeight.bold,
-    color: Colors.white,
   },
   currentPlanButtonText: {
     color: Colors.textSecondary,

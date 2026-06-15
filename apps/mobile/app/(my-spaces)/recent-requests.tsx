@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, StatusBar, Modal, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../hooks/useTheme';
-import { ChevronLeft, Clock, XCircle, AlertCircle } from 'lucide-react-native';
+import { ChevronLeft, Clock, XCircle, AlertCircle, CheckCircle2, ThumbsUp } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { api } from '../../services/api';
 import NoActivitySvg from '../../components/Illustrations/NoActivitySvg';
@@ -68,14 +68,7 @@ export default function RecentRequestsScreen() {
       <TouchableOpacity
         style={styles.recentReqCard}
         activeOpacity={0.8}
-        onPress={() => {
-          const s = req.status.toUpperCase();
-          if (['EXPIRED', 'REJECTED', 'CANCELLED'].includes(s)) {
-            setModalItem({ ...req, status: s });
-          } else {
-            router.push({ pathname: '/(my-spaces)/booking-request', params: { bookingId: req.id } });
-          }
-        }}
+        onPress={() => setModalItem({ ...req, status: req.status.toUpperCase() })}
       >
         <View style={styles.recentReqAvatar}>
           <Text style={styles.recentReqAvatarText}>{req.parkerName.charAt(0).toUpperCase()}</Text>
@@ -140,6 +133,24 @@ export default function RecentRequestsScreen() {
         <Pressable style={styles.modalOverlay} onPress={() => setModalItem(null)}>
           <Pressable style={styles.modalCard} onPress={() => {}}>
             {/* Header */}
+            {modalItem?.status === 'COMPLETED' && (
+              <View style={styles.modalHeader}>
+                <View style={[styles.modalIconWrap, { backgroundColor: Colors.successBg }]}>
+                  <CheckCircle2 size={32} color={Colors.successAlt} />
+                </View>
+                <Text style={[styles.modalTitle, { color: Colors.successAlt }]}>Booking Completed</Text>
+                <Text style={styles.modalSub}>This booking was successfully completed.</Text>
+              </View>
+            )}
+            {modalItem?.status === 'APPROVED' && (
+              <View style={styles.modalHeader}>
+                <View style={[styles.modalIconWrap, { backgroundColor: Colors.successBg }]}>
+                  <ThumbsUp size={32} color={Colors.success} />
+                </View>
+                <Text style={[styles.modalTitle, { color: Colors.success }]}>Booking Approved</Text>
+                <Text style={styles.modalSub}>You approved this booking request.</Text>
+              </View>
+            )}
             {modalItem?.status === 'EXPIRED' && (
               <View style={styles.modalHeader}>
                 <View style={[styles.modalIconWrap, { backgroundColor: Colors.surfaceBg }]}>

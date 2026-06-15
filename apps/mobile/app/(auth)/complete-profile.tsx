@@ -22,20 +22,20 @@ const CompleteProfileScreen = () => {
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<{ firstName?: string; lastName?: string; email?: string; general?: string }>({});
 
   const handleCompleteProfile = async () => {
-    if (!firstName.trim() || !lastName.trim() || !email.trim()) {
-      alert('Please fill in all fields');
-      return;
+    const errs: typeof errors = {};
+    if (!firstName.trim()) errs.firstName = 'First name is required.';
+    if (!lastName.trim()) errs.lastName = 'Last name is required.';
+    if (!email.trim()) {
+      errs.email = 'Email is required.';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errs.email = 'Please enter a valid email address.';
     }
+    if (Object.keys(errs).length > 0) { setErrors(errs); return; }
 
-    // Basic email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      alert('Please enter a valid email address');
-      return;
-    }
-
+    setErrors({});
     setLoading(true);
     try {
       await api.put('/users/me/complete-profile', {
@@ -43,15 +43,12 @@ const CompleteProfileScreen = () => {
         lastName: lastName.trim(),
         email: email.trim(),
       });
-
-      // Save session before navigating so the token is available on home load
       await setSession(String(token), { id: Number(userId), isProfileComplete: true }, Number(expiresIn));
       setLoading(false);
-      alert('Profile completed successfully!');
       router.replace('/(home)');
-    } catch (error) {
+    } catch (err) {
       setLoading(false);
-      alert('Error: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      setErrors({ general: typeof (err as any)?.message === 'string' ? (err as any).message : 'Something went wrong. Please try again.' });
     }
   };
 
@@ -73,11 +70,12 @@ const CompleteProfileScreen = () => {
             <TextInput
               placeholder="Enter your first name"
               placeholderTextColor={Colors.textMuted}
-              style={styles.input}
+              style={[styles.input, !!errors.firstName && styles.inputError]}
               value={firstName}
-              onChangeText={setFirstName}
+              onChangeText={(v) => { setFirstName(v); setErrors((e) => ({ ...e, firstName: undefined })); }}
               editable={!loading}
             />
+            {!!errors.firstName && <Text style={styles.errorText}>{errors.firstName}</Text>}
           </View>
 
           {/* Last Name */}
@@ -86,11 +84,12 @@ const CompleteProfileScreen = () => {
             <TextInput
               placeholder="Enter your last name"
               placeholderTextColor={Colors.textMuted}
-              style={styles.input}
+              style={[styles.input, !!errors.lastName && styles.inputError]}
               value={lastName}
-              onChangeText={setLastName}
+              onChangeText={(v) => { setLastName(v); setErrors((e) => ({ ...e, lastName: undefined })); }}
               editable={!loading}
             />
+            {!!errors.lastName && <Text style={styles.errorText}>{errors.lastName}</Text>}
           </View>
 
           {/* Email */}
@@ -100,12 +99,15 @@ const CompleteProfileScreen = () => {
               placeholder="Enter your email"
               placeholderTextColor={Colors.textMuted}
               keyboardType="email-address"
-              style={styles.input}
+              style={[styles.input, !!errors.email && styles.inputError]}
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(v) => { setEmail(v); setErrors((e) => ({ ...e, email: undefined })); }}
               editable={!loading}
             />
+            {!!errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
           </View>
+
+          {!!errors.general && <Text style={[styles.errorText, { marginBottom: Spacing['3xl'] }]}>{errors.general}</Text>}
 
           {/* Submit Button */}
           <TouchableOpacity
@@ -206,5 +208,13 @@ const styles = StyleSheet.create({
     color: Colors.textPlaceholder,
     fontSize: FontSize.sm,
     fontStyle: 'italic',
+  },
+  inputError: {
+    borderColor: Colors.error,
+  },
+  errorText: {
+    color: Colors.error,
+    fontSize: FontSize.sm,
+    marginTop: Spacing.sm,
   },
 });

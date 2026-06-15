@@ -10,6 +10,7 @@ import {View,
   Dimensions,
   Keyboard,
   Platform,
+  Alert,
   TouchableWithoutFeedback} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -29,6 +30,7 @@ const VerifyOtpScreen = () => {
   const initialOtp = typeof devOtp === 'string' ? devOtp : '';
   const [otp, setOtp] = useState(initialOtp);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [resendDisabled, setResendDisabled] = useState(false);
   const [resendTimer, setResendTimer] = useState(0);
 
@@ -65,10 +67,11 @@ const VerifyOtpScreen = () => {
 
   const handleVerifyOtp = async () => {
     if (!otp || otp.length !== OTP_LENGTH) {
-      alert('Please enter a valid 6-digit OTP');
+      setError('Please enter the 6-digit code sent to your phone.');
       return;
     }
 
+    setError('');
     Keyboard.dismiss();
     setLoading(true);
     try {
@@ -103,7 +106,7 @@ const VerifyOtpScreen = () => {
       }
     } catch (error) {
       setLoading(false);
-      alert('Verification failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      setError(typeof (error as any)?.message === 'string' ? (error as any).message : 'Incorrect OTP. Please try again.');
     }
   };
 
@@ -115,9 +118,9 @@ const VerifyOtpScreen = () => {
 
     try {
       await api.post('/auth/request-otp', { phone });
-      alert('OTP resent successfully');
+      Alert.alert('Code Sent', 'A new OTP has been sent to your phone.');
     } catch (error) {
-      alert('Failed to resend OTP');
+      Alert.alert('Resend Failed', 'Could not resend OTP. Please try again.');
       setResendDisabled(false);
       setResendTimer(0);
     }
@@ -174,7 +177,7 @@ const VerifyOtpScreen = () => {
               <TextInput
                 ref={inputRef}
                 value={otp}
-                onChangeText={(val) => setOtp(val.replace(/[^0-9]/g, ''))}
+                onChangeText={(val) => { setOtp(val.replace(/[^0-9]/g, '')); setError(''); }}
                 maxLength={OTP_LENGTH}
                 keyboardType="number-pad"
                 style={styles.hiddenInput}
@@ -208,6 +211,8 @@ const VerifyOtpScreen = () => {
               </TouchableOpacity>
             </View>
 
+            {!!error && <Text style={styles.errorText}>{error}</Text>}
+
             <TouchableOpacity
               activeOpacity={0.85}
               onPress={handleVerifyOtp}
@@ -228,10 +233,15 @@ const VerifyOtpScreen = () => {
               </LinearGradient>
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={handleResendOtp} disabled={resendDisabled}>
-              <Text style={[styles.resend, resendDisabled && styles.resendDisabled]}>
-                {resendDisabled ? `Resend in ${resendTimer}s` : "Didn't receive code? Resend"}
-              </Text>
+            <TouchableOpacity onPress={handleResendOtp} disabled={resendDisabled} style={styles.resendRow}>
+              {resendDisabled ? (
+                <Text style={styles.resendDisabled}>Resend in {resendTimer}s</Text>
+              ) : (
+                <Text style={styles.resendLabel}>
+                  Didn't receive code?{' '}
+                  <Text style={styles.resendLink}>Resend</Text>
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
         </Animated.View>
@@ -389,14 +399,29 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.bold,
     letterSpacing: 0.5,
   },
-  resend: {
+  resendRow: {
+    alignItems: 'center',
+  },
+  resendLabel: {
     textAlign: 'center',
-    color: Colors.primary,
-    fontWeight: FontWeight.bold,
+    color: Colors.textSecondary,
     fontSize: FontSize.base,
   },
+  resendLink: {
+    color: Colors.primary,
+    fontWeight: FontWeight.bold,
+  },
   resendDisabled: {
+    textAlign: 'center',
     color: Colors.textMuted,
+    fontSize: FontSize.base,
+  },
+  errorText: {
+    color: Colors.error,
+    fontSize: FontSize.sm,
+    marginTop: -Spacing['3xl'],
+    marginBottom: Spacing['3xl'],
+    textAlign: 'center',
   },
 });
 

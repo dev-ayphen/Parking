@@ -17,6 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { PageHeader } from '../../components';
 import { api } from '../../services/api';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import { toast } from '../../utils/toast';
 
 interface BillingRecord {
   id: string;
@@ -85,7 +86,7 @@ const ManageSubscriptionScreen = () => {
       }
     } catch (e) {
       if (__DEV__) console.log('[MANAGE_SUBSCRIPTION] error', e);
-      Alert.alert('Error', 'Failed to load subscription data. Please try again.');
+      toast.error('Failed to load subscription data. Please try again.');
     } finally {
       isRefresh ? setRefreshing(false) : setLoading(false);
     }
@@ -110,10 +111,10 @@ const ManageSubscriptionScreen = () => {
               setCancelling(true);
               await api.put(`/subscriptions/${data.currentPlan.id}/cancel`);
               await fetchData(true);
-              Alert.alert('Subscription Cancelled', 'Your subscription has been cancelled. You will retain access until the end of your billing period.');
+              toast.success('Subscription cancelled. Access continues until billing period ends.');
             } catch (e) {
               if (__DEV__) console.log('[CANCEL_SUBSCRIPTION] error', e);
-              Alert.alert('Error', 'Failed to cancel subscription. Please try again.');
+              toast.error('Failed to cancel subscription. Please try again.');
             } finally {
               setCancelling(false);
             }
@@ -130,7 +131,7 @@ const ManageSubscriptionScreen = () => {
       (p) => p.price > currentPlan.price
     );
     if (higherPlans.length === 0) {
-      Alert.alert('Enterprise Plan', 'Enterprise plan coming soon!');
+      toast.info('Enterprise plan coming soon!');
     } else {
       router.push('/(my-spaces)/subscription-plans');
     }

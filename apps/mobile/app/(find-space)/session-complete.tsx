@@ -7,12 +7,17 @@ import {View,
   ActivityIndicator,
   TextInput,
   Alert,
-  ScrollView} from 'react-native';
+  ScrollView,
+  Modal,
+  Image} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { CheckCircle2, Star } from 'lucide-react-native';
+import { CheckCircle2, Star, AlertTriangle, X, Camera } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { api } from '../../services/api';
+import { toast } from '../../utils/toast';
 import PageHeader from '../../components/PageHeader';
+import ReportSubmitted from '../../components/ReportSubmitted';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 
 export default function SessionCompleteScreen() {
@@ -29,6 +34,16 @@ export default function SessionCompleteScreen() {
   const [submittingRating, setSubmittingRating] = useState(false);
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
 
+  // Report incident modal
+  const [incidentModalVisible, setIncidentModalVisible] = useState(false);
+  const [incidentType, setIncidentType] = useState('VEHICLE_DAMAGE');
+  const [incidentDesc, setIncidentDesc] = useState('');
+  const [incidentPhotos, setIncidentPhotos] = useState<string[]>([]);
+  const [incidentSubmitting, setIncidentSubmitting] = useState(false);
+  const [incidentSubmitted, setIncidentSubmitted] = useState(false);
+  const [incidentRef, setIncidentRef] = useState<string | null>(null);
+  const [incidentSubmittedAt, setIncidentSubmittedAt] = useState<string | null>(null);
+
   const fetchBooking = useCallback(async () => {
     try {
       const data = await api.get(`/bookings/${bookingId}`);
@@ -39,6 +54,14 @@ export default function SessionCompleteScreen() {
         setRating(booking.rating.rating || 0);
         setReview(booking.rating.review || '');
         setRatingSubmitted(true);
+      }
+      // Pre-fill the incident receipt if one was already filed for this booking —
+      // survives app restart so the user can't re-report the same booking.
+      const existingIncident = booking?.incidents?.[0];
+      if (existingIncident) {
+        setIncidentRef(`INC-${String(existingIncident.id).padStart(5, '0')}`);
+        setIncidentSubmittedAt(existingIncident.createdAt || null);
+        setIncidentSubmitted(true);
       }
       setError(null);
     } catch (err: any) {
@@ -69,6 +92,76 @@ export default function SessionCompleteScreen() {
       Alert.alert('Error', err.message);
     } finally {
       setSubmittingRating(false);
+    }
+  };
+
+  const INCIDENT_TYPES = [
+    { value: 'VEHICLE_DAMAGE',  label: 'Vehicle scratched or damaged' },
+    { value: 'TOWING',          label: 'Vehicle was towed' },
+    { value: 'DISPUTE',         label: 'Dispute with owner' },
+    { value: 'THEFT',           label: 'Theft or break-in' },
+    { value: 'OTHER',           label: 'Other incident' },
+  ];
+
+  const handlePickIncidentPhoto = async () => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        toast.info('Allow photo access to attach evidence.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.8,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+      setIncidentPhotos((prev) => [...prev, result.assets[0].uri].slice(0, 5));
+    } catch {
+      toast.error('Failed to pick photo');
+    }
+  };
+
+  const removeIncidentPhoto = (uri: string) =>
+    setIncidentPhotos((prev) => prev.filter((u) => u !== uri));
+
+  const handleSubmitIncident = async () => {
+    if (incidentSubmitting || incidentSubmitted) return; // guard re-entry / double-tap
+    if (incidentDesc.trim().length < 5) {
+      Alert.alert('Too short', 'Please describe the incident (at least 5 characters).');
+      return;
+    }
+    try {
+      setIncidentSubmitting(true);
+
+      // Upload evidence photos first → get public URLs for the admin to verify.
+      let evidenceUrls: string[] = [];
+      if (incidentPhotos.length > 0) {
+        const files = incidentPhotos.map((uri, i) => {
+          const ext = (uri.split('.').pop() || 'jpg').toLowerCase();
+          const type = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+          return { field: 'files', uri, name: `incident_${i}.${ext}`, type };
+        });
+        const up = await api.upload('/uploads/evidence', files);
+        evidenceUrls = up.urls || [];
+      }
+
+      const res = await api.post('/incidents', {
+        bookingId,
+        reportType: incidentType,
+        description: incidentDesc.trim(),
+        evidenceUrls,
+      });
+      const reportId = res?.report?.id;
+      setIncidentRef(reportId ? `INC-${String(reportId).padStart(5, '0')}` : 'INC-PENDING');
+      setIncidentSubmittedAt(res?.report?.createdAt || new Date().toISOString());
+      setIncidentModalVisible(false);
+      setIncidentDesc('');
+      setIncidentPhotos([]);
+      setIncidentSubmitted(true);
+    } catch (err: any) {
+      Alert.alert('Failed', err?.message || 'Could not submit report. Try again.');
+    } finally {
+      setIncidentSubmitting(false);
     }
   };
 
@@ -138,6 +231,30 @@ export default function SessionCompleteScreen() {
           </View>
         </View>
 
+        {/* Incident Report Card */}
+        {incidentSubmitted ? (
+          <View style={{ marginBottom: Spacing.screenH }}>
+            <ReportSubmitted
+              title="Incident Reported"
+              reference={incidentRef || 'INC-PENDING'}
+              submittedAt={incidentSubmittedAt || undefined}
+            />
+          </View>
+        ) : (
+          <View style={styles.incidentCard}>
+            <TouchableOpacity style={styles.incidentTrigger} onPress={() => setIncidentModalVisible(true)} activeOpacity={0.7}>
+              <View style={styles.incidentTriggerLeft}>
+                <AlertTriangle size={18} color={Colors.warning} strokeWidth={2} />
+                <View>
+                  <Text style={styles.incidentTriggerTitle}>Report a Vehicle Incident</Text>
+                  <Text style={styles.incidentTriggerSub}>Damage, towing, dispute, theft</Text>
+                </View>
+              </View>
+              <Text style={styles.incidentTriggerArrow}>›</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Rating Card */}
         <View style={styles.ratingCard}>
           {ratingSubmitted ? (
@@ -200,6 +317,101 @@ export default function SessionCompleteScreen() {
           )}
         </View>
       </ScrollView>
+
+      {/* Report Incident Modal */}
+      <Modal visible={incidentModalVisible} transparent animationType="slide" onRequestClose={() => setIncidentModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Report an Incident</Text>
+              <TouchableOpacity onPress={() => setIncidentModalVisible(false)} hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}>
+                <X size={20} color={Colors.textSecondary} strokeWidth={2} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalSub}>Let us know what happened. Our team will investigate and follow up.</Text>
+
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              {/* Auto-filled booking context — sent silently in the payload, shown read-only */}
+              <View style={styles.contextCard}>
+                <View style={styles.contextRow}>
+                  <Text style={styles.contextLabel}>Booking</Text>
+                  <Text style={styles.contextVal}>#{String(bookingId).slice(-6).toUpperCase()}</Text>
+                </View>
+                <View style={styles.contextRow}>
+                  <Text style={styles.contextLabel}>Space</Text>
+                  <Text style={styles.contextVal} numberOfLines={1}>{booking?.space?.name || '—'}</Text>
+                </View>
+                <View style={styles.contextRow}>
+                  <Text style={styles.contextLabel}>Owner</Text>
+                  <Text style={styles.contextVal} numberOfLines={1}>
+                    {booking?.space?.owner
+                      ? [booking.space.owner.firstName, booking.space.owner.lastName].filter(Boolean).join(' ') || '—'
+                      : '—'}
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={styles.fieldLabel}>Incident Type</Text>
+              {INCIDENT_TYPES.map(r => (
+                <TouchableOpacity
+                  key={r.value}
+                  style={[styles.reasonRow, incidentType === r.value && styles.reasonRowActive]}
+                  onPress={() => setIncidentType(r.value)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.radioOuter, incidentType === r.value && styles.radioOuterActive]}>
+                    {incidentType === r.value && <View style={styles.radioInner} />}
+                  </View>
+                  <Text style={[styles.reasonText, incidentType === r.value && styles.reasonTextActive]}>{r.label}</Text>
+                </TouchableOpacity>
+              ))}
+
+              <Text style={[styles.fieldLabel, { marginTop: Spacing.xl }]}>Details</Text>
+              <TextInput
+                style={styles.descInput}
+                placeholder="Describe what happened..."
+                placeholderTextColor={Colors.textMuted}
+                multiline
+                numberOfLines={3}
+                value={incidentDesc}
+                onChangeText={setIncidentDesc}
+                textAlignVertical="top"
+              />
+
+              {/* Photo evidence — critical for the admin to verify the claim */}
+              <Text style={styles.fieldLabel}>Photos <Text style={styles.fieldLabelHint}>(optional, up to 5)</Text></Text>
+              <View style={styles.photoGrid}>
+                {incidentPhotos.map((uri) => (
+                  <View key={uri} style={styles.photoThumb}>
+                    <Image source={{ uri }} style={styles.photoImg} />
+                    <TouchableOpacity style={styles.photoRemove} onPress={() => removeIncidentPhoto(uri)} hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}>
+                      <X size={12} color={Colors.white} strokeWidth={3} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+                {incidentPhotos.length < 5 && (
+                  <TouchableOpacity style={styles.photoAdd} onPress={handlePickIncidentPhoto} activeOpacity={0.7}>
+                    <Camera size={20} color={Colors.textMuted} strokeWidth={2} />
+                    <Text style={styles.photoAddText}>Add</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              <TouchableOpacity
+                style={[styles.submitBtn, incidentSubmitting && styles.submitBtnDisabled]}
+                onPress={handleSubmitIncident}
+                disabled={incidentSubmitting}
+                activeOpacity={0.8}
+              >
+                {incidentSubmitting
+                  ? <ActivityIndicator color={Colors.white} size="small" />
+                  : <Text style={styles.submitBtnText}>Submit Report</Text>}
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       {/* Sticky Footer */}
       <View style={styles.footer}>
@@ -287,4 +499,43 @@ const styles = StyleSheet.create({
   footer: { padding: Spacing.screenH, backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: Colors.borderLight },
   btnPrimary: { backgroundColor: Colors.primary, borderRadius: BorderRadius.xl, paddingVertical: Spacing['3xl'], alignItems: 'center' },
   btnPrimaryText: { color: Colors.white, fontSize: FontSize.lg, fontWeight: FontWeight.bold },
+
+  // Incident card
+  incidentCard: { backgroundColor: Colors.white, borderRadius: BorderRadius.xl, borderWidth: 1, borderColor: Colors.borderLight, marginBottom: Spacing.screenH, overflow: 'hidden' },
+  incidentTrigger: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.screenH },
+  incidentTriggerLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
+  incidentTriggerTitle: { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
+  incidentTriggerSub: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 2 },
+  incidentTriggerArrow: { fontSize: FontSize['3xl'], color: Colors.textMuted, fontWeight: FontWeight.normal },
+
+  // Report modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  modalSheet: { backgroundColor: Colors.white, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl, padding: Spacing['3xl'], paddingBottom: 36, maxHeight: '90%' },
+  contextCard: { backgroundColor: Colors.screenBg, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.border, padding: Spacing.xl, marginBottom: Spacing['3xl'] },
+  contextRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 3 },
+  contextLabel: { fontSize: FontSize.sm, color: Colors.textMuted, fontWeight: FontWeight.medium },
+  contextVal: { fontSize: FontSize.sm, color: Colors.textPrimary, fontWeight: FontWeight.semibold, flexShrink: 1, marginLeft: Spacing.lg, textAlign: 'right' },
+  fieldLabelHint: { fontWeight: FontWeight.normal, color: Colors.textMuted, textTransform: 'none' },
+  photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md, marginBottom: Spacing['3xl'] },
+  photoThumb: { width: 64, height: 64, borderRadius: BorderRadius.md, overflow: 'hidden', position: 'relative' },
+  photoImg: { width: '100%', height: '100%', backgroundColor: Colors.surfaceBg },
+  photoRemove: { position: 'absolute', top: 3, right: 3, width: 18, height: 18, borderRadius: 9, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' },
+  photoAdd: { width: 64, height: 64, borderRadius: BorderRadius.md, borderWidth: 1.5, borderColor: Colors.border, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.screenBg, gap: 2 },
+  photoAddText: { fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: FontWeight.medium },
+  modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.borderMuted, alignSelf: 'center', marginBottom: Spacing['2xl'] },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.md },
+  modalTitle: { fontSize: FontSize['2xl'], fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  modalSub: { fontSize: FontSize.base, color: Colors.textSecondary, marginBottom: Spacing['3xl'], lineHeight: 19 },
+  fieldLabel: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: Colors.textSecondary, marginBottom: Spacing.lg, textTransform: 'uppercase' as const, letterSpacing: 0.5 },
+  reasonRow: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: Spacing.lg, paddingVertical: Spacing.lg, paddingHorizontal: Spacing.xl, borderRadius: BorderRadius.md, marginBottom: Spacing.sm, backgroundColor: Colors.screenBg, borderWidth: 1, borderColor: Colors.border },
+  reasonRowActive: { backgroundColor: Colors.primaryBg, borderColor: Colors.primary },
+  radioOuter: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: Colors.border, alignItems: 'center' as const, justifyContent: 'center' as const },
+  radioOuterActive: { borderColor: Colors.primary },
+  radioInner: { width: 9, height: 9, borderRadius: 5, backgroundColor: Colors.primary },
+  reasonText: { fontSize: FontSize.base, color: Colors.textBody, fontWeight: FontWeight.medium },
+  reasonTextActive: { color: Colors.primary, fontWeight: FontWeight.semibold },
+  descInput: { backgroundColor: Colors.screenBg, borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.lg, padding: Spacing.xl, fontSize: FontSize.base, color: Colors.textPrimary, minHeight: 80, marginBottom: Spacing['3xl'] },
+  submitBtn: { backgroundColor: Colors.error, borderRadius: BorderRadius.button, paddingVertical: Spacing['3xl'], alignItems: 'center' as const },
+  submitBtnDisabled: { opacity: 0.6 },
+  submitBtnText: { color: Colors.white, fontSize: FontSize.lg, fontWeight: FontWeight.bold },
 });

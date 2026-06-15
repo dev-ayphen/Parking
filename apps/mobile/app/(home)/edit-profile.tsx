@@ -7,9 +7,9 @@ import {View,
   ScrollView,
   TextInput,
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform} from 'react-native';
+import { toast } from '../../utils/toast';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { api } from '../../services/api';
@@ -54,7 +54,7 @@ const EditProfileScreen = () => {
       }
     } catch (error) {
       console.error('[EDIT_PROFILE] Error loading:', error);
-      Alert.alert('Error', 'Failed to load profile');
+      toast.error('Failed to load profile');
     } finally {
       setLoading(false);
     }
@@ -114,20 +114,12 @@ const EditProfileScreen = () => {
 
       if (data.success) {
         if (__DEV__) console.log('[EDIT_PROFILE] ✅ Profile updated successfully');
-        Alert.alert('✅ Success', 'Profile updated successfully!', [
-          {
-            text: 'OK',
-            onPress: () => {
-              if (__DEV__) console.log('[EDIT_PROFILE] Going back to profile');
-              router.back();
-              // Profile screen will auto-reload due to useFocusEffect
-            },
-          },
-        ]);
+        toast.success('Profile updated successfully!');
+        router.back();
       }
     } catch (error) {
       console.error('[EDIT_PROFILE] Error saving:', error);
-      Alert.alert('Error', (error as Error).message || 'Failed to update profile');
+      toast.error((error as Error).message || 'Failed to update profile');
     } finally {
       setSaving(false);
     }

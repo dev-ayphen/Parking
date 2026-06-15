@@ -193,6 +193,20 @@ export const spaceController = {
     }
   },
 
+  // Public — parker-facing "See All Reviews" list (no auth needed to read reviews).
+  getSpaceReviews: async (req: Request, res: Response) => {
+    try {
+      const spaceId = parseInt(req.params.id);
+      const result = await spaceService.getSpaceReviews(spaceId, {
+        page: req.query.page ? parseInt(req.query.page as string) : 1,
+        limit: req.query.limit ? parseInt(req.query.limit as string) : 20,
+      });
+      res.status(200).json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
   getSpaceAnalytics: async (req: Request, res: Response) => {
     try {
       assertAuth(req);

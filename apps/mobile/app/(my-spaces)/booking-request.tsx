@@ -10,6 +10,7 @@ import PageHeader from '../../components/PageHeader';
 import { api } from '../../services/api';
 import { useRealtime } from '../../hooks/useRealtime';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
+import { toast } from '../../utils/toast';
 
 const APPROVAL_WINDOW_SEC = 120; // 2 minutes
 
@@ -76,7 +77,7 @@ export default function BookingRequestScreen() {
             await api.put(`/bookings/${bookingId}/${action}`);
             await fetchBooking();
           } catch (e: any) {
-            Alert.alert('Error', e.message || 'Action failed');
+            toast.error(e.message || 'Action failed');
           } finally {
             setActioning(false);
           }

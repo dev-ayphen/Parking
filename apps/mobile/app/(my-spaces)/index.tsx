@@ -346,18 +346,9 @@ export default function OwnerDashboardScreen() {
             {dashboardData.recentRequests.slice(0, 2).map((req) => {
               const badge = REQUEST_STATUS_BADGE[req.status] || { label: req.status, color: Colors.textSecondary, bg: Colors.surfaceBg };
               return (
-                <TouchableOpacity
+                <View
                   key={req.id}
                   style={styles.recentReqCard}
-                  activeOpacity={0.8}
-                  onPress={() => {
-                    const s = req.status.toUpperCase();
-                    if (['EXPIRED', 'REJECTED', 'CANCELLED'].includes(s)) {
-                      setModalItem({ ...req, status: s });
-                    } else {
-                      router.push({ pathname: '/(my-spaces)/booking-request', params: { bookingId: req.id } });
-                    }
-                  }}
                 >
                   <View style={styles.recentReqAvatar}>
                     <Text style={styles.recentReqAvatarText}>{req.parkerName.charAt(0).toUpperCase()}</Text>
@@ -372,7 +363,7 @@ export default function OwnerDashboardScreen() {
                     </View>
                     <Text style={styles.recentReqTime}>{timeAgo(req.createdAt)}</Text>
                   </View>
-                </TouchableOpacity>
+                </View>
               );
             })}
           </View>

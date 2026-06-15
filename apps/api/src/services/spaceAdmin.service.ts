@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { db } from '../config/database';
+import { bookingExpiryService } from './bookingExpiry.service';
 
 /**
  * Space moderation: list, approve, reject, block.
@@ -169,6 +170,12 @@ export const spaceAdminService = {
         },
       });
     }
-    return { success: true, space };
+    // Cascade: cancel this space's not-yet-started bookings so parkers aren't
+    // sent to a space that's no longer available. Active sessions finish normally.
+    const cancelled = await bookingExpiryService.cancelInFlightBookings(
+      { spaceId },
+      'The space was blocked.',
+    );
+    return { success: true, space, cancelledBookings: cancelled };
   },
 };

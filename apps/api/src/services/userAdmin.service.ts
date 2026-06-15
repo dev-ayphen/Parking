@@ -1,5 +1,6 @@
 import { db } from '../config/database';
 import { formatUserType, formatDateShort } from '../utils/adminFormat';
+import { bookingExpiryService } from './bookingExpiry.service';
 
 /**
  * User moderation: list, view details, suspend, unsuspend, ban, delete.
@@ -201,6 +202,12 @@ export const userAdminService = {
       },
     });
     await db.session.deleteMany({ where: { userId } });
+    // Cascade: cancel not-yet-started bookings on a banned OWNER's spaces so
+    // parkers aren't sent to a banned owner. Active sessions finish normally.
+    await bookingExpiryService.cancelInFlightBookings(
+      { ownerId: userId },
+      'The space owner is no longer available.',
+    );
     return { success: true, message: 'User banned' };
   },
 

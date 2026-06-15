@@ -146,6 +146,48 @@ export const bookingExpiryService = {
     }
   },
 
+  /**
+   * Cascade-cancel a space's (or all an owner's) NOT-YET-STARTED bookings when
+   * the space is blocked or the owner is banned by an admin. We cancel only
+   * PENDING_APPROVAL + APPROVED — an ACTIVE session has a car physically parked,
+   * so we let it finish normally rather than strand the parker mid-session.
+   * Returns the count cancelled. Notifies each affected parker.
+   */
+  cancelInFlightBookings: async (
+    filter: { spaceId?: number; ownerId?: number },
+    reason: string,
+  ): Promise<number> => {
+    const where: any = { status: { in: ['PENDING_APPROVAL', 'APPROVED'] } };
+    if (filter.spaceId) where.spaceId = filter.spaceId;
+    if (filter.ownerId) where.space = { ownerId: filter.ownerId };
+
+    const affected = await db.booking.findMany({
+      where,
+      include: { space: { select: { name: true } } },
+    });
+    if (affected.length === 0) return 0;
+
+    for (const b of affected) {
+      await db.booking.update({
+        where: { id: b.id },
+        data: { status: 'CANCELLED', cancelReason: 'ADMIN_CANCELLED', sessionOtp: null },
+      });
+      await auditService.logBookingEvent({
+        bookingId: b.id, event: 'BOOKING_CANCELLED', fromStatus: b.status, toStatus: 'CANCELLED',
+        actorId: 0, actorRole: 'SYSTEM', payload: { reason },
+      });
+      await adminService.notifyUser(b.parkerId, {
+        title: 'Booking Cancelled',
+        message: `Your booking for ${b.space?.name || 'a space'} was cancelled. ${reason} Please book another space.`,
+        category: 'BOOKING',
+        metadata: { bookingId: b.id },
+      });
+      emitToUser(b.parkerId, 'booking:cancelled', { bookingId: b.id });
+    }
+    console.log(`[CASCADE] Cancelled ${affected.length} in-flight booking(s) — ${reason}`);
+    return affected.length;
+  },
+
   /** Start the 30-second background expiry loop. Call once on server startup. */
   startExpiryLoop: () => {
     const tick = () => {

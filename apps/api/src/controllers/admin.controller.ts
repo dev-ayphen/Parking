@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { adminService } from '../services/admin.service';
+import { adminExportService } from '../services/adminExport.service';
 import { getIO, emitToUser, emitToAdmin } from '../app';
 import { logEvent } from '../services/log.service';
 import { auditService } from '../services/audit.service';
@@ -369,6 +370,43 @@ export const adminController = {
       const csv = await adminService.exportTransactionsCsv();
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="transactions-${new Date().toISOString().slice(0, 10)}.csv"`);
+      res.send(csv);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
+  exportUsers: async (_req: Request, res: Response) => {
+    try {
+      const csv = await adminExportService.usersCsv();
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="users-${new Date().toISOString().slice(0, 10)}.csv"`);
+      res.send(csv);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
+  exportBookings: async (_req: Request, res: Response) => {
+    try {
+      const csv = await adminExportService.bookingsCsv();
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="bookings-${new Date().toISOString().slice(0, 10)}.csv"`);
+      res.send(csv);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
+  exportLogs: async (req: Request, res: Response) => {
+    try {
+      const csv = await adminExportService.logsCsv({
+        level: req.query.level as string,
+        source: req.query.source as string,
+        search: req.query.search as string,
+      });
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="system-logs-${new Date().toISOString().slice(0, 10)}.csv"`);
       res.send(csv);
     } catch (error) {
       sendError(res, error);

@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { abuseService } from '../services/abuse.service';
 import { auditService } from '../services/audit.service';
 import { adminService } from '../services/admin.service';
-import { emitToUser } from '../app';
+import { emitToUser, emitToAdmin } from '../app';
 import { sendError, assertAuth } from '../utils/errors';
 
 export const abuseController = {
@@ -10,6 +10,8 @@ export const abuseController = {
     try {
       assertAuth(req);
       const result = await abuseService.submitReport(req.user.id, req.body);
+      // Live-refresh the admin moderation page.
+      emitToAdmin('moderation', 'abuse:new', { id: (result as any)?.report?.id });
       res.status(201).json(result);
     } catch (error) {
       sendError(res, error);

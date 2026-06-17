@@ -32,6 +32,12 @@ export interface UserDetails {
   lastLoginAt: string | null;
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
+  billing?: {
+    billingName: string | null;
+    billingEmail: string | null;
+    billingAddress: string | null;
+    gstin: string | null;
+  } | null;
   stats: {
     totalBookings: number;
     totalSpaces: number;

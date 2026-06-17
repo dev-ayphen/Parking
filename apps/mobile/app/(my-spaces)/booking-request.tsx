@@ -8,6 +8,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Clock, User, Car, MapPin, CheckCircle2, XCircle } from 'lucide-react-native';
 import PageHeader from '../../components/PageHeader';
 import { api } from '../../services/api';
+import { useNetworkStore } from '../../store/networkStore';
 import { useRealtime } from '../../hooks/useRealtime';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
 import { toast } from '../../utils/toast';
@@ -65,6 +66,7 @@ export default function BookingRequestScreen() {
 
   const handleAction = async (action: 'accept' | 'decline') => {
     if (isExpired) return;
+    if (!useNetworkStore.getState().requireOnline()) return;
     const label = action === 'accept' ? 'Accept' : 'Reject';
     Alert.alert(`${label} Booking?`, `Are you sure you want to ${label.toLowerCase()} this booking request?`, [
       { text: 'Cancel', style: 'cancel' },

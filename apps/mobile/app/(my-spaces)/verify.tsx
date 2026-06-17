@@ -19,6 +19,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect } from 'expo-router';
 import { PageHeader } from '../../components';
 import { api } from '../../services/api';
+import { useNetworkStore } from '../../store/networkStore';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 
 interface OwnerRequest {
@@ -118,6 +119,7 @@ export default function VerifyScreen() {
 
   const confirmReject = async () => {
     if (!rejectTarget) return;
+    if (!useNetworkStore.getState().requireOnline()) return;
     if (rejectReason.trim().length < 3) {
       Alert.alert('Reason Required', 'Please enter a brief reason (at least 3 characters).');
       return;
@@ -175,6 +177,7 @@ export default function VerifyScreen() {
   // "No Visible Damage" → record immediately and move to OTP.
   const submitNoConcern = async () => {
     if (!verifyTarget) return;
+    if (!useNetworkStore.getState().requireOnline()) return;
     try {
       setSubmittingVerify(true);
       await api.post(`/bookings/${verifyTarget.id}/verification`, {
@@ -210,6 +213,7 @@ export default function VerifyScreen() {
   // verification with their URLs and move to OTP.
   const submitDamagePhotos = async () => {
     if (!verifyTarget) return;
+    if (!useNetworkStore.getState().requireOnline()) return;
     if (damagePhotos.length === 0) {
       Alert.alert('Add a Photo', 'Please capture at least one photo of the existing damage.');
       return;
@@ -239,6 +243,7 @@ export default function VerifyScreen() {
   // Owner enters the OTP the parker shows them, to start the session
   const verifyOtp = async () => {
     if (!verifyTarget) return;
+    if (!useNetworkStore.getState().requireOnline()) return;
     if (enteredOtp.length !== 4) {
       Alert.alert('Invalid OTP', 'Please enter the 4-digit code shown by the parker.');
       return;

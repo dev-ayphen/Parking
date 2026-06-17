@@ -31,6 +31,7 @@ router.use(authenticate, requireRole('ADMIN'));
 
 // ─── Users ───────────────────────────────────────────────────────────
 router.get('/users', adminController.listUsers);
+router.get('/users/export', adminController.exportUsers); // before :id
 router.get('/users/:id', adminController.getUserDetails);
 router.put('/users/:id/suspend', validate(suspendUserSchema), adminController.suspendUser);
 router.put('/users/:id/unsuspend', adminController.unsuspendUser);
@@ -47,6 +48,7 @@ router.put('/spaces/:id/documents/:docId/verify', validate(verifyDocumentSchema)
 
 // ─── Bookings ────────────────────────────────────────────────────────
 router.get('/bookings', adminController.listBookings);
+router.get('/bookings/export', adminController.exportBookings); // before :id
 router.get('/bookings/:id', adminController.getBookingDetails);
 
 // ─── Subscriptions (ParkSwift's only revenue source) ────────────────
@@ -100,6 +102,7 @@ router.get('/vehicles/:id/rcbook-url', vehicleController.getRcBookUrl);
 
 // ─── System & legal ──────────────────────────────────────────────────
 router.get('/system-logs', adminController.listSystemLogs);
+router.get('/system-logs/export', adminController.exportLogs);
 router.get('/legal/documents', adminController.listLegalDocuments);
 router.put('/legal/documents/:slug', adminController.upsertLegalDocument);
 router.get('/legal/compliance', adminController.listComplianceLogs);

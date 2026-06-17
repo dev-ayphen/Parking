@@ -21,6 +21,13 @@ model User {
   emergencyContactName  String?
   emergencyContactPhone String?
 
+  // Billing profile — for subscription invoices / GST. Null fields fall back to
+  // the user's name/email at billing time.
+  billingName         String?
+  billingEmail        String?
+  billingAddress      String?
+  gstin               String?
+
   // Expo push token — stored on app open, used for background push notifications
   expoPushToken       String?
 

@@ -395,7 +395,7 @@ const FindSpaceScreen = () => {
               duration: `${activeBooking.durationHours} hours`,
               vehiclePlate: activeBooking.vehiclePlate,
               status: 'COMPLETED',
-              rating: 5,
+              rating: 0, // not rated yet — real rating loads on next fetch
             };
             setHistoryBookings((prev) => [newHistoryItem, ...prev]);
             setActiveBooking(null);

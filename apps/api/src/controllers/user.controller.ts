@@ -91,4 +91,26 @@ export const userController = {
       sendError(res, error);
     }
   },
+
+  /** GET /users/me/billing — billing profile (for subscription invoices / GST). */
+  getBilling: async (req: Request, res: Response) => {
+    try {
+      assertAuth(req);
+      const result = await userService.getBillingProfile(req.user.id);
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
+  /** PUT /users/me/billing — save billing profile. */
+  updateBilling: async (req: Request, res: Response) => {
+    try {
+      assertAuth(req);
+      const result = await userService.updateBillingProfile(req.user.id, req.body);
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
 };

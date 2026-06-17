@@ -125,6 +125,13 @@ export const userAdminService = {
         phone: user.phone,
         photoUrl: user.photoUrl,
         role: user.role,
+        // Billing profile (for subscription invoices / GST) — admin-visible.
+        billing: {
+          billingName: user.billingName || null,
+          billingEmail: user.billingEmail || null,
+          billingAddress: user.billingAddress || null,
+          gstin: user.gstin || null,
+        },
         type: formatUserType(user.role, user.spacesOwned.length > 0),
         status: user.status,
         suspendReason: user.suspendReason,

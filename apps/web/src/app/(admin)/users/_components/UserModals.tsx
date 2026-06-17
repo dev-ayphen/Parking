@@ -400,6 +400,21 @@ export function UserDetailsModal({ user, onClose }: { user: UserDetails; onClose
         </div>
       )}
 
+      {user.billing && (user.billing.billingName || user.billing.gstin || user.billing.billingAddress) && (
+        <div className="mb-6 p-4 rounded-2xl bg-indigo-50 border border-indigo-100">
+          <div className="flex items-center gap-2 mb-2">
+            <FileText size={16} className="text-indigo-600" />
+            <h4 className="text-sm font-bold text-indigo-900 uppercase tracking-wide">Billing Details</h4>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
+            <div><span className="text-xs text-indigo-600 font-medium">Name:</span>{' '}<span className="font-semibold text-gray-900">{user.billing.billingName || '—'}</span></div>
+            <div><span className="text-xs text-indigo-600 font-medium">Email:</span>{' '}<span className="font-semibold text-gray-900">{user.billing.billingEmail || '—'}</span></div>
+            <div><span className="text-xs text-indigo-600 font-medium">GSTIN:</span>{' '}<span className="font-semibold text-gray-900 font-mono">{user.billing.gstin || '—'}</span></div>
+            <div className="sm:col-span-2"><span className="text-xs text-indigo-600 font-medium">Address:</span>{' '}<span className="font-semibold text-gray-900">{user.billing.billingAddress || '—'}</span></div>
+          </div>
+        </div>
+      )}
+
       {user.vehicles.length > 0 && (
         <Section title={`Vehicles (${user.vehicles.length})`} icon={<Car size={14} className="text-gray-500" />}>
           {user.vehicles.map((v) => (

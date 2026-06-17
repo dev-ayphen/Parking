@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authenticate, requireRole } from '../middleware/auth';
 import { db } from '../config/database';
+import { emitToAdmin } from '../app';
 
 const router = Router();
 
@@ -29,6 +30,8 @@ router.post('/', authenticate, async (req, res) => {
         evidenceUrls: evidenceUrls || [],
       },
     });
+    // Live-refresh the admin incidents page.
+    emitToAdmin('moderation', 'incident:new', { id: report.id });
     res.json({ success: true, report });
   } catch (error) {
     // Unique-constraint race (two requests slip past the findUnique above):

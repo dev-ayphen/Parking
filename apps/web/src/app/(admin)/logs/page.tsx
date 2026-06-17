@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { io as createSocket } from 'socket.io-client';
 import { adminApi } from '@/services/api';
+import { exportCsv } from '@/lib/download';
 
 const SOCKET_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api').replace(/\/api\/?$/, '');
 
@@ -32,6 +33,16 @@ export default function SystemLogsPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async () => {
+    setExporting(true);
+    await exportCsv(
+      () => adminApi.exportLogsCsv({ level: levelFilter, source: sourceFilter, search: searchQuery || undefined }),
+      'system-logs',
+    );
+    setExporting(false);
+  };
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchLogs = useCallback(async () => {
@@ -191,8 +202,8 @@ export default function SystemLogsPage() {
                 <option key={s} value={s}>{s === 'All' ? 'ALL SOURCES' : s}</option>
               ))}
             </select>
-            <button className="p-1.5 text-gray-400 hover:text-white transition-colors" title="Download Logs">
-              <Download size={18} />
+            <button onClick={handleExport} disabled={exporting} className="p-1.5 text-gray-400 hover:text-white transition-colors disabled:opacity-50" title="Download Logs (CSV)">
+              {exporting ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
             </button>
           </div>
         </div>

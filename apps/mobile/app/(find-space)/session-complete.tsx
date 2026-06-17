@@ -15,6 +15,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { CheckCircle2, Star, AlertTriangle, X, Camera } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { api } from '../../services/api';
+import { useNetworkStore } from '../../store/networkStore';
 import { toast } from '../../utils/toast';
 import PageHeader from '../../components/PageHeader';
 import ReportSubmitted from '../../components/ReportSubmitted';
@@ -76,6 +77,7 @@ export default function SessionCompleteScreen() {
   }, [fetchBooking]);
 
   const handleSubmitRating = async () => {
+    if (!useNetworkStore.getState().requireOnline()) return;
     if (rating === 0) {
       Alert.alert('Required', 'Please select a star rating.');
       return;
@@ -126,6 +128,7 @@ export default function SessionCompleteScreen() {
 
   const handleSubmitIncident = async () => {
     if (incidentSubmitting || incidentSubmitted) return; // guard re-entry / double-tap
+    if (!useNetworkStore.getState().requireOnline()) return;
     if (incidentDesc.trim().length < 5) {
       Alert.alert('Too short', 'Please describe the incident (at least 5 characters).');
       return;

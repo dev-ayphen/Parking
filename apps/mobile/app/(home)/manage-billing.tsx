@@ -1,370 +1,188 @@
-import React, { useState } from 'react';
-import {View,
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
   Text,
   StyleSheet,
   StatusBar,
-  TouchableOpacity,
   ScrollView,
   TextInput,
+  TouchableOpacity,
+  ActivityIndicator,
+  KeyboardAvoidingView,
   Platform,
-  Alert,
-  ActivityIndicator} from 'react-native';
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { User2, Mail, Phone, Hash, CreditCard, CheckCircle2 } from 'lucide-react-native';
-import PageHeader from '../../components/PageHeader';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import { Receipt, Info } from 'lucide-react-native';
+import { api } from '../../services/api';
+import { toast } from '../../utils/toast';
+import { PageHeader } from '../../components';
+import { useNetworkStore } from '../../store/networkStore';
+import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
+
+interface Billing {
+  billingName: string;
+  billingEmail: string;
+  billingAddress: string;
+  gstin: string;
+}
 
 export default function ManageBillingScreen() {
   const router = useRouter();
-  const [billingName, setBillingName] = useState('Hariharan S');
-  const [billingEmail, setBillingEmail] = useState('hariharan@example.com');
-  const [billingPhone, setBillingPhone] = useState('+91 98765 43210');
-  const [gstId, setGstId] = useState('');
-  const [activeGateway, setActiveGateway] = useState<'razorpay' | 'stripe'>('razorpay');
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [billingName, setBillingName] = useState('');
+  const [billingEmail, setBillingEmail] = useState('');
+  const [billingAddress, setBillingAddress] = useState('');
+  const [gstin, setGstin] = useState('');
+
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await api.get('/users/me/billing');
+      const b: Billing = res.billing || {};
+      setBillingName(b.billingName || '');
+      setBillingEmail(b.billingEmail || '');
+      setBillingAddress(b.billingAddress || '');
+      setGstin(b.gstin || '');
+    } catch {
+      toast.error('Could not load billing details.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   const handleSave = async () => {
-    if (!billingName.trim() || !billingEmail.trim()) {
-      Alert.alert('Validation Error', 'Billing name and email are required.');
+    if (!useNetworkStore.getState().requireOnline()) return;
+    if (!billingName.trim()) {
+      toast.error('Billing name is required.');
       return;
     }
-    setSaving(true);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1200));
-    setSaving(false);
-    Alert.alert('Saved', 'Your billing details have been updated successfully.', [
-      { text: 'OK', onPress: () => router.back() }
-    ]);
+    try {
+      setSaving(true);
+      await api.put('/users/me/billing', {
+        billingName: billingName.trim(),
+        billingEmail: billingEmail.trim(),
+        billingAddress: billingAddress.trim(),
+        gstin: gstin.trim().toUpperCase(),
+      });
+      toast.success('Billing details saved.');
+      router.back();
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not save billing details.');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const PaymentGatewayCard = ({
-    id,
-    name,
-    tagline,
-    color,
-  }: {
-    id: 'razorpay' | 'stripe';
-    name: string;
-    tagline: string;
-    color: string;
-  }) => (
-    <TouchableOpacity
-      style={[styles.gatewayCard, activeGateway === id && styles.gatewayCardActive]}
-      onPress={() => setActiveGateway(id)}
-      activeOpacity={0.8}
-    >
-      <View style={[styles.gatewayIcon, { backgroundColor: color + '18' }]}>
-        <CreditCard size={20} color={color} />
-      </View>
-      <View style={styles.gatewayInfo}>
-        <Text style={styles.gatewayName}>{name}</Text>
-        <Text style={styles.gatewayTagline}>{tagline}</Text>
-      </View>
-      {activeGateway === id ? (
-        <CheckCircle2 size={22} color={Colors.primary} />
-      ) : (
-        <View style={styles.radioEmpty} />
-      )}
-    </TouchableOpacity>
-  );
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <PageHeader title="Billing Details" onBack={() => router.back()} />
+        <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
+      <PageHeader title="Billing Details" onBack={() => router.back()} />
 
-      <PageHeader title="Manage Billing" onBack={() => router.back()} />
-
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-
-        {/* Billing Info Section */}
-        <Text style={styles.sectionTitle}>Billing Information</Text>
-        <View style={styles.card}>
-          {/* Billing Name */}
-          <View style={styles.inputWrapper}>
-            <View style={styles.inputIconBox}>
-              <User2 size={16} color={Colors.textSecondary} />
-            </View>
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Billing Name</Text>
-              <TextInput
-                style={styles.input}
-                value={billingName}
-                onChangeText={setBillingName}
-                placeholder="Full name"
-                placeholderTextColor={Colors.borderMuted}
-                returnKeyType="next"
-              />
-            </View>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <View style={styles.infoCard}>
+            <Receipt size={18} color={Colors.primary} />
+            <Text style={styles.infoText}>These details appear on your subscription invoices and GST receipts.</Text>
           </View>
 
-          <View style={styles.rowDivider} />
+          <Text style={styles.label}>Billing Name *</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Name or company name"
+            placeholderTextColor={Colors.textMuted}
+            value={billingName}
+            onChangeText={setBillingName}
+          />
 
-          {/* Billing Email */}
-          <View style={styles.inputWrapper}>
-            <View style={styles.inputIconBox}>
-              <Mail size={16} color={Colors.textSecondary} />
-            </View>
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Billing Email</Text>
-              <TextInput
-                style={styles.input}
-                value={billingEmail}
-                onChangeText={setBillingEmail}
-                placeholder="email@example.com"
-                placeholderTextColor={Colors.borderMuted}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                returnKeyType="next"
-              />
-            </View>
+          <Text style={styles.label}>Billing Email</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="invoices@yourcompany.com"
+            placeholderTextColor={Colors.textMuted}
+            value={billingEmail}
+            onChangeText={setBillingEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+
+          <Text style={styles.label}>Billing Address</Text>
+          <TextInput
+            style={[styles.input, styles.multiline]}
+            placeholder="Street, city, state, PIN"
+            placeholderTextColor={Colors.textMuted}
+            value={billingAddress}
+            onChangeText={setBillingAddress}
+            multiline
+            numberOfLines={3}
+            textAlignVertical="top"
+          />
+
+          <Text style={styles.label}>GSTIN <Text style={styles.optional}>(optional)</Text></Text>
+          <TextInput
+            style={styles.input}
+            placeholder="e.g. 29ABCDE1234F1Z5"
+            placeholderTextColor={Colors.textMuted}
+            value={gstin}
+            onChangeText={(t) => setGstin(t.toUpperCase())}
+            autoCapitalize="characters"
+            maxLength={15}
+          />
+          <View style={styles.hintRow}>
+            <Info size={12} color={Colors.textMuted} />
+            <Text style={styles.hint}>Add your GSTIN to claim input tax credit on subscription payments.</Text>
           </View>
+        </ScrollView>
 
-          <View style={styles.rowDivider} />
-
-          {/* Phone */}
-          <View style={styles.inputWrapper}>
-            <View style={styles.inputIconBox}>
-              <Phone size={16} color={Colors.textSecondary} />
-            </View>
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Phone Number</Text>
-              <TextInput
-                style={styles.input}
-                value={billingPhone}
-                onChangeText={setBillingPhone}
-                placeholder="+91 00000 00000"
-                placeholderTextColor={Colors.borderMuted}
-                keyboardType="phone-pad"
-                returnKeyType="next"
-              />
-            </View>
-          </View>
-
-          <View style={styles.rowDivider} />
-
-          {/* GST ID */}
-          <View style={styles.inputWrapper}>
-            <View style={styles.inputIconBox}>
-              <Hash size={16} color={Colors.textSecondary} />
-            </View>
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>GST / Tax ID <Text style={styles.optionalTag}>(optional)</Text></Text>
-              <TextInput
-                style={styles.input}
-                value={gstId}
-                onChangeText={setGstId}
-                placeholder="e.g. 29ABCDE1234F1Z5"
-                placeholderTextColor={Colors.borderMuted}
-                autoCapitalize="characters"
-                returnKeyType="done"
-              />
-            </View>
-          </View>
+        <View style={styles.footer}>
+          <TouchableOpacity
+            style={[styles.saveBtn, saving && { opacity: 0.6 }]}
+            onPress={handleSave}
+            disabled={saving}
+            activeOpacity={0.85}
+          >
+            {saving ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.saveBtnText}>Save Billing Details</Text>}
+          </TouchableOpacity>
         </View>
-
-        {/* Payment Gateway Section */}
-        <Text style={styles.sectionTitle}>Payment Gateway</Text>
-        <Text style={styles.sectionSubtitle}>
-          Select the gateway used for your subscription payments.
-        </Text>
-
-        <PaymentGatewayCard
-          id="razorpay"
-          name="Razorpay"
-          tagline="Recommended for India · UPI, Cards, Netbanking"
-          color={ExtendedColors.razorpayBlue}
-        />
-        <PaymentGatewayCard
-          id="stripe"
-          name="Stripe"
-          tagline="International payments · Cards & more"
-          color={ExtendedColors.stripePurple}
-        />
-
-        {/* Info Note */}
-        <View style={styles.infoNote}>
-          <Text style={styles.infoNoteText}>
-            Changing the gateway will take effect on your next billing cycle. Existing subscriptions will not be interrupted.
-          </Text>
-        </View>
-      </ScrollView>
-
-      {/* Save Button */}
-      <View style={styles.saveContainer}>
-        <TouchableOpacity
-          style={[styles.saveButton, saving && styles.saveButtonDisabled]}
-          onPress={handleSave}
-          activeOpacity={0.85}
-          disabled={saving}
-        >
-          {saving
-            ? <ActivityIndicator size="small" color={Colors.white} />
-            : <Text style={styles.saveButtonText}>Save Changes</Text>
-          }
-        </TouchableOpacity>
-      </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.screenBg,
+  container: { flex: 1, backgroundColor: Colors.white },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  scroll: { flex: 1, backgroundColor: Colors.screenBg },
+  content: { padding: Spacing.screenH, paddingBottom: Spacing['4xl'] },
+  infoCard: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    backgroundColor: Colors.primaryBg, borderRadius: BorderRadius.lg,
+    padding: Spacing.xl, marginBottom: Spacing['2xl'],
   },
-  content: {
-    padding: Spacing.screenH,
-    paddingBottom: 100,
-  },
-  sectionTitle: {
-    fontSize: FontSize['2xl'],                      // 18 = 2xl ✓
-    fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
-    marginBottom: Spacing.sm,
-    marginTop: Spacing.md,
-  },
-  sectionSubtitle: {
-    fontSize: FontSize.base,                        // 13 = base ✓
-    color: Colors.textSecondary,
-    marginBottom: Spacing['3xl'],
-    lineHeight: 18,
-  },
-  card: {
-    backgroundColor: Colors.white,
-    borderRadius: BorderRadius.lg,                  // 16 = lg ✓
-    paddingHorizontal: Spacing['3xl'],
-    marginBottom: Spacing['5xl'],
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 },
-      android: { elevation: 3 },
-    }),
-  },
-  inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    paddingVertical: Spacing['3xl'],
-    gap: Spacing.xl,
-  },
-  inputIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: BorderRadius.input,               // 10 = input ✓
-    backgroundColor: Colors.screenBg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: Spacing.micro,
-  },
-  inputGroup: {
-    flex: 1,
-  },
-  inputLabel: {
-    fontSize: FontSize.sm,                          // 12 = sm ✓
-    fontWeight: FontWeight.semibold,
-    color: Colors.textMuted,
-    letterSpacing: 0,
-    marginBottom: Spacing.sm,
-  },
-  optionalTag: {
-    fontWeight: FontWeight.normal,
-    textTransform: 'lowercase',
-    letterSpacing: 0,
-  },
+  infoText: { flex: 1, fontSize: FontSize.sm, color: Colors.textBody, lineHeight: 18 },
+  label: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: Colors.textSecondary, marginBottom: Spacing.sm, marginTop: Spacing.lg },
+  optional: { fontWeight: FontWeight.normal, color: Colors.textMuted },
   input: {
-    fontSize: FontSize.lg,                          // 15 = lg ✓
-    fontWeight: FontWeight.medium,
-    color: Colors.textPrimary,
-    padding: 0,
+    backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border,
+    borderRadius: BorderRadius.md, paddingHorizontal: Spacing.xl, paddingVertical: Spacing.lg,
+    fontSize: FontSize.base, color: Colors.textPrimary,
   },
-  rowDivider: {
-    height: 1,
-    backgroundColor: Colors.surfaceBg,
-    marginLeft: 48,
-  },
-  gatewayCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing['2xl'],
-    backgroundColor: Colors.white,
-    borderRadius: BorderRadius.lg,                  // 16 = lg ✓
-    padding: Spacing['3xl'],
-    marginBottom: Spacing.xl,
-    borderWidth: 2,
-    borderColor: 'transparent',
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8 },
-      android: { elevation: 2 },
-    }),
-  },
-  gatewayCardActive: {
-    borderColor: Colors.primary,
-    backgroundColor: ExtendedColors.primaryTint2,   // '#FFF5F9' ✓
-  },
-  gatewayIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: BorderRadius.md,                  // 12 = md ✓
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  gatewayInfo: {
-    flex: 1,
-  },
-  gatewayName: {
-    fontSize: FontSize.lg,                          // 15 = lg ✓
-    fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
-    marginBottom: 3,                                // no Spacing token for 3
-  },
-  gatewayTagline: {
-    fontSize: FontSize.sm,                          // 12 = sm ✓
-    color: Colors.textSecondary,
-    lineHeight: 16,
-  },
-  radioEmpty: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 2,
-    borderColor: Colors.borderMuted,
-  },
-  infoNote: {
-    backgroundColor: Colors.infoBg,
-    borderRadius: BorderRadius.md,                  // 12 = md ✓
-    padding: Spacing['2xl'],
-    marginTop: Spacing.md,
-  },
-  infoNoteText: {
-    fontSize: FontSize.base,                        // 13 = base ✓
-    color: Colors.info,
-    lineHeight: 18,
-  },
-  saveContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: Spacing.screenH,
-    backgroundColor: Colors.white,
-    borderTopWidth: 1,
-    borderTopColor: Colors.surfaceBg,
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.06, shadowRadius: 12 },
-      android: { elevation: 12 },
-    }),
-  },
-  saveButton: {
-    backgroundColor: Colors.primary,
-    paddingVertical: Spacing['3xl'],
-    borderRadius: BorderRadius.button,              // 14 = button ✓
-    alignItems: 'center',
-  },
-  saveButtonDisabled: {
-    backgroundColor: ExtendedColors.disabledPink,   // '#F3A0B5' ✓
-  },
-  saveButtonText: {
-    fontSize: FontSize.xl,                          // 16 = xl ✓
-    fontWeight: FontWeight.bold,
-    color: Colors.white,
-  },
+  multiline: { minHeight: 76 },
+  hintRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: Spacing.sm, paddingHorizontal: 2 },
+  hint: { flex: 1, fontSize: FontSize.xs, color: Colors.textMuted, lineHeight: 15 },
+  footer: { padding: Spacing.screenH, backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: Colors.borderLight },
+  saveBtn: { backgroundColor: Colors.primary, borderRadius: BorderRadius.button, paddingVertical: Spacing['3xl'], alignItems: 'center' },
+  saveBtnText: { color: Colors.white, fontSize: FontSize.lg, fontWeight: FontWeight.bold },
 });

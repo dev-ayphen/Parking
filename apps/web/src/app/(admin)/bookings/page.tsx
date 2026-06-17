@@ -3,12 +3,13 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Calendar, Search, Filter, Eye,
+  Calendar, Search, Filter, Eye, Download,
   Clock, CheckCircle2, XCircle, ChevronLeft, ChevronRight,
   Car, Loader2, X, MapPin, Phone, Mail, User, CreditCard, Bell, Shield, AlertCircle,
 } from 'lucide-react';
 import { io as createSocket } from 'socket.io-client';
 import { adminApi } from '@/services/api';
+import { exportCsv } from '@/lib/download';
 import { TableSkeleton } from '@/components/Skeleton';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import Link from 'next/link';
@@ -93,6 +94,13 @@ export default function BookingsPage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async () => {
+    setExporting(true);
+    await exportCsv(adminApi.exportBookingsCsv, 'bookings');
+    setExporting(false);
+  };
   const debouncedSearch = useDebouncedValue(search, 400);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -181,8 +189,12 @@ export default function BookingsPage() {
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             Live Updates
           </span>
-          <button className="bg-primary hover:bg-primaryDark text-white px-5 py-2.5 rounded-xl font-medium transition-colors shadow-lg shadow-primary/20">
-            + Export CSV
+          <button
+            onClick={handleExport}
+            disabled={exporting}
+            className="inline-flex items-center gap-2 bg-primary hover:bg-primaryDark text-white px-5 py-2.5 rounded-xl font-medium transition-colors shadow-lg shadow-primary/20 disabled:opacity-60"
+          >
+            {exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Export CSV
           </button>
         </div>
       </div>

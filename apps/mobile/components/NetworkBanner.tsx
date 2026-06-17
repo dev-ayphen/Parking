@@ -1,12 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, StyleSheet, Text, View, Platform } from 'react-native';
+import { Animated, StyleSheet, Text, View, Platform, Pressable, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { WifiOff, Wifi } from 'lucide-react-native';
-import { useNetworkStatus } from '../hooks/useNetworkStatus';
+import { WifiOff, Wifi, RotateCw } from 'lucide-react-native';
+import { useNetworkStore } from '../store/networkStore';
 import { Colors, FontSize, FontWeight, Spacing } from '../theme';
 
 export const NetworkBanner = () => {
-  const { isConnected } = useNetworkStatus();
+  const isConnected = useNetworkStore((s) => s.isConnected);
+  const refresh = useNetworkStore((s) => s.refresh);
+  const [retrying, setRetrying] = useState(false);
   const insets = useSafeAreaInsets();
   const translateY = useRef(new Animated.Value(-150)).current; // Start hidden above
   const [status, setStatus] = useState<'offline' | 'back_online' | 'hidden'>('hidden');
@@ -69,6 +71,13 @@ export const NetworkBanner = () => {
   const message = isOffline ? 'No internet connection' : 'Back online';
   const Icon = isOffline ? WifiOff : Wifi;
 
+  const onRetry = async () => {
+    if (retrying) return;
+    setRetrying(true);
+    await refresh();           // re-checks NetInfo; banner auto-hides if reconnected
+    setTimeout(() => setRetrying(false), 600);
+  };
+
   return (
     <Animated.View
       style={[
@@ -83,6 +92,18 @@ export const NetworkBanner = () => {
       <View style={styles.content}>
         <Icon color={Colors.white} size={18} style={styles.icon} strokeWidth={2.5} />
         <Text style={styles.text}>{message}</Text>
+        {isOffline && (
+          <Pressable style={styles.retryBtn} onPress={onRetry} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            {retrying ? (
+              <ActivityIndicator size="small" color={Colors.white} />
+            ) : (
+              <>
+                <RotateCw color={Colors.white} size={13} strokeWidth={2.5} />
+                <Text style={styles.retryText}>Retry</Text>
+              </>
+            )}
+          </Pressable>
+        )}
       </View>
     </Animated.View>
   );
@@ -122,4 +143,23 @@ const styles = StyleSheet.create({
     fontSize: FontSize.md,
     fontWeight: FontWeight.semibold,
   },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginLeft: Spacing.lg,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.5)',
+    minWidth: 56,
+    justifyContent: 'center',
+  },
+  retryText: {
+    color: Colors.white,
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.bold,
+  },
 });
+

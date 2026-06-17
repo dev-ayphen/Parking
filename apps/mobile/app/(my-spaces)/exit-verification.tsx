@@ -13,6 +13,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { User, Car, Clock } from 'lucide-react-native';
 import PageHeader from '../../components/PageHeader';
 import { api } from '../../services/api';
+import { useNetworkStore } from '../../store/networkStore';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 
 export default function ExitVerificationScreen() {
@@ -81,6 +82,7 @@ export default function ExitVerificationScreen() {
   };
 
   const handleCompleteSession = async () => {
+    if (!useNetworkStore.getState().requireOnline()) return;
     const exitDate = getExitDate();
     if (!exitDate) {
       Alert.alert('Invalid Time', 'Please enter a valid exit time (HH:MM in 24hr format).');

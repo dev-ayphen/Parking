@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Star, Zap, Shield, TrendingUp, CheckCircle2, ChevronRight, CreditCard } from 'lucide-react-native';
+import { Star, Zap, Shield, TrendingUp, CheckCircle2, ChevronRight, CreditCard, Receipt } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { PageHeader } from '../../components';
 import { api } from '../../services/api';
@@ -131,7 +131,16 @@ const ManageSubscriptionScreen = () => {
       (p) => p.price > currentPlan.price
     );
     if (higherPlans.length === 0) {
-      toast.info('Enterprise plan coming soon!');
+      // Already on the top plan — give enterprise-interested owners a real path
+      // (contact support) instead of a dead-end "coming soon".
+      Alert.alert(
+        'You\'re on our top plan',
+        'Need higher limits or custom features for a large operation? Our team can set up an enterprise plan for you.',
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Contact Support', onPress: () => router.push('/(home)/support/create-ticket') },
+        ],
+      );
     } else {
       router.push('/(my-spaces)/subscription-plans');
     }
@@ -278,6 +287,22 @@ const ManageSubscriptionScreen = () => {
               <View style={styles.actionInfo}>
                 <Text style={styles.actionTitle}>Downgrade Plan</Text>
                 <Text style={styles.actionSub}>Switch to a lower tier plan</Text>
+              </View>
+              <ChevronRight size={16} color={Colors.borderMuted} />
+            </TouchableOpacity>
+
+            <View style={styles.divider} />
+
+            <TouchableOpacity
+              style={styles.actionRow}
+              onPress={() => router.push('/(home)/manage-billing')}
+            >
+              <View style={[styles.actionIconWrapper, { backgroundColor: ExtendedColors.analyticsBg }]}>
+                <Receipt size={16} color={Colors.textSecondary} />
+              </View>
+              <View style={styles.actionInfo}>
+                <Text style={styles.actionTitle}>Billing Details</Text>
+                <Text style={styles.actionSub}>Name, email & GSTIN for invoices</Text>
               </View>
               <ChevronRight size={16} color={Colors.borderMuted} />
             </TouchableOpacity>

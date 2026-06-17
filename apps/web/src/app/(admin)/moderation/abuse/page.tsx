@@ -2,8 +2,11 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
+import { io as createSocket } from 'socket.io-client';
 import { Flag, Loader2, Calendar, AlertCircle, ChevronLeft, ChevronRight, X, Check } from 'lucide-react';
 import { adminApi } from '@/services/api';
+
+const SOCKET_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api').replace(/\/api\/?$/, '');
 
 interface AbuseReport {
   id: number;
@@ -82,6 +85,14 @@ export default function AbuseReportsPage() {
   }, [statusFilter, page]);
 
   useEffect(() => { fetchReports(); }, [fetchReports]);
+
+  // Live-refresh when a new abuse report comes in.
+  useEffect(() => {
+    const socket = createSocket(SOCKET_URL, { transports: ['websocket'] });
+    socket.on('connect', () => socket.emit('admin:join'));
+    socket.on('abuse:new', () => fetchReports());
+    return () => { socket.disconnect(); };
+  }, [fetchReports]);
 
   const handleAction = async () => {
     if (!actionReport) return;

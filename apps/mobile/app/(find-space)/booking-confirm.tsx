@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { MapPin, Car, Clock, Check } from 'lucide-react-native';
 import { api } from '../../services/api';
+import { useNetworkStore } from '../../store/networkStore';
 import PageHeader from '../../components/PageHeader';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 
@@ -114,6 +115,7 @@ const BookingConfirmScreen = () => {
   };
 
   const handleConfirm = async () => {
+    if (!useNetworkStore.getState().requireOnline()) return;
     if (!allAccepted) {
       Alert.alert('Declarations Required', 'Please accept all declarations before confirming your booking.');
       return;

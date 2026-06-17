@@ -24,6 +24,7 @@ import { api } from '../../services/api';
 import { getRatingStyle, formatCount } from '../../utils/ratingUtils';
 import { useAuthStore } from '../../store/authStore';
 import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import { useNetworkStore } from '../../store/networkStore';
 import { useTheme, type AppTheme } from '../../hooks/useTheme';
 
 interface AmenityItem {
@@ -231,6 +232,7 @@ const SpaceDetailScreen = () => {
   };
 
   const handleBookNow = () => {
+    if (!useNetworkStore.getState().requireOnline()) return;
     // If user owns this space, navigate to manage
     if (isOwnSpace) {
       router.push({

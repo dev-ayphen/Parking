@@ -238,6 +238,55 @@ export const userService = {
     }
   },
 
+  /** Fetch the user's billing profile; missing fields fall back to their name/email. */
+  getBillingProfile: async (userId: number) => {
+    const user = await db.user.findUnique({
+      where: { id: userId },
+      select: {
+        firstName: true, lastName: true, email: true,
+        billingName: true, billingEmail: true, billingAddress: true, gstin: true,
+      },
+    });
+    if (!user) throw Object.assign(new Error('User not found'), { statusCode: 404 });
+    const fallbackName = [user.firstName, user.lastName].filter(Boolean).join(' ') || '';
+    return {
+      success: true,
+      billing: {
+        billingName: user.billingName ?? fallbackName,
+        billingEmail: user.billingEmail ?? user.email ?? '',
+        billingAddress: user.billingAddress ?? '',
+        gstin: user.gstin ?? '',
+      },
+    };
+  },
+
+  /** Save the user's billing profile. Basic validation; GSTIN is optional. */
+  updateBillingProfile: async (userId: number, data: {
+    billingName?: string; billingEmail?: string; billingAddress?: string; gstin?: string;
+  }) => {
+    const name = (data.billingName || '').trim();
+    const email = (data.billingEmail || '').trim();
+    if (!name) throw Object.assign(new Error('Billing name is required'), { statusCode: 400 });
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw Object.assign(new Error('Enter a valid billing email'), { statusCode: 400 });
+    }
+    const gstin = (data.gstin || '').trim().toUpperCase();
+    // India GSTIN is 15 chars; validate only if provided.
+    if (gstin && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[0-9A-Z]{1}[Z]{1}[0-9A-Z]{1}$/.test(gstin)) {
+      throw Object.assign(new Error('Enter a valid 15-character GSTIN'), { statusCode: 400 });
+    }
+    await db.user.update({
+      where: { id: userId },
+      data: {
+        billingName: name,
+        billingEmail: email || null,
+        billingAddress: (data.billingAddress || '').trim() || null,
+        gstin: gstin || null,
+      },
+    });
+    return { success: true, message: 'Billing details saved.' };
+  },
+
   updatePushToken: async (userId: number, token: string | null) => {
     // Clearing the token (logout) — just null it for this user.
     if (!token) {

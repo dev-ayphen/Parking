@@ -6,10 +6,11 @@ import { motion } from 'framer-motion';
 import {
   Users, MapPin, CreditCard, Activity,
   TrendingUp, Clock, AlertCircle, CheckCircle2,
-  ChevronRight, BarChart3, Loader2,
+  ChevronRight, BarChart3, Loader2, Download,
 } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { adminApi } from '@/services/api';
+import { exportCsv } from '@/lib/download';
 import { StatCardSkeleton } from '@/components/Skeleton';
 
 interface StatItem {
@@ -44,6 +45,14 @@ export default function DashboardPage() {
   const [data, setData] = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [reporting, setReporting] = useState(false);
+
+  // "Generate Report" → download the full platform bookings CSV.
+  const handleGenerateReport = async () => {
+    setReporting(true);
+    await exportCsv(adminApi.exportBookingsCsv, 'platform-report');
+    setReporting(false);
+  };
 
   useEffect(() => {
     (async () => {
@@ -206,8 +215,12 @@ export default function DashboardPage() {
                 )}
               </div>
 
-              <button className="w-full mt-6 py-3 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors">
-                Generate Report
+              <button
+                onClick={handleGenerateReport}
+                disabled={reporting}
+                className="w-full mt-6 py-3 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors inline-flex items-center justify-center gap-2 disabled:opacity-60"
+              >
+                {reporting ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />} Generate Report
               </button>
             </motion.div>
           </div>

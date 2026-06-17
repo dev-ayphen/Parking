@@ -32,7 +32,7 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
-// Add error interceptor for debugging
+// Add error interceptor for debugging + connectivity signal
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -43,6 +43,12 @@ apiClient.interceptors.response.use(
       data: error.response?.data,
       message: error.message,
     });
+    // A request with no HTTP response is a connectivity failure (server
+    // unreachable / dropped wifi). Broadcast it so the OfflineBanner can show,
+    // even when the browser's navigator.onLine hasn't flipped yet.
+    if (typeof window !== 'undefined' && !error.response && (error.code === 'ERR_NETWORK' || error.message === 'Network Error')) {
+      window.dispatchEvent(new CustomEvent('api:network-error'));
+    }
     return Promise.reject(error);
   }
 );
@@ -260,6 +266,18 @@ export const adminApi = {
 
   exportTransactionsCsv: async () => {
     const res = await apiClient.get('/admin/payments/export', { responseType: 'blob' });
+    return res.data as Blob;
+  },
+  exportUsersCsv: async () => {
+    const res = await apiClient.get('/admin/users/export', { responseType: 'blob' });
+    return res.data as Blob;
+  },
+  exportBookingsCsv: async () => {
+    const res = await apiClient.get('/admin/bookings/export', { responseType: 'blob' });
+    return res.data as Blob;
+  },
+  exportLogsCsv: async (params?: { level?: string; source?: string; search?: string }) => {
+    const res = await apiClient.get('/admin/system-logs/export', { params, responseType: 'blob' });
     return res.data as Blob;
   },
 

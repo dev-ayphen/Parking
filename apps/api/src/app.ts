@@ -190,6 +190,7 @@ export const setupSocketIO = (server: any): SocketIOServer => {
       socket.join('admin_spaces');
       socket.join('admin_users');
       socket.join('admin_payments');
+      socket.join('admin_moderation');
     });
 
     socket.on('disconnect', () => {
@@ -207,7 +208,7 @@ export const emitToUser = (userId: number, event: string, payload: any) => {
   io.to(`user_${userId}`).emit(event, payload);
 };
 
-export const emitToAdmin = (room: 'support' | 'bookings' | 'spaces' | 'users' | 'payments', event: string, payload: any) => {
+export const emitToAdmin = (room: 'support' | 'bookings' | 'spaces' | 'users' | 'payments' | 'moderation', event: string, payload: any) => {
   const io = getIO();
   if (!io) return;
   io.to(`admin_${room}`).emit(event, payload);

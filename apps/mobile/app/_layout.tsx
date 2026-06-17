@@ -12,6 +12,7 @@ import OwnerBookingAlert from '../components/OwnerBookingAlert';
 import { NetworkBanner } from '../components/NetworkBanner';
 import { ThemeProvider } from '../context/ThemeContext';
 import { useNotificationDeepLink } from '../hooks/useNotificationDeepLink';
+import { startNetworkListener } from '../store/networkStore';
 import { api } from '../services/api';
 
 Notifications.setNotificationHandler({
@@ -74,6 +75,9 @@ export default function RootLayout() {
 
   // Route notification taps (warm + cold start) to the right screen.
   useNotificationDeepLink();
+
+  // Single global connectivity listener (powers the banner + requireOnline guard).
+  useEffect(() => { startNetworkListener(); }, []);
 
   useEffect(() => {
     hydrateAuth();

@@ -2,10 +2,13 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
+import { io as createSocket } from 'socket.io-client';
 import {
   AlertTriangle, Loader2, User, ChevronLeft, ChevronRight, X, Check,
 } from 'lucide-react';
 import { adminApi } from '@/services/api';
+
+const SOCKET_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api').replace(/\/api\/?$/, '');
 
 interface Incident {
   id: number;
@@ -77,6 +80,14 @@ export default function IncidentsPage() {
   }, [statusFilter, page]);
 
   useEffect(() => { fetchIncidents(); }, [fetchIncidents]);
+
+  // Live-refresh when a new incident is reported.
+  useEffect(() => {
+    const socket = createSocket(SOCKET_URL, { transports: ['websocket'] });
+    socket.on('connect', () => socket.emit('admin:join'));
+    socket.on('incident:new', () => fetchIncidents());
+    return () => { socket.disconnect(); };
+  }, [fetchIncidents]);
 
   const handleUpdate = async () => {
     if (!updateIncident) return;

@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Phone, MessageSquare, AlertTriangle, ShieldCheck, Flag, X, Headphones, CheckSquare } from 'lucide-react-native';
 import { api } from '../../services/api';
+import { useNetworkStore } from '../../store/networkStore';
 import PageHeader from '../../components/PageHeader';
 import ReportSubmitted from '../../components/ReportSubmitted';
 import { useRealtime } from '../../hooks/useRealtime';
@@ -135,6 +136,7 @@ export default function ActiveSessionScreen() {
   }, [booking?.status, router]);
 
   const handleAcknowledge = async () => {
+    if (!useNetworkStore.getState().requireOnline()) return;
     try {
       setActionLoading(true);
       await api.put(`/bookings/${bookingId}/verification/accept`);
@@ -204,6 +206,7 @@ export default function ActiveSessionScreen() {
   };
 
   const handleLeaving = async () => {
+    if (!useNetworkStore.getState().requireOnline()) return;
     try {
       setActionLoading(true);
       await api.put(`/bookings/${bookingId}/leaving`);

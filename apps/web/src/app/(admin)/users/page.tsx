@@ -7,12 +7,13 @@ import { io as createSocket } from 'socket.io-client';
 
 const SOCKET_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api').replace(/\/api\/?$/, '');
 import {
-  Search, Filter, MoreVertical,
+  Search, MoreVertical, Download,
   CheckCircle2, XCircle, Mail, Phone, ChevronLeft, ChevronRight, Loader2,
   Eye, Ban, Trash2, UserX, UserCheck, X, AlertTriangle, Calendar,
   Car, MapPin as MapPinIcon, Star, ShieldAlert,
 } from 'lucide-react';
 import { adminApi } from '@/services/api';
+import { exportCsv } from '@/lib/download';
 import { TableSkeleton } from '@/components/Skeleton';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import {
@@ -34,7 +35,14 @@ export default function UsersPage() {
   const debouncedSearch = useDebouncedValue(search, 400);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [exporting, setExporting] = useState(false);
   const [menuOpenFor, setMenuOpenFor] = useState<number | null>(null);
+
+  const handleExport = async () => {
+    setExporting(true);
+    await exportCsv(adminApi.exportUsersCsv, 'users');
+    setExporting(false);
+  };
   const [viewingUser, setViewingUser] = useState<UserDetails | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [suspendingUser, setSuspendingUser] = useState<AdminUser | null>(null);
@@ -129,8 +137,12 @@ export default function UsersPage() {
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Users Management</h1>
           <p className="text-gray-500 mt-1">Manage and monitor all platform users.</p>
         </div>
-        <button className="bg-primary hover:bg-primaryDark text-white px-5 py-2.5 rounded-xl font-medium transition-colors shadow-lg shadow-primary/20">
-          + Export Data
+        <button
+          onClick={handleExport}
+          disabled={exporting}
+          className="inline-flex items-center gap-2 bg-primary hover:bg-primaryDark text-white px-5 py-2.5 rounded-xl font-medium transition-colors shadow-lg shadow-primary/20 disabled:opacity-60"
+        >
+          {exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Export CSV
         </button>
       </div>
 
@@ -167,9 +179,6 @@ export default function UsersPage() {
                 className="pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all w-64"
               />
             </div>
-            <button className="p-2 border border-gray-200 text-gray-600 rounded-xl hover:bg-gray-50 transition-colors">
-              <Filter size={18} />
-            </button>
           </div>
         </div>
 

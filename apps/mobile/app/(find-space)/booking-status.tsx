@@ -19,6 +19,7 @@ import {
   Navigation,
 } from 'lucide-react-native';
 import { api } from '../../services/api';
+import { useNetworkStore } from '../../store/networkStore';
 import PageHeader from '../../components/PageHeader';
 import { useRealtime } from '../../hooks/useRealtime';
 import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
@@ -167,6 +168,7 @@ export default function BookingStatusScreen() {
   };
 
   const handleArrived = async () => {
+    if (!useNetworkStore.getState().requireOnline()) return;
     try {
       setActionLoading(true);
       await api.put(`/bookings/${bookingId}/arrived`);

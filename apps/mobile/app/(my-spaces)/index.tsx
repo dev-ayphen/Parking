@@ -19,6 +19,7 @@ import { PageHeader } from '../../components';
 import NoActivitySvg from '../../components/Illustrations/NoActivitySvg';
 import { api } from '../../services/api';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import { useSessionBarStore } from '../../store/sessionBarStore';
 
 interface DashboardData {
   isSubscribed: boolean;
@@ -67,9 +68,13 @@ const EMPTY_DASHBOARD: DashboardData = {
   recentRequests: [],
 };
 
+const APPROVAL_WINDOW_MS = 120_000;
+
 export default function OwnerDashboardScreen() {
   const theme = useTheme();
   const router = useRouter();
+  const setBar = useSessionBarStore((s) => s.setBar);
+  const clearBar = useSessionBarStore((s) => s.clearBar);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState<DashboardData>(EMPTY_DASHBOARD);
@@ -136,6 +141,45 @@ export default function OwnerDashboardScreen() {
     const t = setInterval(() => setNowTs(Date.now()), 1000);
     return () => clearInterval(t);
   }, [dashboardData.pendingRequests.length]);
+
+  // ── Feed session bar from owner dashboard state ──────────────────────
+  useEffect(() => {
+    const { pendingRequests, liveSessions } = dashboardData;
+
+    if (pendingRequests.length > 0) {
+      const req = pendingRequests[0];
+      setBar({
+        variant: 'new_request',
+        bookingId: String(req.id),
+        spaceName: req.spaceName,
+        vehiclePlate: req.parkerName, // parkerName used as vehiclePlate display here
+        expiresAt: req.createdAt
+          ? new Date(new Date(req.createdAt).getTime() + APPROVAL_WINDOW_MS).toISOString()
+          : null,
+        endsAt: null,
+        otp: null,
+        etaText: null,
+      });
+      return;
+    }
+
+    if (liveSessions.length > 0) {
+      const session = liveSessions[0];
+      setBar({
+        variant: liveSessions.length === 1 ? 'owner_session_active' : 'owner_session_active',
+        bookingId: String(session.id),
+        spaceName: session.spaceName,
+        vehiclePlate: '',
+        expiresAt: null,
+        endsAt: null, // timeLeft is already a text; bar computes from endsAt
+        otp: null,
+        etaText: session.timeLeft ?? null,
+      });
+      return;
+    }
+
+    clearBar();
+  }, [dashboardData, setBar, clearBar]);
 
   // Remaining seconds in the 2-minute approval window for a pending request
   const approvalLeft = (createdAt: string) => {

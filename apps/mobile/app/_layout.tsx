@@ -10,6 +10,7 @@ import { ErrorBoundary } from '../components';
 import { useAuthStore } from '../store/authStore';
 import OwnerBookingAlert from '../components/OwnerBookingAlert';
 import { NetworkBanner } from '../components/NetworkBanner';
+import SessionBar from '../components/SessionBar';
 import { ThemeProvider } from '../context/ThemeContext';
 import { useNotificationDeepLink } from '../hooks/useNotificationDeepLink';
 import { startNetworkListener } from '../store/networkStore';
@@ -104,6 +105,8 @@ export default function RootLayout() {
         <NetworkBanner />
         {/* Global owner alert — appears on ANY screen when a booking request comes in */}
         <OwnerBookingAlert />
+        {/* Persistent sticky session bar — shows active booking/session state across all screens */}
+        <SessionBar />
         <Stack
           screenOptions={{
             headerShown: false,

@@ -17,6 +17,7 @@ import { PageHeader } from '../../components';
 import { api } from '../../services/api';
 import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 import { useTheme, type AppTheme } from '../../hooks/useTheme';
+import { useSessionBarStore } from '../../store/sessionBarStore';
 
 interface LiveSession {
   id: string;
@@ -36,6 +37,8 @@ export default function ActiveSessionsScreen() {
   const { colors: C, isDark } = theme;
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
+  const setBar = useSessionBarStore((s) => s.setBar);
+  const clearBar = useSessionBarStore((s) => s.clearBar);
   const [sessions, setSessions] = useState<LiveSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -69,6 +72,36 @@ export default function ActiveSessionsScreen() {
     const subs = events.map((evt) => DeviceEventEmitter.addListener(evt, () => fetchSessions(true)));
     return () => subs.forEach((s) => s.remove());
   }, [fetchSessions]);
+
+  // ── Feed session bar from active sessions list ───────────────────────
+  useEffect(() => {
+    if (sessions.length === 0) {
+      clearBar();
+      return;
+    }
+    // Find the session ending soonest — prioritise ending-soon
+    const endingSoon = sessions.find((s) => {
+      const mins = s.endTime
+        ? Math.max(0, Math.floor((new Date(s.endTime).getTime() - Date.now()) / 60000))
+        : null;
+      return mins !== null && mins < 15;
+    });
+    const target = endingSoon ?? sessions[0];
+    const endsAt = target.endTime ?? null;
+    const minsLeft = endsAt
+      ? Math.max(0, Math.floor((new Date(endsAt).getTime() - Date.now()) / 60000))
+      : null;
+    setBar({
+      variant: minsLeft !== null && minsLeft < 15 ? 'owner_session_ending' : 'owner_session_active',
+      bookingId: String(target.id),
+      spaceName: target.space,
+      vehiclePlate: target.vehicle ?? '',
+      expiresAt: null,
+      endsAt,
+      otp: null,
+      etaText: sessions.length > 1 ? `${sessions.length} active` : null,
+    });
+  }, [sessions, setBar, clearBar]);
 
 
   if (loading) {

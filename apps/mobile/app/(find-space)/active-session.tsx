@@ -20,12 +20,15 @@ import { useNetworkStore } from '../../store/networkStore';
 import PageHeader from '../../components/PageHeader';
 import ReportSubmitted from '../../components/ReportSubmitted';
 import { useRealtime } from '../../hooks/useRealtime';
+import { useSessionBarStore } from '../../store/sessionBarStore';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 
 export default function ActiveSessionScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
   const bookingId = params.bookingId as string;
+  const setBar = useSessionBarStore((s) => s.setBar);
+  const clearBar = useSessionBarStore((s) => s.clearBar);
 
   const [booking, setBooking] = useState<any>(null);
   const [verification, setVerification] = useState<any>(null);
@@ -114,6 +117,43 @@ export default function ActiveSessionScreen() {
       unsub4();
     };
   }, [bookingId, fetchBooking, onEvent]);
+
+  // ── Feed session bar from active session state ──────────────────────────
+  useEffect(() => {
+    if (!booking || !bookingId) return;
+    const spaceName = booking.space?.name ?? '';
+    const status = booking.status;
+
+    if (status === 'ACTIVE') {
+      const endsAt = booking.endTime ?? null;
+      const minsLeft = endsAt
+        ? Math.max(0, Math.floor((new Date(endsAt).getTime() - Date.now()) / 60000))
+        : null;
+      setBar({
+        variant: minsLeft !== null && minsLeft < 15 ? 'session_ending' : 'session_active',
+        bookingId: String(bookingId),
+        spaceName,
+        vehiclePlate: booking.vehicle?.licensePlate ?? '',
+        expiresAt: null,
+        endsAt,
+        otp: generatedOtp ?? booking.sessionOtp ?? null,
+        etaText: null,
+      });
+    } else if (status === 'APPROVED') {
+      setBar({
+        variant: 'arrived_otp_ready',
+        bookingId: String(bookingId),
+        spaceName,
+        vehiclePlate: '',
+        expiresAt: null,
+        endsAt: null,
+        otp: generatedOtp ?? booking.sessionOtp ?? null,
+        etaText: null,
+      });
+    } else if (status === 'COMPLETED' || status === 'CANCELLED' || status === 'EXPIRED') {
+      clearBar();
+    }
+  }, [booking, bookingId, generatedOtp, setBar, clearBar]);
 
   // Navigate to the receipt once the session is COMPLETED — single source of
   // truth, reached by both the socket event and the polling fallback.

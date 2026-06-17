@@ -19,12 +19,15 @@ import { useNetworkStore } from '../../store/networkStore';
 import { toast } from '../../utils/toast';
 import PageHeader from '../../components/PageHeader';
 import ReportSubmitted from '../../components/ReportSubmitted';
+import { useSessionBarStore } from '../../store/sessionBarStore';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 
 export default function SessionCompleteScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
   const bookingId = params.bookingId as string;
+  const setBar = useSessionBarStore((s) => s.setBar);
+  const clearBar = useSessionBarStore((s) => s.clearBar);
 
   const [booking, setBooking] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -75,6 +78,25 @@ export default function SessionCompleteScreen() {
   useEffect(() => {
     fetchBooking();
   }, [fetchBooking]);
+
+  // Show rating_pending bar until user submits rating; clear once done
+  useEffect(() => {
+    if (!booking || !bookingId) return;
+    if (!ratingSubmitted) {
+      setBar({
+        variant: 'rating_pending',
+        bookingId: String(bookingId),
+        spaceName: booking.space?.name ?? '',
+        vehiclePlate: '',
+        expiresAt: null,
+        endsAt: null,
+        otp: null,
+        etaText: null,
+      });
+    } else {
+      clearBar();
+    }
+  }, [booking, bookingId, ratingSubmitted, setBar, clearBar]);
 
   const handleSubmitRating = async () => {
     if (!useNetworkStore.getState().requireOnline()) return;

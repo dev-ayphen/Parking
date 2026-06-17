@@ -21,6 +21,7 @@ import { PageHeader } from '../../components';
 import { api } from '../../services/api';
 import { useNetworkStore } from '../../store/networkStore';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import { useSessionBarStore } from '../../store/sessionBarStore';
 
 interface OwnerRequest {
   id: string;
@@ -42,6 +43,8 @@ const formatEta = (eta: string | null | undefined) => {
 };
 
 export default function VerifyScreen() {
+  const setBar = useSessionBarStore((s) => s.setBar);
+  const clearBar = useSessionBarStore((s) => s.clearBar);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [pending, setPending] = useState<OwnerRequest[]>([]);
@@ -104,6 +107,39 @@ export default function VerifyScreen() {
     const subs = events.map((evt) => DeviceEventEmitter.addListener(evt, () => fetchRequests(true)));
     return () => subs.forEach((s) => s.remove());
   }, [fetchRequests]);
+
+  // ── Feed session bar from verify screen state ────────────────────────
+  // "parker at gate" = APPROVED bookings waiting for OTP verification
+  useEffect(() => {
+    if (approved.length > 0) {
+      const req = approved[0];
+      setBar({
+        variant: 'parker_at_gate',
+        bookingId: String(req.id),
+        spaceName: req.spaceName,
+        vehiclePlate: req.vehicle,
+        expiresAt: null,
+        endsAt: null,
+        otp: null,
+        etaText: null,
+      });
+    } else if (pending.length > 0) {
+      // Fallback: parker en route (approved, not yet arrived)
+      const req = pending[0];
+      setBar({
+        variant: 'parker_en_route',
+        bookingId: String(req.id),
+        spaceName: req.spaceName,
+        vehiclePlate: req.vehicle,
+        expiresAt: null,
+        endsAt: null,
+        otp: null,
+        etaText: req.etaText ?? null,
+      });
+    } else {
+      clearBar();
+    }
+  }, [approved, pending, setBar, clearBar]);
 
   const handleAccept = async (booking: OwnerRequest) => {
     try {

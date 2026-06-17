@@ -14,6 +14,8 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { useTheme } from "../../hooks/useTheme";
 import { clearAuthData } from '../../utils/secureStorage';
 import { api } from '../../services/api';
+import { useAuthStore } from '../../store/authStore';
+import { useSessionBarStore } from '../../store/sessionBarStore';
 import ProHeader from '../../components/Header/ProHeader';
 import PersonalizedGreeting from '../../components/Home/PersonalizedGreeting';
 import HomeCard from '../../components/Cards/HomeCard';
@@ -23,10 +25,27 @@ import MagnifyingGlassSvg from '../../components/Illustrations/MagnifyingGlassSv
 import { MapPin, CarFront } from 'lucide-react-native';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 
+// ── Helpers for session bar ────────────────────────────────────────────────────
+const APPROVAL_WINDOW_MS = 120_000; // 2 minutes
+
+function calcApprovalExpiry(createdAt: string) {
+  return new Date(new Date(createdAt).getTime() + APPROVAL_WINDOW_MS).toISOString();
+}
+
+function etaMinText(etaIso: string | null) {
+  if (!etaIso) return null;
+  const mins = Math.round((new Date(etaIso).getTime() - Date.now()) / 60000);
+  if (mins <= 0) return 'now';
+  return mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)}h`;
+}
+
 const HomeScreen = () => {
   const router = useRouter();
   const theme = useTheme();
   const { colors, isDark } = theme;
+  const currentUser = useAuthStore((s) => s.user);
+  const setBar = useSessionBarStore((s) => s.setBar);
+  const clearBar = useSessionBarStore((s) => s.clearBar);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [activeRoute, setActiveRoute] = useState('home');
   const [userName, setUserName] = useState('');
@@ -122,6 +141,123 @@ const HomeScreen = () => {
     }
   }, []);
 
+  // ── Session bar: resolve active booking state on focus ────────────────
+  const syncSessionBar = useCallback(async () => {
+    if (!currentUser?.id) return;
+    const role = currentUser.role; // 'PARKER' | 'OWNER' | undefined
+    try {
+      if (role === 'OWNER') {
+        // Owner: check for pending requests + active sessions on their spaces
+        const ownerData = await api.get('/home/owner-dashboard');
+        const pending = ownerData.pendingRequests ?? [];
+        const live = ownerData.liveSessions ?? [];
+
+        if (pending.length > 0) {
+          const req = pending[0];
+          setBar({
+            variant: pending.length > 1 ? 'new_request' : 'new_request',
+            bookingId: String(req.id),
+            spaceName: req.spaceName ?? '',
+            vehiclePlate: req.vehicle?.licensePlate ?? req.parkerName ?? '',
+            expiresAt: req.createdAt ? calcApprovalExpiry(req.createdAt) : null,
+            endsAt: null,
+            otp: null,
+            etaText: null,
+          });
+          return;
+        }
+
+        if (live.length > 0) {
+          const session = live[0];
+          const endsAt = session.endsAt ?? null;
+          const minsLeft = endsAt
+            ? Math.max(0, Math.floor((new Date(endsAt).getTime() - Date.now()) / 60000))
+            : null;
+          setBar({
+            variant: minsLeft !== null && minsLeft < 15 ? 'owner_session_ending' : 'owner_session_active',
+            bookingId: String(session.id),
+            spaceName: session.spaceName ?? '',
+            vehiclePlate: '',
+            expiresAt: null,
+            endsAt,
+            otp: null,
+            etaText: null,
+          });
+          return;
+        }
+
+        clearBar();
+      } else {
+        // Parker: check for active/pending bookings
+        const json = await api.get('/bookings/my?limit=10');
+        const bookings: any[] = json.bookings ?? [];
+
+        // Priority: ACTIVE > PENDING_APPROVAL > APPROVED
+        const active = bookings.find((b: any) => b.status === 'ACTIVE');
+        if (active) {
+          const endsAt = active.endTime ?? null;
+          const minsLeft = endsAt
+            ? Math.max(0, Math.floor((new Date(endsAt).getTime() - Date.now()) / 60000))
+            : null;
+          setBar({
+            variant: minsLeft !== null && minsLeft < 15 ? 'session_ending' : 'session_active',
+            bookingId: String(active.id),
+            spaceName: active.space?.name ?? '',
+            vehiclePlate: active.vehicle?.licensePlate ?? '',
+            expiresAt: null,
+            endsAt,
+            otp: active.sessionOtp ?? null,
+            etaText: null,
+          });
+          return;
+        }
+
+        const pending = bookings.find((b: any) => b.status === 'PENDING_APPROVAL');
+        if (pending) {
+          setBar({
+            variant: 'booking_pending',
+            bookingId: String(pending.id),
+            spaceName: pending.space?.name ?? '',
+            vehiclePlate: '',
+            expiresAt: pending.createdAt ? calcApprovalExpiry(pending.createdAt) : null,
+            endsAt: null,
+            otp: null,
+            etaText: null,
+          });
+          return;
+        }
+
+        const approved = bookings.find((b: any) => b.status === 'APPROVED');
+        if (approved) {
+          setBar({
+            variant: 'booking_approved',
+            bookingId: String(approved.id),
+            spaceName: approved.space?.name ?? '',
+            vehiclePlate: '',
+            expiresAt: null,
+            endsAt: null,
+            otp: null,
+            etaText: null,
+          });
+          return;
+        }
+
+        clearBar();
+      }
+    } catch (e) {
+      if (__DEV__) console.log('[HOME] session bar sync error', e);
+    }
+  }, [currentUser?.id, currentUser?.role, setBar, clearBar]);
+
+  // Sync bar on every focus + 30s background poll
+  useFocusEffect(
+    useCallback(() => {
+      syncSessionBar();
+      const t = setInterval(syncSessionBar, 30_000);
+      return () => clearInterval(t);
+    }, [syncSessionBar])
+  );
+
   useEffect(() => {
     loadDashboardData();
     loadRecentActivity();
@@ -138,7 +274,7 @@ const HomeScreen = () => {
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await Promise.all([loadDashboardData(), loadRecentActivity(), loadHomeStats(), loadUnreadCount()]);
+    await Promise.all([loadDashboardData(), loadRecentActivity(), loadHomeStats(), loadUnreadCount(), syncSessionBar()]);
     setIsRefreshing(false);
   };
 

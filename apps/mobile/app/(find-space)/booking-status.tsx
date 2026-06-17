@@ -22,6 +22,7 @@ import { api } from '../../services/api';
 import { useNetworkStore } from '../../store/networkStore';
 import PageHeader from '../../components/PageHeader';
 import { useRealtime } from '../../hooks/useRealtime';
+import { useSessionBarStore } from '../../store/sessionBarStore';
 import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 import { useTheme, type AppTheme } from '../../hooks/useTheme';
 
@@ -50,6 +51,8 @@ interface BookingData {
 
 const ETA_PRESETS = [10, 20, 30, 45, 60]; // minutes from now
 
+const APPROVAL_WINDOW_MS = 120_000;
+
 export default function BookingStatusScreen() {
   const theme = useTheme();
   const { colors: C, isDark } = theme;
@@ -57,6 +60,8 @@ export default function BookingStatusScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
   const bookingId = params.bookingId as string;
+  const setBar = useSessionBarStore((s) => s.setBar);
+  const clearBar = useSessionBarStore((s) => s.clearBar);
 
   const [booking, setBooking] = useState<BookingData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -120,6 +125,41 @@ export default function BookingStatusScreen() {
       unsub6();
     };
   }, [bookingId, fetchBooking, onEvent]);
+
+  // ── Feed session bar from this screen's booking data ──────────────────
+  useEffect(() => {
+    if (!booking || !bookingId) return;
+    const spaceName = booking.space?.name ?? '';
+    const status = booking.status;
+
+    if (status === 'PENDING_APPROVAL') {
+      setBar({
+        variant: 'booking_pending',
+        bookingId: String(bookingId),
+        spaceName,
+        vehiclePlate: '',
+        expiresAt: booking.createdAt
+          ? new Date(new Date(booking.createdAt).getTime() + APPROVAL_WINDOW_MS).toISOString()
+          : null,
+        endsAt: null,
+        otp: null,
+        etaText: null,
+      });
+    } else if (status === 'APPROVED') {
+      setBar({
+        variant: 'booking_approved',
+        bookingId: String(bookingId),
+        spaceName,
+        vehiclePlate: '',
+        expiresAt: null,
+        endsAt: null,
+        otp: null,
+        etaText: null,
+      });
+    } else if (status === 'CANCELLED' || status === 'REJECTED' || status === 'EXPIRED') {
+      clearBar();
+    }
+  }, [booking, bookingId, setBar, clearBar]);
 
   // Navigate forward when ACTIVE
   useEffect(() => {

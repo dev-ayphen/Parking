@@ -8,6 +8,7 @@ import {View,
   Alert,
   RefreshControl,
   ActivityIndicator,
+  DeviceEventEmitter,
   Image} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -15,7 +16,7 @@ import { useTheme } from "../../hooks/useTheme";
 import { clearAuthData } from '../../utils/secureStorage';
 import { api } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
-import { useSessionBarStore } from '../../store/sessionBarStore';
+import { useSessionBarStore, computeEndsAtISO, computeExpiresAt, minsUntil } from '../../store/sessionBarStore';
 import ProHeader from '../../components/Header/ProHeader';
 import PersonalizedGreeting from '../../components/Home/PersonalizedGreeting';
 import HomeCard from '../../components/Cards/HomeCard';
@@ -25,27 +26,14 @@ import MagnifyingGlassSvg from '../../components/Illustrations/MagnifyingGlassSv
 import { MapPin, CarFront } from 'lucide-react-native';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 
-// ── Helpers for session bar ────────────────────────────────────────────────────
-const APPROVAL_WINDOW_MS = 120_000; // 2 minutes
-
-function calcApprovalExpiry(createdAt: string) {
-  return new Date(new Date(createdAt).getTime() + APPROVAL_WINDOW_MS).toISOString();
-}
-
-function etaMinText(etaIso: string | null) {
-  if (!etaIso) return null;
-  const mins = Math.round((new Date(etaIso).getTime() - Date.now()) / 60000);
-  if (mins <= 0) return 'now';
-  return mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)}h`;
-}
 
 const HomeScreen = () => {
   const router = useRouter();
   const theme = useTheme();
   const { colors, isDark } = theme;
   const currentUser = useAuthStore((s) => s.user);
-  const setBar = useSessionBarStore((s) => s.setBar);
-  const clearBar = useSessionBarStore((s) => s.clearBar);
+  const setBarForSource = useSessionBarStore((s) => s.setBarForSource);
+  const clearSource = useSessionBarStore((s) => s.clearSource);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [activeRoute, setActiveRoute] = useState('home');
   const [userName, setUserName] = useState('');
@@ -141,115 +129,171 @@ const HomeScreen = () => {
     }
   }, []);
 
-  // ── Session bar: resolve active booking state on focus ────────────────
+  // ── Session bar sync ──────────────────────────────────────────────────────
+  // A user can be BOTH a parker (booked someone's space) and an owner (someone
+  // booked theirs) at the same time. We therefore sync BOTH sources independently
+  // and in parallel — each writes only its own source, so both bars coexist and
+  // stack in the SessionBar ("1/2" + swipe). We don't gate on currentUser.role
+  // because that single field doesn't capture dual activity.
+
+  // Parker side: GET /bookings/my — my own active/pending bookings.
+  const syncParkerBar = useCallback(async () => {
+    try {
+      const json = await api.get('/bookings/my?limit=10');
+      const bookings: any[] = json.bookings ?? [];
+
+      // Priority: ACTIVE > PENDING_APPROVAL > APPROVED > COMPLETED(unrated)
+      const active = bookings.find((b: any) => b.status === 'ACTIVE');
+      if (active) {
+        const endsAtISO = computeEndsAtISO(active.sessionStartedAt, active.eta, active.createdAt, active.duration ?? 1);
+        const mins = minsUntil(endsAtISO);
+        setBarForSource('parker', {
+          variant: mins !== null && mins < 15 ? 'session_ending' : 'session_active',
+          bookingId: String(active.id),
+          spaceName: active.space?.name ?? '',
+          parkerName: '',
+          vehiclePlate: active.vehicle?.licensePlate ?? '',
+          amount: active.totalAmount ?? null,
+          durationHours: active.duration ?? null,
+          expiresAt: null,
+          endsAtISO,
+          otp: active.sessionOtp ?? null,
+          etaText: null,
+        });
+        return;
+      }
+
+      const pending = bookings.find((b: any) => b.status === 'PENDING_APPROVAL');
+      if (pending) {
+        setBarForSource('parker', {
+          variant: 'booking_pending',
+          bookingId: String(pending.id),
+          spaceName: pending.space?.name ?? '',
+          parkerName: '',
+          vehiclePlate: '',
+          amount: pending.totalAmount ?? null,
+          durationHours: pending.duration ?? null,
+          expiresAt: pending.createdAt ? computeExpiresAt(pending.createdAt) : null,
+          endsAtISO: null,
+          otp: null,
+          etaText: null,
+        });
+        return;
+      }
+
+      const approved = bookings.find((b: any) => b.status === 'APPROVED');
+      if (approved) {
+        // Format the arrival deadline (eta) as "6:30 PM" so the bar can remind
+        // the parker to head over before they forget the booking.
+        const etaText = approved.eta
+          ? new Date(approved.eta).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })
+          : null;
+        setBarForSource('parker', {
+          variant: approved.sessionOtp ? 'arrived_otp_ready' : 'booking_approved',
+          bookingId: String(approved.id),
+          spaceName: approved.space?.name ?? '',
+          parkerName: '',
+          vehiclePlate: approved.vehicle?.licensePlate ?? '',
+          amount: approved.totalAmount ?? null,
+          durationHours: approved.duration ?? null,
+          expiresAt: null,
+          endsAtISO: null,
+          otp: approved.sessionOtp ?? null,
+          etaText,
+        });
+        return;
+      }
+
+      // Note: an EXPIRED booking does NOT get a bar — the inbox notification
+      // ("Booking Request Expired") already informs the user. Bars are only for
+      // active, actionable states, never dead/finished ones.
+
+      const unrated = bookings.find((b: any) => b.status === 'COMPLETED' && !b.rating);
+      if (unrated) {
+        setBarForSource('parker', {
+          variant: 'rating_pending',
+          bookingId: String(unrated.id),
+          spaceName: unrated.space?.name ?? '',
+          parkerName: '',
+          vehiclePlate: '',
+          amount: unrated.totalAmount ?? null,
+          durationHours: null,
+          expiresAt: null,
+          endsAtISO: null,
+          otp: null,
+          etaText: null,
+        });
+        return;
+      }
+
+      clearSource('parker');
+    } catch (e) {
+      if (__DEV__) console.log('[HOME] parker bar sync error', e);
+    }
+  }, [setBarForSource, clearSource]);
+
+  // Owner side: GET /home/owner-dashboard — requests/sessions on MY spaces.
+  const syncOwnerBar = useCallback(async () => {
+    try {
+      const ownerData = await api.get('/home/owner-dashboard');
+      const pending: any[] = ownerData.pendingRequests ?? [];
+      const live: any[]    = ownerData.liveSessions ?? [];
+
+      if (pending.length > 0) {
+        const req = pending[0];
+        setBarForSource('owner', {
+          variant: 'new_request',
+          bookingId: String(req.id),
+          spaceName: req.spaceName ?? '',
+          parkerName: req.parkerName ?? '',
+          vehiclePlate: req.licensePlate ?? '',
+          amount: req.amount ?? null,
+          durationHours: req.durationHours ?? null,
+          expiresAt: req.createdAt ? computeExpiresAt(req.createdAt) : null,
+          endsAtISO: null,
+          otp: null,
+          etaText: req.etaText ?? null,
+        });
+        return;
+      }
+
+      if (live.length > 0) {
+        const leaving = live.find((s: any) => s.isLeaving);
+        const endingSoon = live.find((s: any) => { const m = minsUntil(s.endTimeISO); return m !== null && m < 15; });
+        const target = leaving ?? endingSoon ?? live[0];
+        const variant = leaving ? 'owner_session_leaving' : endingSoon ? 'owner_session_ending' : 'owner_session_active';
+        setBarForSource('owner', {
+          variant,
+          bookingId: String(target.id),
+          spaceName: target.spaceName ?? '',
+          parkerName: target.parkerName ?? '',
+          vehiclePlate: target.licensePlate ?? '',
+          amount: null,
+          durationHours: null,
+          expiresAt: null,
+          endsAtISO: target.endTimeISO ?? null,
+          otp: null,
+          etaText: live.length > 1 ? `${live.length} sessions` : (target.remainingText ?? null),
+        });
+        return;
+      }
+
+      clearSource('owner');
+    } catch (e) {
+      // A pure parker has no spaces; owner-dashboard may 403/empty — that's fine,
+      // just clear the owner bar and move on without surfacing an error.
+      clearSource('owner');
+      if (__DEV__) console.log('[HOME] owner bar sync skipped', e);
+    }
+  }, [setBarForSource, clearSource]);
+
+  // Run both in parallel on every sync trigger.
   const syncSessionBar = useCallback(async () => {
     if (!currentUser?.id) return;
-    const role = currentUser.role; // 'PARKER' | 'OWNER' | undefined
-    try {
-      if (role === 'OWNER') {
-        // Owner: check for pending requests + active sessions on their spaces
-        const ownerData = await api.get('/home/owner-dashboard');
-        const pending = ownerData.pendingRequests ?? [];
-        const live = ownerData.liveSessions ?? [];
+    await Promise.all([syncParkerBar(), syncOwnerBar()]);
+  }, [currentUser?.id, syncParkerBar, syncOwnerBar]);
 
-        if (pending.length > 0) {
-          const req = pending[0];
-          setBar({
-            variant: pending.length > 1 ? 'new_request' : 'new_request',
-            bookingId: String(req.id),
-            spaceName: req.spaceName ?? '',
-            vehiclePlate: req.vehicle?.licensePlate ?? req.parkerName ?? '',
-            expiresAt: req.createdAt ? calcApprovalExpiry(req.createdAt) : null,
-            endsAt: null,
-            otp: null,
-            etaText: null,
-          });
-          return;
-        }
-
-        if (live.length > 0) {
-          const session = live[0];
-          const endsAt = session.endsAt ?? null;
-          const minsLeft = endsAt
-            ? Math.max(0, Math.floor((new Date(endsAt).getTime() - Date.now()) / 60000))
-            : null;
-          setBar({
-            variant: minsLeft !== null && minsLeft < 15 ? 'owner_session_ending' : 'owner_session_active',
-            bookingId: String(session.id),
-            spaceName: session.spaceName ?? '',
-            vehiclePlate: '',
-            expiresAt: null,
-            endsAt,
-            otp: null,
-            etaText: null,
-          });
-          return;
-        }
-
-        clearBar();
-      } else {
-        // Parker: check for active/pending bookings
-        const json = await api.get('/bookings/my?limit=10');
-        const bookings: any[] = json.bookings ?? [];
-
-        // Priority: ACTIVE > PENDING_APPROVAL > APPROVED
-        const active = bookings.find((b: any) => b.status === 'ACTIVE');
-        if (active) {
-          const endsAt = active.endTime ?? null;
-          const minsLeft = endsAt
-            ? Math.max(0, Math.floor((new Date(endsAt).getTime() - Date.now()) / 60000))
-            : null;
-          setBar({
-            variant: minsLeft !== null && minsLeft < 15 ? 'session_ending' : 'session_active',
-            bookingId: String(active.id),
-            spaceName: active.space?.name ?? '',
-            vehiclePlate: active.vehicle?.licensePlate ?? '',
-            expiresAt: null,
-            endsAt,
-            otp: active.sessionOtp ?? null,
-            etaText: null,
-          });
-          return;
-        }
-
-        const pending = bookings.find((b: any) => b.status === 'PENDING_APPROVAL');
-        if (pending) {
-          setBar({
-            variant: 'booking_pending',
-            bookingId: String(pending.id),
-            spaceName: pending.space?.name ?? '',
-            vehiclePlate: '',
-            expiresAt: pending.createdAt ? calcApprovalExpiry(pending.createdAt) : null,
-            endsAt: null,
-            otp: null,
-            etaText: null,
-          });
-          return;
-        }
-
-        const approved = bookings.find((b: any) => b.status === 'APPROVED');
-        if (approved) {
-          setBar({
-            variant: 'booking_approved',
-            bookingId: String(approved.id),
-            spaceName: approved.space?.name ?? '',
-            vehiclePlate: '',
-            expiresAt: null,
-            endsAt: null,
-            otp: null,
-            etaText: null,
-          });
-          return;
-        }
-
-        clearBar();
-      }
-    } catch (e) {
-      if (__DEV__) console.log('[HOME] session bar sync error', e);
-    }
-  }, [currentUser?.id, currentUser?.role, setBar, clearBar]);
-
-  // Sync bar on every focus + 30s background poll
+  // Sync bar on every focus + 30s background poll (self-healing fallback)
   useFocusEffect(
     useCallback(() => {
       syncSessionBar();
@@ -257,6 +301,32 @@ const HomeScreen = () => {
       return () => clearInterval(t);
     }, [syncSessionBar])
   );
+
+  // Instant bar updates: re-sync the moment any booking/session socket event
+  // arrives (parker- AND owner-facing), so the home bar reflects state changes
+  // immediately instead of waiting up to 30s for the next poll. Mirrors the
+  // pattern Swiggy/Ola use — socket first, poll only as a fallback.
+  useEffect(() => {
+    const events = [
+      // Parker-facing lifecycle
+      'booking:approved', 'booking:rejected', 'booking:expired',
+      'booking:cancelled', 'verification:ready', 'session:started',
+      'session:completed', 'rating:new',
+      // Owner-facing lifecycle
+      'booking:new', 'parker:arrived', 'parker:eta-update', 'parker:leaving',
+      // Catch-all
+      'notification:new',
+    ];
+    const subs = events.map((evt) =>
+      DeviceEventEmitter.addListener(evt, () => {
+        syncSessionBar();
+        // Any of these events may have created a notification — refresh the bell
+        // badge live so it bumps without waiting for a screen refocus.
+        loadUnreadCount();
+      }),
+    );
+    return () => subs.forEach((s) => s.remove());
+  }, [syncSessionBar, loadUnreadCount]);
 
   useEffect(() => {
     loadDashboardData();

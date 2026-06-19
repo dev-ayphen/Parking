@@ -19,6 +19,16 @@ export const otpVerifyLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Arrival-OTP verification: 15 attempts per 10 min per IP. Backstop on top of
+// the per-booking attempt lock in the service (defends a 4-digit code).
+export const sessionOtpVerifyLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 15,
+  message: { error: 'Too many OTP attempts. Please wait a few minutes and try again.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Booking creation: 10 per 5 min per IP (prevents booking spam)
 export const bookingLimiter = rateLimit({
   windowMs: 5 * 60 * 1000,

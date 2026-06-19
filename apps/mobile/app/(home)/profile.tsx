@@ -214,16 +214,20 @@ const ProfileScreen = () => {
               onPress={handlePickPhoto}
               disabled={photoUploading}
             >
-              {user.photoUrl ? (
-                <Image source={{ uri: user.photoUrl }} style={styles.avatarImage} />
-              ) : (
-                <User size={32} color={Colors.primary} strokeWidth={2.5} />
-              )}
-              {photoUploading && (
-                <View style={styles.avatarUploading}>
-                  <ActivityIndicator color={Colors.white} size="small" />
-                </View>
-              )}
+              {/* Inner circle clips the image; the badge lives OUTSIDE it so it
+                  isn't cut off by overflow:hidden. */}
+              <View style={styles.avatarCircle}>
+                {user.photoUrl ? (
+                  <Image source={{ uri: user.photoUrl }} style={styles.avatarImage} />
+                ) : (
+                  <User size={32} color={Colors.primary} strokeWidth={2.5} />
+                )}
+                {photoUploading && (
+                  <View style={styles.avatarUploading}>
+                    <ActivityIndicator color={Colors.white} size="small" />
+                  </View>
+                )}
+              </View>
               <View style={styles.editAvatarBadge}>
                 <Camera size={14} color={Colors.white} strokeWidth={2.5} />
               </View>
@@ -444,16 +448,25 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.md,
   },
   avatarContainer: {
+    // Outer wrapper — positions the camera badge. NO overflow:hidden here, or
+    // the badge (which sits at bottom/right: -4) gets clipped.
+    width: 72,
+    height: 72,
+    marginBottom: Spacing['3xl'],
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarCircle: {
+    // Inner circle — clips the avatar image into a round shape.
     width: 72,
     height: 72,
     borderRadius: 36,
     backgroundColor: Colors.primaryBg,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: Spacing['3xl'],
     borderWidth: 3,
     borderColor: Colors.primaryBg,
-    position: 'relative',
     overflow: 'hidden',
   },
   avatarImage: {

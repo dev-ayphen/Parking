@@ -93,9 +93,10 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       socket.on('booking:rejected',  (payload: any) => DeviceEventEmitter.emit('booking:rejected',  payload));
       socket.on('booking:expired',   (payload: any) => DeviceEventEmitter.emit('booking:expired',   payload));
       socket.on('booking:cancelled', (payload: any) => DeviceEventEmitter.emit('booking:cancelled', payload));
-      // Owner-facing arrival / ETA
+      // Owner-facing arrival / ETA / departure
       socket.on('parker:arrived', (payload: any) => DeviceEventEmitter.emit('parker:arrived', payload));
       socket.on('parker:eta-update', (payload: any) => DeviceEventEmitter.emit('parker:eta-update', payload));
+      socket.on('parker:leaving', (payload: any) => DeviceEventEmitter.emit('parker:leaving', payload));
       // Parker-facing damage/condition record ready to acknowledge
       socket.on('verification:ready', (payload: any) => DeviceEventEmitter.emit('verification:ready', payload));
       // Both-facing session lifecycle

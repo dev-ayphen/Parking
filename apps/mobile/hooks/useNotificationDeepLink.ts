@@ -59,6 +59,10 @@ export function useNotificationDeepLink() {
               router.push('/(home)/support/tickets');
             }
             break;
+          case 'verify':
+            // Parker is at the gate with an arrival OTP — owner opens the Verify tab.
+            router.push('/(my-spaces)/verify');
+            break;
           case 'my-spaces':
             router.push('/(my-spaces)');
             break;

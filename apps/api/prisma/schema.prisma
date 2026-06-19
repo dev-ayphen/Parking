@@ -37,6 +37,11 @@ model User {
   locationServices    Boolean  @default(true)
   darkTheme           Boolean  @default(false)
 
+  // When the user last opened the notifications inbox (tapped "read all").
+  // Synthetic booking-derived notifications created BEFORE this are considered
+  // read, so the unread badge clears for them too (they have no DB isRead flag).
+  notificationsReadAt DateTime?
+
   // Account moderation status — admin-controlled
   status              String   @default("ACTIVE") // ACTIVE | SUSPENDED | BANNED
   suspendedAt         DateTime?
@@ -656,8 +661,8 @@ model IncidentReport {
   reportType        String   // TOWING | VEHICLE_DAMAGE | UNSAFE_SPACE | DISPUTE | PROPERTY_DAMAGE | HARASSMENT | ILLEGAL_PARKING | THEFT | OTHER
   description       String
   evidenceUrls      String[] // photo/video proof
-  status            String   @default("REPORTED") // REPORTED | INVESTIGATING | RESOLVED | CLOSED
-  resolution        String?  // Admin notes on how resolved
+  status            String   @default("OPEN") // OPEN | INVESTIGATING | RESOLVED | REJECTED
+  adminNotes        String?  // Admin notes on investigation/resolution
   resolvedAt        DateTime?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt

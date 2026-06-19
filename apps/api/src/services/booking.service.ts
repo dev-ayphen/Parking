@@ -1,6 +1,13 @@
 import { Request } from 'express';
+import { Prisma } from '@prisma/client';
 import { db } from '../config/database';
 import { auditService } from './audit.service';
+import { redis } from '../config/redis';
+
+// Arrival-OTP brute-force lock: N wrong guesses on a booking → short lockout.
+const OTP_MAX_ATTEMPTS = 5;
+const OTP_LOCK_SECONDS = 15 * 60; // 15 minutes
+const otpAttemptKey = (bookingId: string) => `session_otp_attempts:${bookingId}`;
 
 export const bookingService = {
   createBooking: async (parkerId: number, data: any, req?: Request) => {
@@ -15,10 +22,12 @@ export const bookingService = {
       throw Object.assign(new Error('Invalid vehicle ID'), { statusCode: 400 });
     }
 
-    // Wrap capacity check + booking creation in a transaction.
-    // Prisma serializable isolation prevents two parallel requests from both
-    // reading capacity=N-1 and both inserting a booking, exceeding capacity.
-    const booking = await db.$transaction(async (tx) => {
+    // Wrap capacity check + booking creation in a SERIALIZABLE transaction so two
+    // parallel requests can't both read capacity=N-1 and both insert (which would
+    // exceed capacity). Under Serializable, Postgres aborts one with a
+    // serialization failure (P2034); we retry it once — on retry it sees the
+    // other's committed row and correctly hits the capacity/one-active guard.
+    const runTxn = () => db.$transaction(async (tx) => {
       const space = await tx.space.findUnique({
         where: { id: spaceId },
         select: { ownerId: true, hourlyRate: true, status: true, availability: true, capacity: true },
@@ -50,6 +59,27 @@ export const bookingService = {
       });
       if (!vehicle) {
         throw Object.assign(new Error('Vehicle not found or does not belong to you'), { statusCode: 404 });
+      }
+
+      // One active booking per parker. A parker who already has an in-flight
+      // booking (awaiting approval, approved/arrived, or an active/leaving session)
+      // must finish or cancel it before starting another — prevents holding
+      // multiple spots and keeps the session bar unambiguous. Checked inside the
+      // transaction so two rapid taps can't both pass.
+      // (PENDING_APPROVAL covers "pending"; APPROVED covers "arrived" once the OTP
+      //  is generated; ACTIVE covers "leaving" once sessionEndedAt is set.)
+      const existingActive = await tx.booking.findFirst({
+        where: {
+          parkerId,
+          status: { in: ['PENDING_APPROVAL', 'APPROVED', 'ACTIVE'] },
+        },
+        select: { id: true },
+      });
+      if (existingActive) {
+        throw Object.assign(
+          new Error('You already have an active parking booking. Please complete or cancel your current booking before creating a new one.'),
+          { statusCode: 409 }
+        );
       }
 
       // Capacity check inside transaction — atomic with the create below
@@ -85,7 +115,21 @@ export const bookingService = {
           vehicle: { select: { id: true, licensePlate: true, vehicleType: true } },
         },
       });
-    });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+    // Retry once if Postgres aborts the txn with a serialization failure (P2034):
+    // a concurrent booking committed first, so on retry we re-read and correctly
+    // enforce the capacity / one-active-booking guards.
+    let booking;
+    try {
+      booking = await runTxn();
+    } catch (err: any) {
+      if (err?.code === 'P2034') {
+        booking = await runTxn();
+      } else {
+        throw err;
+      }
+    }
 
     await auditService.logBookingEvent({
       bookingId: booking.id,
@@ -106,6 +150,9 @@ export const bookingService = {
       include: {
         space: { select: { id: true, name: true, address: true, hourlyRate: true } },
         vehicle: { select: { licensePlate: true, vehicleType: true } },
+        // Include the rating so the home screen can tell a COMPLETED booking
+        // apart from one that still needs rating (the rating_pending session bar).
+        rating: { select: { id: true, rating: true, review: true } },
       },
       orderBy: { createdAt: 'desc' },
       take: limit,
@@ -156,6 +203,10 @@ export const bookingService = {
         space: spaceNameMap[b.spaceId] || 'Unknown Space',
         startTime: start.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
         endTime: end.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
+        // ISO timestamps so clients can compute live countdowns (the *Time fields
+        // above are formatted clock strings for display only).
+        startTimeISO: start.toISOString(),
+        endTimeISO: end.toISOString(),
         remaining,
         progressPercent,
         // Parker has tapped "I Am Leaving" — owner should confirm exit
@@ -316,12 +367,38 @@ export const bookingService = {
     if (userId != null && (booking.space as any)?.ownerId !== userId) {
       throw Object.assign(new Error('Only the space owner can verify the arrival OTP'), { statusCode: 403 });
     }
+    // Status guard: an OTP only starts a session for an APPROVED booking — never
+    // drive a CANCELLED/EXPIRED/already-ACTIVE booking to ACTIVE via a stale code.
+    if (booking.status !== 'APPROVED') {
+      throw Object.assign(new Error('This booking is no longer awaiting arrival verification.'), { statusCode: 400 });
+    }
     if (!booking.sessionOtp) {
       throw Object.assign(new Error('The parker has not generated an OTP yet.'), { statusCode: 400 });
     }
-    if (booking.sessionOtp !== String(data.otp)) {
-      throw Object.assign(new Error('Invalid OTP. Please try again.'), { statusCode: 400 });
+
+    // Brute-force lock: too many wrong guesses on this booking → temporary lockout.
+    const key = otpAttemptKey(bookingId);
+    const attempts = parseInt((await redis.get(key).catch(() => null)) ?? '0', 10);
+    if (attempts >= OTP_MAX_ATTEMPTS) {
+      throw Object.assign(
+        new Error('Too many incorrect OTP attempts. Please wait a few minutes before trying again.'),
+        { statusCode: 429 },
+      );
     }
+
+    if (booking.sessionOtp !== String(data.otp)) {
+      // Count the failure and (re)set the lock window.
+      const next = attempts + 1;
+      await redis.set(key, String(next), 'EX', OTP_LOCK_SECONDS).catch(() => {});
+      const remaining = Math.max(0, OTP_MAX_ATTEMPTS - next);
+      throw Object.assign(
+        new Error(`Invalid OTP. ${remaining > 0 ? `${remaining} attempt${remaining === 1 ? '' : 's'} left.` : 'Please wait before retrying.'}`),
+        { statusCode: 400 },
+      );
+    }
+
+    // Success — clear the attempt counter.
+    await redis.del(key).catch(() => {});
     const updated = await db.booking.update({
       where: { id: bookingId },
       data: { status: 'ACTIVE', sessionStartedAt: new Date(), sessionOtp: null },
@@ -333,7 +410,7 @@ export const bookingService = {
     return { success: true, booking: updated };
   },
 
-  markLeavingSession: async (bookingId: string, req?: Request) => {
+  markLeavingSession: async (bookingId: string, userId: number, req?: Request) => {
     const booking = await db.booking.findUnique({
       where: { id: bookingId },
       include: {
@@ -342,6 +419,10 @@ export const bookingService = {
       },
     });
     if (!booking) throw Object.assign(new Error('Booking not found'), { statusCode: 404 });
+    // Only the parker on this booking may report they're leaving.
+    if (booking.parkerId !== userId) {
+      throw Object.assign(new Error('Forbidden: only the parker can leave this session'), { statusCode: 403 });
+    }
     if (booking.status !== 'ACTIVE') {
       throw Object.assign(new Error('Booking is not active'), { statusCode: 400 });
     }
@@ -365,15 +446,32 @@ export const bookingService = {
     };
   },
 
-  releaseSpace: async (bookingId: string, data: any, req?: Request) => {
+  releaseSpace: async (bookingId: string, userId: number, data: any, req?: Request) => {
     const booking = await db.booking.findUnique({
       where: { id: bookingId },
       include: { space: { select: { ownerId: true, hourlyRate: true } } },
     });
     if (!booking) throw Object.assign(new Error('Booking not found'), { statusCode: 404 });
+    // Only the space owner may complete (verify exit + finalize the bill).
+    if ((booking.space as any)?.ownerId !== userId) {
+      throw Object.assign(new Error('Forbidden: only the space owner can complete this session'), { statusCode: 403 });
+    }
+    // Can only complete an ACTIVE session — never re-complete or complete a
+    // non-active booking (prevents double-billing / state corruption).
+    if (booking.status !== 'ACTIVE') {
+      throw Object.assign(new Error('Only an active session can be completed'), { statusCode: 400 });
+    }
 
-    const exitTime = data?.exitTime ? new Date(data.exitTime) : new Date();
     const entryTime = booking.sessionStartedAt ?? booking.createdAt;
+    const now = new Date();
+    // The owner MAY supply an earlier exit time (e.g. the car left 20 min ago),
+    // but we clamp it server-side to [entryTime, now] so it can never be used to
+    // bill the future or before entry — neither under- nor over-charging.
+    let exitTime = data?.exitTime ? new Date(data.exitTime) : now;
+    if (isNaN(exitTime.getTime())) exitTime = now;
+    if (exitTime.getTime() > now.getTime()) exitTime = now;
+    if (exitTime.getTime() < entryTime.getTime()) exitTime = entryTime;
+
     const durationMs = exitTime.getTime() - entryTime.getTime();
     const durationHours = Math.max(0.5, durationMs / (1000 * 60 * 60));
     const hourlyRate = (booking.space as any)?.hourlyRate ?? 0;
@@ -622,7 +720,10 @@ export const bookingService = {
   generateSessionOtp: async (bookingId: string, userId: number, req?: Request) => {
     const booking = await db.booking.findUnique({
       where: { id: bookingId },
-      include: { space: { select: { ownerId: true } } },
+      include: {
+        space: { select: { ownerId: true } },
+        parker: { select: { firstName: true, lastName: true } },
+      },
     });
     if (!booking) throw Object.assign(new Error('Booking not found'), { statusCode: 404 });
     // The PARKER generates their arrival OTP and shows it to the owner on-site.
@@ -638,6 +739,9 @@ export const bookingService = {
       bookingId, event: 'OTP_GENERATED', fromStatus: booking.status, toStatus: booking.status,
       actorId: userId, actorRole: 'PARKER', req,
     });
-    return { success: true, otp, bookingId, ownerId: (booking.space as any)?.ownerId ?? null };
+    const parkerName = (booking as any).parker?.firstName
+      ? `${(booking as any).parker.firstName} ${(booking as any).parker.lastName || ''}`.trim()
+      : null;
+    return { success: true, otp, bookingId, ownerId: (booking.space as any)?.ownerId ?? null, parkerName };
   },
 };

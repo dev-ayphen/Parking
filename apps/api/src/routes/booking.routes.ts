@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth';
-import { bookingLimiter } from '../middleware/rateLimit';
+import { bookingLimiter, sessionOtpVerifyLimiter } from '../middleware/rateLimit';
 import { idempotency } from '../middleware/idempotency';
 import { validate } from '../middleware/validate';
 import { createBookingSchema } from '../validations/booking.validation';
@@ -36,7 +36,7 @@ router.put('/:id/cancel', bookingController.cancelBooking);
 router.put('/:id/arrived', bookingController.markParkerArrived);
 router.put('/:id/eta', bookingController.updateEta);
 router.get('/:id/otp', bookingController.generateSessionOtp);
-router.post('/:id/verify-otp', bookingController.verifySessionOtp);
+router.post('/:id/verify-otp', sessionOtpVerifyLimiter, bookingController.verifySessionOtp);
 router.put('/:id/leaving', bookingController.markLeavingSession);
 router.put('/:id/release', bookingController.releaseSpace);
 router.post('/:id/verification', bookingController.submitVerification);

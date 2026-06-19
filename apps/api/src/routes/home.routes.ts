@@ -135,6 +135,7 @@ router.get('/notifications', authenticate, async (req: Request, res: Response) =
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
+
     // Parker bookings (user booked a space)
     const parkerBookings = await db.booking.findMany({
       where: { parkerId: userId },
@@ -213,7 +214,19 @@ router.get('/notifications', authenticate, async (req: Request, res: Response) =
     // Sort newest first
     notifications.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-    return res.json({ success: true, notifications, unreadCount: realNotifications.filter((n) => !n.isRead).length });
+    // Unread badge = ONLY real DB notifications still unread.
+    //
+    // The synthetic (booking/space-state-derived) rows above are display-only
+    // duplicates — every genuine event ("New Booking Request", "Booking
+    // Approved", etc.) is ALSO written as a real DB notification via notifyUser,
+    // which carries a proper isRead flag and is created exactly once. Counting
+    // the synthetic rows too would (a) double-count and (b) light the badge on
+    // first open with historical state the user never "received". So the badge
+    // tracks DB notifications only; opening the inbox marks them read and the
+    // badge clears.
+    const unreadCount = realNotifications.filter((n) => !n.isRead).length;
+
+    return res.json({ success: true, notifications, unreadCount });
   } catch (error) {
     console.error('Notifications error:', error);
     return res.status(500).json({ success: false, message: 'Internal server error' });
@@ -239,7 +252,12 @@ router.post('/notifications/read-all', authenticate, async (req: Request, res: R
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ success: false });
-    const r = await db.notification.updateMany({ where: { userId, isRead: false }, data: { isRead: true } });
+    // Mark DB notifications read AND stamp the inbox-clear time so synthetic
+    // booking notifications are counted as read too (they have no isRead flag).
+    const [r] = await Promise.all([
+      db.notification.updateMany({ where: { userId, isRead: false }, data: { isRead: true } }),
+      db.user.update({ where: { id: userId }, data: { notificationsReadAt: new Date() } }),
+    ]);
     return res.json({ success: true, updated: r.count });
   } catch (error) {
     return res.status(500).json({ success: false, message: (error as Error).message });
@@ -542,10 +560,15 @@ router.get('/owner-dashboard', authenticate, async (req: Request, res: Response)
         spaceName: b.space?.name || '—',
         startTime: formatTime(startedAt),
         endTime: formatTime(endsAt),
+        // ISO timestamp so the client can run a live countdown (endTime above is
+        // a formatted clock string for display only).
+        endTimeISO: endsAt.toISOString(),
         progressPct,
         remainingText: rh > 0 ? `${rh}h ${rm}m left` : `${rm}m left`,
         vehicle: b.vehicle?.brandModel || null,
         licensePlate: b.vehicle?.licensePlate || null,
+        // Parker has tapped "I Am Leaving" — owner must confirm the exit now.
+        isLeaving: !!b.sessionEndedAt,
       };
     });
 

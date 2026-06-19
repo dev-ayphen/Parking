@@ -15,7 +15,6 @@ import {View,
   RefreshControl} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import LeafletMap from '../../components/LeafletMap';
@@ -492,15 +491,12 @@ const FindSpaceScreen = () => {
 
   const loadUnreadCount = async () => {
     try {
-      const [json, stored] = await Promise.all([
-        api.get('/home/notifications'),
-        AsyncStorage.getItem('parkswift_read_notification_ids'),
-      ]);
+      const json = await api.get('/home/notifications');
       if (!json.success) return;
-      const readIds: string[] = stored ? JSON.parse(stored) : [];
-      const readSet = new Set(readIds);
-      const unread = (json.notifications || []).filter((n: any) => !readSet.has(n.id)).length;
-      setUnreadCount(unread);
+      // Use the server-computed unreadCount (single source of truth, shared with
+      // the home bell). Opening the inbox stamps notificationsReadAt server-side,
+      // so this clears correctly — no more stale AsyncStorage badge.
+      setUnreadCount(json.unreadCount ?? 0);
     } catch (e) {
       if (__DEV__) console.log('[FIND_SPACE] unread count error:', e);
     }
@@ -761,11 +757,11 @@ const FindSpaceScreen = () => {
             activeOpacity={0.7}
             style={styles.menuIconButton}
             onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-              } else {
-                router.replace('/(home)');
-              }
+              // Find-Parking is a top-level destination — its back button should
+              // ALWAYS land on Home, regardless of how we got here (push from
+              // home, the session bar, a deep link, etc.). router.back() is
+              // unreliable across those entry paths, so navigate to home directly.
+              router.replace('/(home)');
             }}
           >
             <ChevronLeft size={18} color={Colors.textDark} strokeWidth={2.5} />
@@ -805,11 +801,9 @@ const FindSpaceScreen = () => {
               setShowEditModal(false);
               setEditingVehicle(null);
             } else {
-              if (router.canGoBack()) {
-                router.back();
-              } else {
-                router.replace('/(home)');
-              }
+              // Top-level destination → back always lands on Home (router.back()
+              // is unreliable across the different entry paths into this screen).
+              router.replace('/(home)');
             }
           }}
           right={

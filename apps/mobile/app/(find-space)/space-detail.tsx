@@ -11,11 +11,12 @@ import {View,
   Animated,
   Image,
   Modal,
-  TextInput} from 'react-native';
+  TextInput,
+  Linking} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MapPin, Clock, Car, Shield, Zap, Droplets, Star, Camera, User, AlertTriangle, CalendarClock, Minus, Plus, PlayCircle, Image as ImageIcon, Flag, X } from 'lucide-react-native';
+import { MapPin, Clock, Car, Shield, Zap, Droplets, Star, Camera, User, AlertTriangle, CalendarClock, Minus, Plus, PlayCircle, Image as ImageIcon, Flag, X, Navigation } from 'lucide-react-native';
 import LeafletMap from '../../components/LeafletMap';
 import PageHeader from '../../components/PageHeader';
 import ReportSubmitted from '../../components/ReportSubmitted';
@@ -261,13 +262,36 @@ const SpaceDetailScreen = () => {
     });
   };
 
+  const handleGetDirections = () => {
+    if (!address) {
+      Alert.alert('Address not available', 'Could not open directions');
+      return;
+    }
+    const encodedAddress = encodeURIComponent(address);
+    const googleMapsUrl = `https://www.google.com/maps/search/${encodedAddress}`;
+    const appleMapsUrl = `maps://maps.apple.com/?address=${encodedAddress}`;
+
+    const url = Platform.OS === 'ios' ? appleMapsUrl : googleMapsUrl;
+    Linking.openURL(url).catch(() => {
+      // Fallback: open Google Maps on iOS if Apple Maps fails
+      if (Platform.OS === 'ios') {
+        Linking.openURL(googleMapsUrl).catch(() => {
+          Alert.alert('Error', 'Could not open maps application');
+        });
+      }
+    });
+  };
+
   const rs = getRatingStyle(rating);
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
-      <PageHeader title="Space Details" onBack={() => router.back()} />
+      <PageHeader
+        title="Space Details"
+        onBack={() => router.back()}
+      />
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
         <Animated.View style={{ opacity: fadeAnim }}>
@@ -371,7 +395,19 @@ const SpaceDetailScreen = () => {
                 <View style={styles.addressIconWrap}>
                   <MapPin size={14} color={C.primary} strokeWidth={2.5} />
                 </View>
-                <Text style={styles.addressText}>{address}{landmark ? ` · ${landmark}` : ''}</Text>
+                <View style={styles.addressWithButton}>
+                  <Text style={styles.addressText}>{address}{landmark ? ` · ${landmark}` : ''}</Text>
+                  <TouchableOpacity
+                    onPress={handleGetDirections}
+                    style={styles.directionsBtn}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.directionsBtnContent}>
+                      <Navigation size={12} color={C.white} strokeWidth={2.5} />
+                      <Text style={styles.directionsBtnText}>Directions</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
               </View>
 
               <View style={styles.cardDivider} />
@@ -760,7 +796,28 @@ const makeStyles = ({ colors: C }: AppTheme) => StyleSheet.create({
     marginRight: Spacing.md,
     marginTop: 1,
   },
-  addressText: { flex: 1, fontSize: FontSize.sm, color: C.textBody, lineHeight: 16, fontWeight: FontWeight.medium },  // 12=sm ✓
+  addressWithButton: {
+    flex: 1,
+    gap: Spacing.sm,
+  },
+  addressText: { fontSize: FontSize.sm, color: C.textBody, lineHeight: 16, fontWeight: FontWeight.medium },  // 12=sm ✓
+  directionsBtn: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    backgroundColor: C.primary,
+    borderRadius: BorderRadius.sm,
+    alignSelf: 'flex-start',
+  },
+  directionsBtnContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  directionsBtnText: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.semibold,
+    color: C.white,
+  },
   priceBadge: { backgroundColor: C.primaryBg, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, borderRadius: BorderRadius.sm, borderWidth: 1, borderColor: ExtendedColors.primaryBorder },  // 8=sm ✓
   priceBadgeValue: { fontSize: FontSize.xl, fontWeight: FontWeight.extrabold, color: C.primary },     // 16=xl ✓
   priceBadgeUnit: { fontSize: FontSize.xs, fontWeight: FontWeight.semibold, color: ExtendedColors.primaryRed },  // 11=xs ✓

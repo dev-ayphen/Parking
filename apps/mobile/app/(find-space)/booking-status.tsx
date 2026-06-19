@@ -22,7 +22,7 @@ import { api } from '../../services/api';
 import { useNetworkStore } from '../../store/networkStore';
 import PageHeader from '../../components/PageHeader';
 import { useRealtime } from '../../hooks/useRealtime';
-import { useSessionBarStore } from '../../store/sessionBarStore';
+import { useSessionBarStore, computeExpiresAt } from '../../store/sessionBarStore';
 import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 import { useTheme, type AppTheme } from '../../hooks/useTheme';
 
@@ -51,8 +51,6 @@ interface BookingData {
 
 const ETA_PRESETS = [10, 20, 30, 45, 60]; // minutes from now
 
-const APPROVAL_WINDOW_MS = 120_000;
-
 export default function BookingStatusScreen() {
   const theme = useTheme();
   const { colors: C, isDark } = theme;
@@ -60,8 +58,10 @@ export default function BookingStatusScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
   const bookingId = params.bookingId as string;
-  const setBar = useSessionBarStore((s) => s.setBar);
-  const clearBar = useSessionBarStore((s) => s.clearBar);
+  const setBarForSource = useSessionBarStore((s) => s.setBarForSource);
+  const clearSource = useSessionBarStore((s) => s.clearSource);
+  const setBar = useCallback((b: any) => setBarForSource('parker', b), [setBarForSource]);
+  const clearBar = useCallback(() => clearSource('parker'), [clearSource]);
 
   const [booking, setBooking] = useState<BookingData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -137,11 +137,12 @@ export default function BookingStatusScreen() {
         variant: 'booking_pending',
         bookingId: String(bookingId),
         spaceName,
-        vehiclePlate: '',
-        expiresAt: booking.createdAt
-          ? new Date(new Date(booking.createdAt).getTime() + APPROVAL_WINDOW_MS).toISOString()
-          : null,
-        endsAt: null,
+        parkerName: '',
+        vehiclePlate: booking.vehicle?.licensePlate ?? '',
+        amount: booking.totalAmount ?? null,
+        durationHours: booking.duration ?? null,
+        expiresAt: booking.createdAt ? computeExpiresAt(booking.createdAt) : null,
+        endsAtISO: null,
         otp: null,
         etaText: null,
       });
@@ -150,9 +151,12 @@ export default function BookingStatusScreen() {
         variant: 'booking_approved',
         bookingId: String(bookingId),
         spaceName,
-        vehiclePlate: '',
+        parkerName: '',
+        vehiclePlate: booking.vehicle?.licensePlate ?? '',
+        amount: booking.totalAmount ?? null,
+        durationHours: booking.duration ?? null,
         expiresAt: null,
-        endsAt: null,
+        endsAtISO: null,
         otp: null,
         etaText: null,
       });

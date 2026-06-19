@@ -6,7 +6,6 @@ export default function FindSpaceLayout() {
     <Stack
       screenOptions={{
         headerShown: false,
-        animation: 'none',
         contentStyle: { backgroundColor: Colors.white },
       }}
     >

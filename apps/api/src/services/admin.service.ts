@@ -15,11 +15,14 @@ function buildDeepLinkData(category?: string, metadata?: any): Record<string, un
   const bookingId = metadata?.bookingId;
   if (bookingId) {
     data.bookingId = bookingId;
-    // BOOKING notifications routed to the owner (new request) open the requests
-    // list; everything else booking-related opens that booking's detail.
-    data.screen = category === 'BOOKING' && metadata?.target === 'OWNER'
-      ? 'booking-requests'
-      : 'booking-detail';
+    // Owner-targeted booking notifications: an at-gate OTP opens the Verify tab;
+    // a new request opens the requests list. Everything else booking-related
+    // (parker-facing) opens that booking's detail screen.
+    if (category === 'BOOKING' && metadata?.target === 'OWNER') {
+      data.screen = metadata?.action === 'verify' ? 'verify' : 'booking-requests';
+    } else {
+      data.screen = 'booking-detail';
+    }
   } else if (metadata?.ticketId) {
     data.ticketId = metadata.ticketId;
     data.screen = 'support-ticket';

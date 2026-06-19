@@ -81,7 +81,9 @@ export const bookingExpiryService = {
    *
    * Signal choice: we key off `eta` (the arrival time the parker committed to) +
    * a grace buffer — fairer than a fixed timer from approval, and `eta` is always
-   * set. `sessionStartedAt === null` guarantees the session never actually began.
+   * set. `sessionStartedAt === null` guarantees the session never actually began,
+   * and `sessionOtp === null` excludes parkers who are at the gate mid-verification
+   * (they already generated their arrival OTP), so we never cancel under a live code.
    */
   releaseNoShows: async () => {
     const cutoff = new Date(Date.now() - NO_SHOW_GRACE_MS);
@@ -90,6 +92,9 @@ export const bookingExpiryService = {
       where: {
         status: 'APPROVED',
         sessionStartedAt: null, // session never started → parker never verified arrival
+        // A parker who already generated their arrival OTP is physically at the
+        // gate mid-verification — do NOT no-show them out from under a live code.
+        sessionOtp: null,
         eta: { lt: cutoff },    // more than the grace period past their promised arrival
       },
       include: {

@@ -42,8 +42,9 @@ router.get('/:id/analytics', authenticate, spaceController.getSpaceAnalytics);
 router.patch('/:id/approve', authenticate, requireRole('ADMIN'), spaceController.approveSpace);
 router.patch('/:id/reject', authenticate, requireRole('ADMIN'), spaceController.rejectSpace);
 
-// Document routes
-router.get('/:id/documents', documentController.list);
+// Document routes — KYC documents are PRIVATE (rental agreements, GST, EB bills
+// with names/addresses). Only the space owner or an admin may list them.
+router.get('/:id/documents', authenticate, documentController.list);
 router.post(
   '/:id/documents',
   authenticate,

@@ -43,8 +43,10 @@ const formatEta = (eta: string | null | undefined) => {
 };
 
 export default function VerifyScreen() {
-  const setBar = useSessionBarStore((s) => s.setBar);
-  const clearBar = useSessionBarStore((s) => s.clearBar);
+  const setBarForSource = useSessionBarStore((s) => s.setBarForSource);
+  const clearSource = useSessionBarStore((s) => s.clearSource);
+  const setBar = useCallback((b: any) => setBarForSource('owner', b), [setBarForSource]);
+  const clearBar = useCallback(() => clearSource('owner'), [clearSource]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [pending, setPending] = useState<OwnerRequest[]>([]);
@@ -117,9 +119,12 @@ export default function VerifyScreen() {
         variant: 'parker_at_gate',
         bookingId: String(req.id),
         spaceName: req.spaceName,
+        parkerName: req.parkerName,
         vehiclePlate: req.vehicle,
+        amount: req.amount ?? null,
+        durationHours: req.durationHours ?? null,
         expiresAt: null,
-        endsAt: null,
+        endsAtISO: null,
         otp: null,
         etaText: null,
       });
@@ -130,9 +135,12 @@ export default function VerifyScreen() {
         variant: 'parker_en_route',
         bookingId: String(req.id),
         spaceName: req.spaceName,
+        parkerName: req.parkerName,
         vehiclePlate: req.vehicle,
+        amount: req.amount ?? null,
+        durationHours: req.durationHours ?? null,
         expiresAt: null,
-        endsAt: null,
+        endsAtISO: null,
         otp: null,
         etaText: req.etaText ?? null,
       });

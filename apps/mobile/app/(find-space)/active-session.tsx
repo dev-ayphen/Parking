@@ -20,15 +20,17 @@ import { useNetworkStore } from '../../store/networkStore';
 import PageHeader from '../../components/PageHeader';
 import ReportSubmitted from '../../components/ReportSubmitted';
 import { useRealtime } from '../../hooks/useRealtime';
-import { useSessionBarStore } from '../../store/sessionBarStore';
+import { useSessionBarStore, computeEndsAtISO, minsUntil } from '../../store/sessionBarStore';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 
 export default function ActiveSessionScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
   const bookingId = params.bookingId as string;
-  const setBar = useSessionBarStore((s) => s.setBar);
-  const clearBar = useSessionBarStore((s) => s.clearBar);
+  const setBarForSource = useSessionBarStore((s) => s.setBarForSource);
+  const clearSource = useSessionBarStore((s) => s.clearSource);
+  const setBar = useCallback((b: any) => setBarForSource('parker', b), [setBarForSource]);
+  const clearBar = useCallback(() => clearSource('parker'), [clearSource]);
 
   const [booking, setBooking] = useState<any>(null);
   const [verification, setVerification] = useState<any>(null);
@@ -125,17 +127,25 @@ export default function ActiveSessionScreen() {
     const status = booking.status;
 
     if (status === 'ACTIVE') {
-      const endsAt = booking.endTime ?? null;
-      const minsLeft = endsAt
-        ? Math.max(0, Math.floor((new Date(endsAt).getTime() - Date.now()) / 60000))
-        : null;
+      // booking.endTime from API is a formatted string ("06:00 PM"), not ISO.
+      // Must compute ISO end from sessionStartedAt + duration.
+      const endsAtISO = computeEndsAtISO(
+        booking.sessionStartedAt,
+        booking.eta,
+        booking.createdAt,
+        booking.duration ?? 1,
+      );
+      const mins = minsUntil(endsAtISO);
       setBar({
-        variant: minsLeft !== null && minsLeft < 15 ? 'session_ending' : 'session_active',
+        variant: mins !== null && mins < 15 ? 'session_ending' : 'session_active',
         bookingId: String(bookingId),
         spaceName,
+        parkerName: '',
         vehiclePlate: booking.vehicle?.licensePlate ?? '',
+        amount: booking.totalAmount ?? null,
+        durationHours: booking.duration ?? null,
         expiresAt: null,
-        endsAt,
+        endsAtISO,
         otp: generatedOtp ?? booking.sessionOtp ?? null,
         etaText: null,
       });
@@ -144,9 +154,12 @@ export default function ActiveSessionScreen() {
         variant: 'arrived_otp_ready',
         bookingId: String(bookingId),
         spaceName,
-        vehiclePlate: '',
+        parkerName: '',
+        vehiclePlate: booking.vehicle?.licensePlate ?? '',
+        amount: booking.totalAmount ?? null,
+        durationHours: booking.duration ?? null,
         expiresAt: null,
-        endsAt: null,
+        endsAtISO: null,
         otp: generatedOtp ?? booking.sessionOtp ?? null,
         etaText: null,
       });

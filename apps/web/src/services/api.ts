@@ -402,7 +402,7 @@ export const adminApi = {
     return res.data;
   },
 
-  updateIncidentStatus: async (id: number, data: { status: string; resolution?: string }) => {
+  updateIncidentStatus: async (id: number, data: { status: string; adminNotes?: string }) => {
     const res = await apiClient.put(`/incidents/${id}/status`, data);
     return res.data;
   },

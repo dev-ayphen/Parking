@@ -145,13 +145,14 @@ export const vehicleService = {
     };
   },
 
-  updateVehicle: async (vehicleId: number, data: Partial<CreateVehicleInput>) => {
+  updateVehicle: async (vehicleId: number, userId: number, data: Partial<CreateVehicleInput>) => {
     if (!vehicleId) {
       throw new Error('Vehicle ID is required');
     }
 
-    const vehicle = await db.vehicle.findUnique({
-      where: { id: vehicleId },
+    // Scope by userId so a user can only modify THEIR OWN vehicle (prevents IDOR).
+    const vehicle = await db.vehicle.findFirst({
+      where: { id: vehicleId, userId },
     });
 
     if (!vehicle) {
@@ -206,13 +207,14 @@ export const vehicleService = {
     };
   },
 
-  deleteVehicle: async (vehicleId: number) => {
+  deleteVehicle: async (vehicleId: number, userId: number) => {
     if (!vehicleId) {
       throw new Error('Vehicle ID is required');
     }
 
-    const vehicle = await db.vehicle.findUnique({
-      where: { id: vehicleId },
+    // Scope by userId so a user can only delete THEIR OWN vehicle (prevents IDOR).
+    const vehicle = await db.vehicle.findFirst({
+      where: { id: vehicleId, userId },
     });
 
     if (!vehicle) {

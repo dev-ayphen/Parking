@@ -12,7 +12,7 @@ import { adminService } from '../services/admin.service';
 import { storageService } from '../services/storage.service';
 import { db } from '../config/database';
 import { emitToUser } from '../app';
-import { sendError, BadRequest, assertAuth } from '../utils/errors';
+import { sendError, BadRequest, Forbidden, assertAuth } from '../utils/errors';
 import { ErrorCode } from '../utils/errorCodes';
 
 function mimeToFileType(mime: string): string {
@@ -31,10 +31,17 @@ export const documentController = {
     res.json({ success: true, rules: getAllDocumentRules() });
   },
 
-  /** GET /spaces/:id/documents */
+  /** GET /spaces/:id/documents — owner-or-admin only (private KYC documents). */
   list: async (req: Request, res: Response) => {
     try {
       const spaceId = parseId(req.params.id, 'space ID');
+      assertAuth(req);
+      // Only the space owner or an admin may see the (private) documents.
+      const space = await db.space.findUnique({ where: { id: spaceId }, select: { ownerId: true } });
+      if (!space) throw BadRequest('Space not found', ErrorCode.SPACE_NOT_FOUND);
+      if (space.ownerId !== req.user.id && req.user.role !== 'ADMIN') {
+        return sendError(res, Forbidden('You do not have access to these documents', ErrorCode.AUTH_FORBIDDEN));
+      }
       const docs = await listSpaceDocuments(spaceId);
       res.json({ success: true, documents: docs });
     } catch (e) {

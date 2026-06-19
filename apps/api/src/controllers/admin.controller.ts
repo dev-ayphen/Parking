@@ -479,6 +479,9 @@ export const adminController = {
         users.forEach((u: any) => emitToUser(u.id, 'notification:new', { title: req.body?.title, message: req.body?.message }));
       }
       await logEvent('INFO', 'notifications', `Broadcast sent to ${(result as any).sent} users`, { audience: req.body?.audience }, req.user?.id);
+      // Live-refresh the admin Communications page (it listens for broadcast:new
+      // on the users admin room, which every admin joins via admin:join).
+      emitToAdmin('users', 'broadcast:new', { title: req.body?.title, sent: (result as any).sent });
       if (req.user?.id) await auditService.logAdminAction({
         adminId: req.user.id, action: 'BROADCAST_SENT', targetType: 'BROADCAST',
         targetId: (result as any)?.broadcastId ?? 'inline',
@@ -523,6 +526,8 @@ export const adminController = {
     try {
       const result = await adminService.upsertLegalDocument(req.params.slug, req.body || {});
       await logEvent('INFO', 'admin', `Legal doc ${req.params.slug} updated`, { version: req.body?.version }, req.user?.id);
+      // Live-refresh the admin Legal page (listens on the moderation admin room).
+      emitToAdmin('moderation', 'legal:update', { slug: req.params.slug });
       res.json(result);
     } catch (error) {
       sendError(res, error);
@@ -541,6 +546,8 @@ export const adminController = {
   updateComplianceLog: async (req: Request, res: Response) => {
     try {
       const result = await adminService.updateComplianceLog(parseInt(req.params.id), req.body?.status, req.body?.notes);
+      // Live-refresh the admin Legal/Compliance page (moderation admin room).
+      emitToAdmin('moderation', 'compliance:update', { id: parseInt(req.params.id), status: req.body?.status });
       res.json(result);
     } catch (error) {
       sendError(res, error);

@@ -75,6 +75,7 @@ export const bookingController = {
     try {
       assertAuth(req);
       const result = await bookingService.acceptBooking(req.params.id, req.user.id, req);
+      emitToAdmin('bookings', 'booking:update', { bookingId: req.params.id, status: 'APPROVED' });
       const parkerId = (result as any)?.booking?.parkerId;
       if (parkerId) {
         emitToUser(parkerId, 'booking:approved', { bookingId: req.params.id, status: 'APPROVED' });
@@ -96,6 +97,7 @@ export const bookingController = {
       assertAuth(req);
       const reason = req.body?.reason?.trim() || 'Booking was declined by the owner';
       const result = await bookingService.declineBooking(req.params.id, req.user.id, req);
+      emitToAdmin('bookings', 'booking:update', { bookingId: req.params.id, status: 'REJECTED' });
       const parkerId = (result as any)?.booking?.parkerId;
       if (parkerId) {
         emitToUser(parkerId, 'booking:rejected', { bookingId: req.params.id, status: 'REJECTED', reason });
@@ -117,6 +119,7 @@ export const bookingController = {
       assertAuth(req);
       const reason = req.body?.reason?.trim() || undefined;
       const result = await bookingService.cancelBooking(req.params.id, req.user.id, req.user.role, reason, req);
+      emitToAdmin('bookings', 'booking:update', { bookingId: req.params.id, status: 'CANCELLED' });
 
       const { ownerId, parkerId, spaceName, cancelledBy } = result as any;
       const bookingId = req.params.id;
@@ -191,7 +194,8 @@ export const bookingController = {
 
   markLeavingSession: async (req: Request, res: Response) => {
     try {
-      const result = await bookingService.markLeavingSession(req.params.id, req);
+      assertAuth(req);
+      const result = await bookingService.markLeavingSession(req.params.id, req.user.id, req);
       const ownerId = (result as any)?.ownerId;
       if (ownerId) {
         emitToUser(ownerId, 'parker:leaving', {
@@ -214,7 +218,9 @@ export const bookingController = {
 
   releaseSpace: async (req: Request, res: Response) => {
     try {
-      const result = await bookingService.releaseSpace(req.params.id, req.body, req);
+      assertAuth(req);
+      const result = await bookingService.releaseSpace(req.params.id, req.user.id, req.body, req);
+      emitToAdmin('bookings', 'booking:update', { bookingId: req.params.id, status: 'COMPLETED' });
       // Notify parker that session is complete — triggers navigation to session-complete screen
       const parkerId = (result as any)?.booking?.parkerId ?? (result as any)?.parkerId;
       if (parkerId) {
@@ -242,6 +248,16 @@ export const bookingController = {
         emitToUser(parkerId, 'verification:ready', {
           bookingId: req.params.id,
           requiresAcknowledgement: (result as any)?.requiresAcknowledgement,
+        });
+        // Push too — the parker may have the app closed and must acknowledge the
+        // owner's condition report before they can generate the OTP / start.
+        await adminService.notifyUser(parkerId, {
+          title: 'Space condition report ready',
+          message: (result as any)?.requiresAcknowledgement
+            ? 'The owner logged the space condition. Review and acknowledge it to continue.'
+            : 'The owner recorded the space condition for your booking.',
+          category: 'BOOKING',
+          metadata: { bookingId: req.params.id },
         });
       }
       res.json(result);
@@ -337,7 +353,17 @@ export const bookingController = {
       const result = await bookingService.generateSessionOtp(req.params.id, req.user.id, req);
       // Let the owner's screen know the parker's arrival OTP is ready to enter
       const ownerId = (result as any)?.ownerId;
-      if (ownerId) emitToUser(ownerId, 'verification:ready', { bookingId: req.params.id });
+      if (ownerId) {
+        emitToUser(ownerId, 'verification:ready', { bookingId: req.params.id });
+        // Push too — the parker is at the gate with an OTP; the owner must verify
+        // it to start the session, and may not have the app open.
+        await adminService.notifyUser(ownerId, {
+          title: 'Parker at the gate',
+          message: `${(result as any)?.parkerName || 'A parker'} is ready to start their session. Verify their OTP to begin.`,
+          category: 'BOOKING',
+          metadata: { bookingId: req.params.id, target: 'OWNER', action: 'verify' },
+        });
+      }
       res.json(result);
     } catch (error) {
       sendError(res, error);

@@ -26,8 +26,10 @@ export default function SessionCompleteScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
   const bookingId = params.bookingId as string;
-  const setBar = useSessionBarStore((s) => s.setBar);
-  const clearBar = useSessionBarStore((s) => s.clearBar);
+  const setBarForSource = useSessionBarStore((s) => s.setBarForSource);
+  const clearSource = useSessionBarStore((s) => s.clearSource);
+  const setBar = useCallback((b: any) => setBarForSource('parker', b), [setBarForSource]);
+  const clearBar = useCallback(() => clearSource('parker'), [clearSource]);
 
   const [booking, setBooking] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -79,17 +81,23 @@ export default function SessionCompleteScreen() {
     fetchBooking();
   }, [fetchBooking]);
 
-  // Show rating_pending bar until user submits rating; clear once done
+  // Show rating_pending bar until booking has a rating from the API; clear once rated.
+  // We check booking.rating (from API) rather than ratingSubmitted local state so the
+  // bar stays correct if the user reopens this screen after already submitting.
   useEffect(() => {
     if (!booking || !bookingId) return;
-    if (!ratingSubmitted) {
+    const alreadyRated = !!booking.rating || ratingSubmitted;
+    if (!alreadyRated) {
       setBar({
         variant: 'rating_pending',
         bookingId: String(bookingId),
         spaceName: booking.space?.name ?? '',
+        parkerName: '',
         vehiclePlate: '',
+        amount: booking.totalAmount ?? null,
+        durationHours: null,
         expiresAt: null,
-        endsAt: null,
+        endsAtISO: null,
         otp: null,
         etaText: null,
       });
@@ -98,12 +106,15 @@ export default function SessionCompleteScreen() {
     }
   }, [booking, bookingId, ratingSubmitted, setBar, clearBar]);
 
-  const handleSubmitRating = async () => {
-    if (!useNetworkStore.getState().requireOnline()) return;
-    if (rating === 0) {
-      Alert.alert('Required', 'Please select a star rating.');
+  // Single "Done" footer button. If the user picked stars, save the rating first,
+  // then leave. If they didn't rate, just leave (Skip). No separate submit button.
+  const handleDone = async () => {
+    // Already rated, or user chose to skip (no stars) → just go home.
+    if (ratingSubmitted || rating === 0) {
+      router.replace('/(home)');
       return;
     }
+    if (!useNetworkStore.getState().requireOnline()) return;
     try {
       setSubmittingRating(true);
       await api.post('/ratings', {
@@ -112,9 +123,11 @@ export default function SessionCompleteScreen() {
         review: review.trim() || undefined,
       });
       setRatingSubmitted(true);
+      // Clear the rating_pending bar immediately, then leave.
+      clearBar();
+      router.replace('/(home)');
     } catch (err: any) {
       Alert.alert('Error', err.message);
-    } finally {
       setSubmittingRating(false);
     }
   };
@@ -331,13 +344,11 @@ export default function SessionCompleteScreen() {
                 value={review}
                 onChangeText={setReview}
               />
-              <TouchableOpacity
-                style={styles.btnSecondary}
-                onPress={handleSubmitRating}
-                disabled={submittingRating || rating === 0}
-              >
-                {submittingRating ? <ActivityIndicator color={Colors.primary} /> : <Text style={styles.btnSecondaryText}>Submit Rating</Text>}
-              </TouchableOpacity>
+              {/* No separate submit button — tapping "Done" in the footer auto-saves
+                  the rating when stars are selected. One clear action. */}
+              <Text style={styles.ratingHint}>
+                {rating > 0 ? 'Tap "Done" below to save your rating' : 'Select stars, then tap "Done"'}
+              </Text>
             </>
           )}
         </View>
@@ -438,10 +449,22 @@ export default function SessionCompleteScreen() {
         </View>
       </Modal>
 
-      {/* Sticky Footer */}
+      {/* Sticky Footer — single action. "Done" saves the rating (if stars chosen)
+          then leaves; "Skip for now" when no stars are selected. No second
+          submit button — the footer is the only action. */}
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.btnPrimary} onPress={() => router.replace('/(home)')}>
-          <Text style={styles.btnPrimaryText}>Done</Text>
+        <TouchableOpacity
+          style={rating > 0 || ratingSubmitted ? styles.btnPrimary : styles.btnGhost}
+          onPress={handleDone}
+          disabled={submittingRating}
+        >
+          {submittingRating ? (
+            <ActivityIndicator color={Colors.white} />
+          ) : (
+            <Text style={rating > 0 || ratingSubmitted ? styles.btnPrimaryText : styles.btnGhostText}>
+              {rating > 0 || ratingSubmitted ? 'Done' : 'Skip for now'}
+            </Text>
+          )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -508,13 +531,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
     marginBottom: Spacing['3xl'],
   },
-  btnSecondary: {
-    backgroundColor: Colors.primaryLight,
-    borderRadius: BorderRadius.lg,
-    paddingVertical: Spacing['2xl'],
-    alignItems: 'center',
-  },
-  btnSecondaryText: { color: Colors.primary, fontSize: FontSize.base, fontWeight: FontWeight.bold },
+  ratingHint: { fontSize: FontSize.sm, color: Colors.textMuted, textAlign: 'center', fontWeight: FontWeight.medium },
 
   ratingSuccess: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.lg, paddingVertical: Spacing.screenH },
   ratingSuccessText: { color: Colors.success, fontSize: FontSize.lg, fontWeight: FontWeight.bold, marginBottom: Spacing.md },
@@ -524,6 +541,8 @@ const styles = StyleSheet.create({
   footer: { padding: Spacing.screenH, backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: Colors.borderLight },
   btnPrimary: { backgroundColor: Colors.primary, borderRadius: BorderRadius.xl, paddingVertical: Spacing['3xl'], alignItems: 'center' },
   btnPrimaryText: { color: Colors.white, fontSize: FontSize.lg, fontWeight: FontWeight.bold },
+  btnGhost: { backgroundColor: Colors.white, borderRadius: BorderRadius.xl, paddingVertical: Spacing['3xl'], alignItems: 'center', borderWidth: 1, borderColor: Colors.borderLight },
+  btnGhostText: { color: Colors.textSecondary, fontSize: FontSize.lg, fontWeight: FontWeight.semibold },
 
   // Incident card
   incidentCard: { backgroundColor: Colors.white, borderRadius: BorderRadius.xl, borderWidth: 1, borderColor: Colors.borderLight, marginBottom: Spacing.screenH, overflow: 'hidden' },

@@ -77,16 +77,19 @@ router.get('/', authenticate, requireRole('ADMIN'), async (req, res) => {
   }
 });
 
-// Admin: update incident status
+// Admin: update incident status (OPEN | INVESTIGATING | RESOLVED | REJECTED)
 router.put('/:id/status', authenticate, requireRole('ADMIN'), async (req, res) => {
   try {
-    const { status, resolution } = req.body;
+    const { status, adminNotes } = req.body;
+    if (!['OPEN', 'INVESTIGATING', 'RESOLVED', 'REJECTED'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status. Must be one of: OPEN, INVESTIGATING, RESOLVED, REJECTED' });
+    }
     const updated = await db.incidentReport.update({
       where: { id: parseInt(req.params.id) },
       data: {
         status,
-        resolution: resolution || null,
-        resolvedAt: ['RESOLVED', 'CLOSED'].includes(status) ? new Date() : null,
+        adminNotes: adminNotes || null,
+        resolvedAt: ['RESOLVED', 'REJECTED'].includes(status) ? new Date() : null,
       },
     });
     res.json({ success: true, incident: updated });

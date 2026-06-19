@@ -17,7 +17,7 @@ import { PageHeader } from '../../components';
 import { api } from '../../services/api';
 import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 import { useTheme, type AppTheme } from '../../hooks/useTheme';
-import { useSessionBarStore } from '../../store/sessionBarStore';
+import { useSessionBarStore, minsUntil } from '../../store/sessionBarStore';
 
 interface LiveSession {
   id: string;
@@ -26,6 +26,8 @@ interface LiveSession {
   space: string;
   startTime: string;
   endTime: string;
+  startTimeISO?: string;
+  endTimeISO?: string;
   remaining: string;
   progressPercent: number;
   isLeaving?: boolean;
@@ -37,8 +39,10 @@ export default function ActiveSessionsScreen() {
   const { colors: C, isDark } = theme;
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
-  const setBar = useSessionBarStore((s) => s.setBar);
-  const clearBar = useSessionBarStore((s) => s.clearBar);
+  const setBarForSource = useSessionBarStore((s) => s.setBarForSource);
+  const clearSource = useSessionBarStore((s) => s.clearSource);
+  const setBar = useCallback((b: any) => setBarForSource('owner', b), [setBarForSource]);
+  const clearBar = useCallback(() => clearSource('owner'), [clearSource]);
   const [sessions, setSessions] = useState<LiveSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -74,32 +78,39 @@ export default function ActiveSessionsScreen() {
   }, [fetchSessions]);
 
   // ── Feed session bar from active sessions list ───────────────────────
+  // Priority of what to surface: a parker who tapped "I'm leaving" (owner must
+  // confirm exit) > a session ending soon > a normal running session.
   useEffect(() => {
     if (sessions.length === 0) {
       clearBar();
       return;
     }
-    // Find the session ending soonest — prioritise ending-soon
-    const endingSoon = sessions.find((s) => {
-      const mins = s.endTime
-        ? Math.max(0, Math.floor((new Date(s.endTime).getTime() - Date.now()) / 60000))
-        : null;
-      return mins !== null && mins < 15;
-    });
-    const target = endingSoon ?? sessions[0];
-    const endsAt = target.endTime ?? null;
-    const minsLeft = endsAt
-      ? Math.max(0, Math.floor((new Date(endsAt).getTime() - Date.now()) / 60000))
-      : null;
+
+    // 1) Parker reported leaving — owner must verify & complete now.
+    const leaving = sessions.find((s) => s.isLeaving);
+    // 2) Session ending soon (< 15 min left), computed from ISO end time.
+    const endingSoon = sessions.find(
+      (s) => { const m = minsUntil(s.endTimeISO); return m !== null && m < 15; },
+    );
+    const target = leaving ?? endingSoon ?? sessions[0];
+    const variant = leaving
+      ? 'owner_session_leaving'
+      : endingSoon
+      ? 'owner_session_ending'
+      : 'owner_session_active';
+
     setBar({
-      variant: minsLeft !== null && minsLeft < 15 ? 'owner_session_ending' : 'owner_session_active',
+      variant,
       bookingId: String(target.id),
       spaceName: target.space,
+      parkerName: target.parker ?? '',
       vehiclePlate: target.vehicle ?? '',
+      amount: null,
+      durationHours: null,
       expiresAt: null,
-      endsAt,
+      endsAtISO: target.endTimeISO ?? null,
       otp: null,
-      etaText: sessions.length > 1 ? `${sessions.length} active` : null,
+      etaText: sessions.length > 1 ? `${sessions.length} sessions` : (target.remaining ?? null),
     });
   }, [sessions, setBar, clearBar]);
 

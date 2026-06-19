@@ -187,23 +187,28 @@ const NotificationsScreen = () => {
 
   const renderItem = ({ item }: { item: Notification }) => {
     const { icon: Icon, bg, color } = getIcon(item.type);
+    const unread = !item.read;
     return (
       <TouchableOpacity
-        style={[styles.notifItem, !item.read && styles.notifItemUnread]}
+        style={[styles.notifItem, unread && styles.notifItemUnread]}
         onPress={() => {
           setSelectedNotification(item);
         }}
         activeOpacity={0.7}
       >
-        {!item.read && <View style={styles.unreadDot} />}
+        {/* Accent left-bar marks unread rows at a glance */}
+        {unread && <View style={styles.unreadAccentBar} />}
         <View style={[styles.notifIcon, { backgroundColor: bg }]}>
           <Icon size={18} color={color} strokeWidth={2.5} />
         </View>
         <View style={styles.notifContent}>
           <View style={styles.notifTopRow}>
-            <Text style={[styles.notifTitle, !item.read && styles.notifTitleUnread]} numberOfLines={1}>
-              {item.title}
-            </Text>
+            <View style={styles.notifTitleWrap}>
+              {unread && <View style={styles.unreadDot} />}
+              <Text style={[styles.notifTitle, unread && styles.notifTitleUnread]} numberOfLines={1}>
+                {item.title}
+              </Text>
+            </View>
             <Text style={styles.notifTime}>{item.time}</Text>
           </View>
           <Text style={styles.notifBody} numberOfLines={2}>{item.body}</Text>
@@ -361,6 +366,10 @@ const styles = StyleSheet.create({
   markAllBtn: {
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
+    backgroundColor: Colors.primaryBg,              // pill background so it reads as a button
+    borderRadius: BorderRadius.circle,
+    borderWidth: 1,
+    borderColor: Colors.primary,
   },
   markAllText: {
     fontSize: FontSize.sm,                          // 12 = sm ✓
@@ -391,17 +400,23 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   notifItemUnread: {
-    backgroundColor: ExtendedColors.unreadBg,       // '#FAFCFF' ✓
+    backgroundColor: Colors.primaryBg,              // soft pink tint — clearly unread
+  },
+  unreadAccentBar: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 3,
+    backgroundColor: Colors.primary,                // accent bar on the left edge
   },
   unreadDot: {
-    position: 'absolute',
-    left: 6,
-    top: '50%',
-    marginTop: -3,
-    width: 6,
-    height: 6,
+    width: 7,
+    height: 7,
     borderRadius: BorderRadius.indicator,           // 3 = indicator ✓
     backgroundColor: Colors.primary,
+    marginRight: Spacing.sm,
+    flexShrink: 0,
   },
   notifIcon: {
     width: 40,
@@ -422,11 +437,16 @@ const styles = StyleSheet.create({
     marginBottom: 3,                                // no Spacing token for 3
     gap: Spacing.md,
   },
+  notifTitleWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
   notifTitle: {
     fontSize: FontSize.md,                          // 14 = md ✓
     fontWeight: FontWeight.semibold,
     color: Colors.textBody,
-    flex: 1,
+    flexShrink: 1,
   },
   notifTitleUnread: {
     fontWeight: FontWeight.extrabold,

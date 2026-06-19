@@ -45,8 +45,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0,
   },
   backButton: {
-    width: 38,
-    height: 38,
+    width: 44,
+    height: 44,
     borderRadius: BorderRadius.circle,
     backgroundColor: Colors.white,
     borderWidth: 1,

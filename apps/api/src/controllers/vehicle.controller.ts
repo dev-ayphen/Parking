@@ -141,7 +141,7 @@ export const vehicleController = {
         });
       }
 
-      const result = await vehicleService.updateVehicle(vehicleId, validationResult.data);
+      const result = await vehicleService.updateVehicle(vehicleId, userId, validationResult.data);
       return res.status(200).json(result);
     } catch (error) {
       console.error('[VEHICLE] Update error:', error);
@@ -171,7 +171,7 @@ export const vehicleController = {
         });
       }
 
-      const result = await vehicleService.deleteVehicle(vehicleId);
+      const result = await vehicleService.deleteVehicle(vehicleId, userId);
       return res.status(200).json(result);
     } catch (error) {
       console.error('[VEHICLE] Delete error:', error);

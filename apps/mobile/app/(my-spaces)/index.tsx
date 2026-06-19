@@ -19,7 +19,7 @@ import { PageHeader } from '../../components';
 import NoActivitySvg from '../../components/Illustrations/NoActivitySvg';
 import { api } from '../../services/api';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
-import { useSessionBarStore } from '../../store/sessionBarStore';
+import { useSessionBarStore, computeExpiresAt, minsUntil } from '../../store/sessionBarStore';
 
 interface DashboardData {
   isSubscribed: boolean;
@@ -28,8 +28,8 @@ interface DashboardData {
   revenueTrend: string;
   activeSpacesCount: number;
   todayBookingsCount: number;
-  pendingRequests: { id: string; parkerName: string; spaceName: string; duration: string; eta: string; createdAt: string }[];
-  liveSessions: { id: string; parkerName: string; spaceName: string; timeLeft: string }[];
+  pendingRequests: { id: string; parkerName: string; spaceName: string; licensePlate: string; amount: number; durationHours: number; duration: string; eta: string; createdAt: string }[];
+  liveSessions: { id: string; parkerName: string; spaceName: string; licensePlate: string; timeLeft: string; endTimeISO: string | null; isLeaving: boolean }[];
   recentRequests: { id: string; parkerName: string; spaceName: string; status: string; amount: number; createdAt: string }[];
 }
 
@@ -68,13 +68,14 @@ const EMPTY_DASHBOARD: DashboardData = {
   recentRequests: [],
 };
 
-const APPROVAL_WINDOW_MS = 120_000;
 
 export default function OwnerDashboardScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const setBar = useSessionBarStore((s) => s.setBar);
-  const clearBar = useSessionBarStore((s) => s.clearBar);
+  const setBarForSource = useSessionBarStore((s) => s.setBarForSource);
+  const clearSource = useSessionBarStore((s) => s.clearSource);
+  const setBar = useCallback((b: any) => setBarForSource('owner', b), [setBarForSource]);
+  const clearBar = useCallback(() => clearSource('owner'), [clearSource]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState<DashboardData>(EMPTY_DASHBOARD);
@@ -99,6 +100,9 @@ export default function OwnerDashboardScreen() {
           id: String(r.id),
           parkerName: r.parkerName || 'Unknown',
           spaceName: r.spaceName || '—',
+          licensePlate: r.licensePlate || '',
+          amount: r.amount || 0,
+          durationHours: r.durationHours || 1,
           duration: r.durationHours ? `${r.durationHours} hour${r.durationHours > 1 ? 's' : ''}` : '—',
           eta: r.etaText || '—',
           createdAt: r.createdAt || '',
@@ -107,7 +111,10 @@ export default function OwnerDashboardScreen() {
           id: String(s.id),
           parkerName: s.parkerName || 'Unknown',
           spaceName: s.spaceName || '—',
+          licensePlate: s.licensePlate || '',
           timeLeft: s.remainingText || '—',
+          endTimeISO: s.endTimeISO || null,
+          isLeaving: !!s.isLeaving,
         })),
         recentRequests: (json.recentRequests || []).map((r: any) => ({
           id: String(r.id),
@@ -130,7 +137,7 @@ export default function OwnerDashboardScreen() {
   // Refresh on focus + live refresh on new booking / arrival / session events
   useFocusEffect(useCallback(() => { fetchDashboard(); }, [fetchDashboard]));
   useEffect(() => {
-    const events = ['booking:new', 'booking:expired', 'booking:cancelled', 'parker:arrived', 'parker:eta-update', 'session:started', 'session:completed', 'notification:new'];
+    const events = ['booking:new', 'booking:expired', 'booking:cancelled', 'parker:arrived', 'parker:eta-update', 'parker:leaving', 'session:started', 'session:completed', 'notification:new'];
     const subs = events.map((evt) => DeviceEventEmitter.addListener(evt, () => fetchDashboard(true)));
     return () => subs.forEach((s) => s.remove());
   }, [fetchDashboard]);
@@ -152,11 +159,12 @@ export default function OwnerDashboardScreen() {
         variant: 'new_request',
         bookingId: String(req.id),
         spaceName: req.spaceName,
-        vehiclePlate: req.parkerName, // parkerName used as vehiclePlate display here
-        expiresAt: req.createdAt
-          ? new Date(new Date(req.createdAt).getTime() + APPROVAL_WINDOW_MS).toISOString()
-          : null,
-        endsAt: null,
+        parkerName: req.parkerName,
+        vehiclePlate: req.licensePlate,
+        amount: req.amount ?? null,
+        durationHours: req.durationHours ?? null,
+        expiresAt: req.createdAt ? computeExpiresAt(req.createdAt) : null,
+        endsAtISO: null,
         otp: null,
         etaText: null,
       });
@@ -164,16 +172,30 @@ export default function OwnerDashboardScreen() {
     }
 
     if (liveSessions.length > 0) {
-      const session = liveSessions[0];
+      // Surface most urgent: parker leaving > ending soon > running.
+      const leaving = liveSessions.find((s) => s.isLeaving);
+      const endingSoon = liveSessions.find(
+        (s) => { const m = minsUntil(s.endTimeISO); return m !== null && m < 15; },
+      );
+      const session = leaving ?? endingSoon ?? liveSessions[0];
+      const variant = leaving
+        ? 'owner_session_leaving'
+        : endingSoon
+        ? 'owner_session_ending'
+        : 'owner_session_active';
+
       setBar({
-        variant: liveSessions.length === 1 ? 'owner_session_active' : 'owner_session_active',
+        variant,
         bookingId: String(session.id),
         spaceName: session.spaceName,
-        vehiclePlate: '',
+        parkerName: session.parkerName,
+        vehiclePlate: session.licensePlate,
+        amount: null,
+        durationHours: null,
         expiresAt: null,
-        endsAt: null, // timeLeft is already a text; bar computes from endsAt
+        endsAtISO: session.endTimeISO ?? null,
         otp: null,
-        etaText: session.timeLeft ?? null,
+        etaText: liveSessions.length > 1 ? `${liveSessions.length} sessions` : (session.timeLeft ?? null),
       });
       return;
     }

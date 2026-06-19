@@ -2,12 +2,15 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
+import { io as createSocket } from 'socket.io-client';
 import {
   Loader2, Search, TrendingUp, TrendingDown, Banknote, RefreshCw, Download,
   ChevronLeft, ChevronRight, X, Check, ArrowDownLeft, ArrowUpRight,
 } from 'lucide-react';
 import { adminApi } from '@/services/api';
 import type { AdminTransactionListItem } from '@/types/api';
+
+const SOCKET_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api').replace(/\/api\/?$/, '');
 
 const TYPE_FILTERS = ['All Transactions', 'User Payments', 'Owner Earnings', 'Refunds'];
 
@@ -77,6 +80,15 @@ export default function PaymentsPage() {
     const t = setTimeout(fetchTransactions, 250);
     return () => clearTimeout(t);
   }, [fetchTransactions]);
+
+  // Live-refresh when a payout/refund/status change happens server-side
+  // (server emits payments:updated to the payments admin room).
+  useEffect(() => {
+    const socket = createSocket(SOCKET_URL, { transports: ['websocket'] });
+    socket.on('connect', () => socket.emit('admin:join'));
+    socket.on('payments:updated', () => { fetchOverview(); fetchTransactions(); });
+    return () => { socket.disconnect(); };
+  }, [fetchOverview, fetchTransactions]);
 
   const handleProcessPayouts = async () => {
     try {

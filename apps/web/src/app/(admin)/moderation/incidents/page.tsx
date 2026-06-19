@@ -16,7 +16,7 @@ interface Incident {
   reportType: string;
   description: string;
   status: string;
-  resolution: string | null;
+  adminNotes: string | null;
   resolvedAt: string | null;
   reportedByUser: { id: number; firstName: string; lastName: string; phone: string } | null;
   createdAt: string;
@@ -35,17 +35,17 @@ const REPORT_TYPES: Record<string, { label: string; color: string }> = {
 };
 
 const STATUS_COLOR: Record<string, string> = {
-  REPORTED:     'bg-blue-100 text-blue-700',
+  OPEN:          'bg-blue-100 text-blue-700',
   INVESTIGATING: 'bg-amber-100 text-amber-700',
-  RESOLVED:     'bg-emerald-100 text-emerald-700',
-  CLOSED:       'bg-gray-100 text-gray-700',
+  RESOLVED:      'bg-emerald-100 text-emerald-700',
+  REJECTED:      'bg-gray-100 text-gray-700',
 };
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  REPORTED:      ['INVESTIGATING', 'RESOLVED', 'CLOSED'],
-  INVESTIGATING: ['RESOLVED', 'CLOSED'],
-  RESOLVED:      ['CLOSED'],
-  CLOSED:        [],
+  OPEN:          ['INVESTIGATING', 'RESOLVED', 'REJECTED'],
+  INVESTIGATING: ['RESOLVED', 'REJECTED'],
+  RESOLVED:      [],
+  REJECTED:      [],
 };
 
 export default function IncidentsPage() {
@@ -60,7 +60,7 @@ export default function IncidentsPage() {
   // Status update modal
   const [updateIncident, setUpdateIncident] = useState<Incident | null>(null);
   const [newStatus, setNewStatus] = useState('INVESTIGATING');
-  const [resolution, setResolution] = useState('');
+  const [adminNotes, setAdminNotes] = useState('');
   const [updating, setUpdating] = useState(false);
 
   const fetchIncidents = useCallback(async () => {
@@ -95,10 +95,10 @@ export default function IncidentsPage() {
       setUpdating(true);
       await adminApi.updateIncidentStatus(updateIncident.id, {
         status: newStatus,
-        resolution: resolution || undefined,
+        adminNotes: adminNotes || undefined,
       });
       setUpdateIncident(null);
-      setResolution('');
+      setAdminNotes('');
       fetchIncidents();
     } catch (e: any) {
       if (process.env.NODE_ENV === 'development') console.error('Update failed:', e);
@@ -207,7 +207,7 @@ export default function IncidentsPage() {
                         <button onClick={() => {
                           setUpdateIncident(inc);
                           setNewStatus(STATUS_TRANSITIONS[inc.status][0]);
-                          setResolution(inc.resolution || '');
+                          setAdminNotes(inc.adminNotes || '');
                         }} className="text-indigo-600 hover:text-indigo-700 font-semibold text-sm">
                           Update
                         </button>
@@ -259,11 +259,11 @@ export default function IncidentsPage() {
                 ))}
               </select>
             </div>
-            {['RESOLVED', 'CLOSED'].includes(newStatus) && (
+            {['RESOLVED', 'REJECTED'].includes(newStatus) && (
               <div>
-                <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5 block">Resolution Note</label>
-                <textarea value={resolution} onChange={e => setResolution(e.target.value)} rows={3}
-                  placeholder="Describe how this incident was resolved..."
+                <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5 block">Admin Notes</label>
+                <textarea value={adminNotes} onChange={e => setAdminNotes(e.target.value)} rows={3}
+                  placeholder="Describe the investigation findings or resolution..."
                   className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none resize-none" />
               </div>
             )}

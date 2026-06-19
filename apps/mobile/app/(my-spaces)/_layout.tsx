@@ -8,6 +8,10 @@ import { Colors, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 // footer buttons aren't covered by the floating nav).
 const FULLSCREEN_ROUTES = ['booking-request', 'exit-verification', 'analytics', 'manage-subscription', 'bookings'];
 
+// Floating tab-bar geometry lives in constants/tabBar.ts so the global
+// SessionBar can clear the bar without importing this route module. The styles
+// below (height 64, paddingBottom iOS 32 / Android 20) must stay in sync with it.
+
 function CustomTabBar({ state, descriptors, navigation }: any) {
   // Hide the whole tab bar on full-screen action pages
   const activeRoute = state.routes[state.index]?.name;

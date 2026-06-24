@@ -7,11 +7,14 @@ import {
   FlatList,
   ActivityIndicator,
   RefreshControl,
+  TouchableOpacity,
+  DeviceEventEmitter,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
 import { Star } from 'lucide-react-native';
 import { api } from '../../services/api';
+import { NETWORK_RECONNECTED } from '../../store/networkStore';
 import PageHeader from '../../components/PageHeader';
 import { formatCount } from '../../utils/ratingUtils';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
@@ -46,6 +49,7 @@ export default function SpaceReviewsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [page, setPage] = useState(1);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchReviews = useCallback(
     async (pageNum: number, mode: 'initial' | 'refresh' | 'more') => {
@@ -62,9 +66,14 @@ export default function SpaceReviewsScreen() {
               : json,
           );
           setPage(json.page);
+          setError(null);
         }
-      } catch {
-        // keep whatever we have; surface nothing intrusive on a reviews list
+      } catch (e) {
+        // On the FIRST load, a failure must show error+retry (not a misleading
+        // "No reviews yet"). For "more"/"refresh" we keep what we already have.
+        if (mode === 'initial' && !data) {
+          setError((e as Error)?.message || 'Could not load reviews.');
+        }
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -76,6 +85,13 @@ export default function SpaceReviewsScreen() {
 
   useEffect(() => {
     fetchReviews(1, 'initial');
+  }, [fetchReviews]);
+
+  // Re-fetch when connectivity is restored (offline banner's "Retry" / auto-
+  // reconnect) so the reviews aren't left showing stale data.
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(NETWORK_RECONNECTED, () => fetchReviews(1, 'refresh'));
+    return () => sub.remove();
   }, [fetchReviews]);
 
   const handleLoadMore = () => {
@@ -105,51 +121,10 @@ export default function SpaceReviewsScreen() {
   const average = data?.average ?? 0;
   const breakdown = data?.breakdown ?? {};
 
-  const Header = (
-    <View>
-      <Text style={styles.spaceName} numberOfLines={1}>{spaceName}</Text>
-
-      {total > 0 ? (
-        <>
-          {/* Summary card — big average + star breakdown histogram */}
-          <View style={styles.summaryCard}>
-            <View style={styles.summaryLeft}>
-              <Text style={styles.avgNumber}>{average.toFixed(1)}</Text>
-              {renderStars(Math.round(average), 16)}
-              <Text style={styles.totalText}>{formatCount(total)} review{total !== 1 ? 's' : ''}</Text>
-            </View>
-
-            <View style={styles.summaryRight}>
-              {STAR_ROWS.map((star) => {
-                const count = breakdown[String(star)] || 0;
-                const pct = total > 0 ? (count / total) * 100 : 0;
-                return (
-                  <View key={star} style={styles.breakdownRow}>
-                    <Text style={styles.breakdownStar}>{star}</Text>
-                    <Star size={11} color={Colors.starYellow} fill={Colors.starYellow} />
-                    <View style={styles.barTrack}>
-                      <View style={[styles.barFill, { width: `${pct}%` }]} />
-                    </View>
-                    <Text style={styles.breakdownCount}>{count}</Text>
-                  </View>
-                );
-              })}
-            </View>
-          </View>
-
-          <Text style={styles.sectionLabel}>All Reviews</Text>
-        </>
-      ) : (
-        // New space — no ratings yet. Cleaner than an all-zero histogram.
-        <View style={styles.newBadgeRow}>
-          <View style={styles.newBadge}>
-            <Star size={13} color={Colors.info} fill={Colors.info} />
-            <Text style={styles.newBadgeText}>New</Text>
-          </View>
-        </View>
-      )}
-    </View>
-  );
+  // FlatList header — only the "ALL REVIEWS" label sits here so it scrolls with the list
+  const Header = total > 0 ? (
+    <Text style={styles.sectionLabel}>All Reviews</Text>
+  ) : null;
 
   const renderReview = ({ item }: { item: Review }) => (
     <View style={styles.reviewCard}>
@@ -172,12 +147,54 @@ export default function SpaceReviewsScreen() {
       <StatusBar barStyle="dark-content" />
       <PageHeader title="Reviews" />
 
+      {/* White header section — space name + summary card */}
+      <View style={styles.headerSection}>
+        <Text style={styles.spaceName} numberOfLines={1}>{spaceName}</Text>
+
+        {!loading && !error && total > 0 && (
+          <View style={styles.summaryCard}>
+            <View style={styles.summaryLeft}>
+              <Text style={styles.avgNumber}>{average.toFixed(1)}</Text>
+              {renderStars(Math.round(average), 16)}
+              <Text style={styles.totalText}>{formatCount(total)} review{total !== 1 ? 's' : ''}</Text>
+            </View>
+            <View style={styles.summaryRight}>
+              {STAR_ROWS.map((star) => {
+                const count = breakdown[String(star)] || 0;
+                const pct = total > 0 ? (count / total) * 100 : 0;
+                return (
+                  <View key={star} style={styles.breakdownRow}>
+                    <Text style={styles.breakdownStar}>{star}</Text>
+                    <Star size={11} color={Colors.starYellow} fill={Colors.starYellow} />
+                    <View style={styles.barTrack}>
+                      <View style={[styles.barFill, { width: `${pct}%` }]} />
+                    </View>
+                    <Text style={styles.breakdownCount}>{count}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        )}
+      </View>
+
+      {/* Grey scroll area — only the review list */}
       {loading ? (
-        <View style={styles.center}>
+        <View style={[styles.scroll, styles.center]}>
           <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      ) : error ? (
+        <View style={[styles.scroll, styles.center]}>
+          <Star size={40} color={Colors.error} strokeWidth={1.5} />
+          <Text style={styles.emptyTitle}>Couldn't load reviews</Text>
+          <Text style={styles.emptySub}>{error}</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={() => fetchReviews(1, 'initial')}>
+            <Text style={styles.retryBtnText}>Retry</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
+          style={styles.scroll}
           data={data?.reviews || []}
           keyExtractor={(item) => String(item.id)}
           renderItem={renderReview}
@@ -207,34 +224,28 @@ export default function SpaceReviewsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.white },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  scroll: { flex: 1, backgroundColor: Colors.screenBg },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md, padding: Spacing['4xl'] },
+  retryBtn: { marginTop: Spacing.lg, paddingHorizontal: Spacing['4xl'], paddingVertical: Spacing.lg, backgroundColor: Colors.primaryBg, borderRadius: BorderRadius.lg },
+  retryBtnText: { color: Colors.primary, fontWeight: FontWeight.bold, fontSize: FontSize.md },
   listContent: { padding: Spacing.screenH, paddingBottom: Spacing['4xl'] },
 
-  spaceName: { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.lg },
-
-  // New-space header (shown instead of the histogram when there are 0 reviews)
-  newBadgeRow: { marginBottom: Spacing.xl },
-  newBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: Spacing.xs,
-    backgroundColor: '#EFF6FF', // blue-50
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.circleXl,
+  // White header block — space name + summary card, sits above the grey scroll
+  headerSection: {
+    backgroundColor: Colors.white,
+    paddingHorizontal: Spacing.screenH,
+    paddingBottom: Spacing.screenH,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
   },
-  newBadgeText: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: Colors.info },
+  spaceName: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.md },
 
-  // Summary card
+  // Summary card — borderless inside the white section, just a tight inner layout
   summaryCard: {
     flexDirection: 'row',
     backgroundColor: Colors.screenBg,
     borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
     padding: Spacing.screenH,
-    marginBottom: Spacing['2xl'],
   },
   summaryLeft: {
     alignItems: 'center',

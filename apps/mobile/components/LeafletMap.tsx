@@ -1,6 +1,7 @@
-import React, { forwardRef, useImperativeHandle, useRef, useCallback, useMemo } from 'react';
-import { StyleSheet, View } from 'react-native';
+import React, { forwardRef, useImperativeHandle, useRef, useCallback, useMemo, useState } from 'react';
+import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { WifiOff, RefreshCw } from 'lucide-react-native';
 
 /**
  * OpenStreetMap map rendered with Leaflet inside a WebView.
@@ -20,7 +21,7 @@ export interface LeafletMarker {
   label?: string;          // price text, e.g. "₹30 /hr"
   spots?: number;          // available spot count
   rating?: number;         // optional star rating (shown if > 0)
-  status?: 'available' | 'booked';
+  status?: 'available' | 'booked' | 'closed';
   selected?: boolean;
 }
 
@@ -42,13 +43,19 @@ interface LeafletMapProps {
   interactive?: boolean;            // false = static (no pan/zoom)
   onMarkerPress?: (id: string | number) => void;
   onMapPress?: (coord: { latitude: number; longitude: number }) => void;
+  /** Fires after a USER pan/zoom (not programmatic recenters) with the new center. */
+  onRegionChange?: (coord: { latitude: number; longitude: number }) => void;
   style?: any;
 }
 
-// Convert a latitudeDelta to an approximate Leaflet zoom level
+// Convert a latitudeDelta to a Leaflet zoom level.
+// FRACTIONAL (not rounded): rounding to integers collapsed adjacent radii onto
+// the same zoom — e.g. 3 km and 5 km both snapped to zoom 12, making the 3 km
+// circle look the same size as (or bigger than) the 5 km one. A fractional zoom
+// frames every radius proportionally (the circle is always ~the same % of the
+// screen). Requires zoomSnap:0 on the map so Leaflet honours non-integer zooms.
 const deltaToZoom = (latDelta: number) => {
-  // latDelta 0.01 ≈ zoom 14, doubles each level
-  const z = Math.round(Math.log2(360 / latDelta));
+  const z = Math.log2(360 / latDelta);
   return Math.max(3, Math.min(18, z));
 };
 
@@ -87,6 +94,8 @@ const buildHtml = (
     .park-card.available { border-color: #86EFAC; }
     /* Red border tint for booked */
     .park-card.booked    { border-color: #FECACA; }
+    /* Grey tint + dimmed for closed (outside operating hours) */
+    .park-card.closed    { border-color: #CBD5E1; opacity: 0.92; }
 
     /* Selected: slightly larger, stronger shadow */
     .park-card.selected {
@@ -104,6 +113,7 @@ const buildHtml = (
     }
     .available .park-icon { background: #16A34A; }
     .booked    .park-icon { background: #DC2626; }
+    .closed    .park-icon { background: #94A3B8; }
 
     /* Text block */
     .park-info { display: flex; flex-direction: column; line-height: 1.1; gap: 1px; }
@@ -117,6 +127,8 @@ const buildHtml = (
     /* "BOOKED / No spots" text */
     .park-price.booked-label { color: #DC2626; font-size: 12px; letter-spacing: 0.3px; }
     .park-spots.no-spots     { color: #94A3B8; }
+    /* "CLOSED" text */
+    .park-price.closed-label { color: #64748B; font-size: 12px; letter-spacing: 0.3px; }
 
     /* Optional star rating inline */
     .park-rating { font-size: 10px; color: #64748B; }
@@ -140,6 +152,7 @@ const buildHtml = (
     }
     .park-card.available::after { border-top: 8px solid #86EFAC; }
     .park-card.booked::after    { border-top: 8px solid #FECACA; }
+    .park-card.closed::after    { border-top: 8px solid #CBD5E1; }
 
     /* ── Anchor dot ──────────────────────────────────────────────────── */
     .park-dot {
@@ -152,6 +165,7 @@ const buildHtml = (
     }
     .available .park-dot { background: #16A34A; }
     .booked    .park-dot { background: #DC2626; }
+    .closed    .park-dot { background: #94A3B8; }
 
     .pink-pin { width:24px; height:24px; }
     .leaflet-control-attribution { font-size:8px; }
@@ -159,11 +173,31 @@ const buildHtml = (
 </head>
 <body>
   <div id="map"></div>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
+    // Lightweight bridge available even if Leaflet's CDN never loads, so we can
+    // always report a failure back to React Native (which shows the retry overlay).
+    function postNative(obj){
+      if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(obj));
+    }
+    // If the Leaflet script tag fails (offline / CDN down), tell RN.
+    window.__leafletScriptFailed = function(){ postNative({ type:'loadError', reason:'lib' }); };
+  </script>
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    onerror="window.__leafletScriptFailed()"></script>
+  <script>
+    // Guard: if Leaflet didn't load (e.g. offline), bail out cleanly with a
+    // failure signal instead of throwing "L is not defined" and leaving grey.
+    if (typeof L === 'undefined') {
+      postNative({ type:'loadError', reason:'lib' });
+    } else {
     var map = L.map('map', {
       zoomControl: false,
       attributionControl: true,
+      // zoomSnap:0 lets the map sit at a FRACTIONAL zoom (e.g. 12.44) so each
+      // search radius frames its circle proportionally instead of snapping to a
+      // coarse integer zoom (which made 3 km and 5 km look the same size).
+      zoomSnap: 0,
       dragging: ${interactive},
       scrollWheelZoom: ${interactive},
       doubleClickZoom: ${interactive},
@@ -171,9 +205,18 @@ const buildHtml = (
       tap: ${interactive}
     }).setView([${region.latitude}, ${region.longitude}], ${zoom});
 
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    var tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19, attribution: '© OpenStreetMap'
     }).addTo(map);
+
+    // Tile-level failure detection: if NO tile loads within a few seconds (offline
+    // even though Leaflet itself was cached), surface the same retry overlay.
+    var anyTileLoaded = false;
+    tiles.on('load', function(){ anyTileLoaded = true; });
+    tiles.on('tileload', function(){ anyTileLoaded = true; });
+    setTimeout(function(){
+      if (!anyTileLoaded) postNative({ type:'loadError', reason:'tiles' });
+    }, 6000);
 
     var markerLayer = L.layerGroup().addTo(map);
     var circleLayer = L.layerGroup().addTo(map);
@@ -185,6 +228,18 @@ const buildHtml = (
     // Tap on empty map
     map.on('click', function(e){
       send({ type:'mapPress', lat:e.latlng.lat, lng:e.latlng.lng });
+    });
+
+    // Report user-driven pans/zooms (drag, pinch) so the app can offer a
+    // "Search this area" action. We skip programmatic recenters (setView) by
+    // flagging them — only a real user gesture sets dragging=true.
+    var userMoved = false;
+    map.on('dragstart zoomstart', function(){ userMoved = true; });
+    map.on('moveend', function(){
+      if (!userMoved) return;
+      userMoved = false;
+      var c = map.getCenter();
+      send({ type:'regionChange', lat:c.lat, lng:c.lng });
     });
 
     function pinIcon(){
@@ -200,23 +255,28 @@ const buildHtml = (
         iconSize:[18,18], iconAnchor:[9,9] });
     }
     function priceIcon(label, status, selected, spots, rating){
+      var isClosed = status === 'closed';
       var isBooked = status === 'booked';
-      var statusCls = isBooked ? 'booked' : 'available';
+      var statusCls = isClosed ? 'closed' : (isBooked ? 'booked' : 'available');
       var selCls    = selected ? ' selected' : '';
 
-      // Price row: "₹30 /hr" or "BOOKED"
-      var priceHtml = isBooked
-        ? '<span class="park-price booked-label">BOOKED</span>'
-        : '<span class="park-price">' + (label || '') + '<span class="per-hr"> /hr</span></span>';
+      // Price row: "CLOSED", "BOOKED", or the rate "₹30 /hr"
+      var priceHtml = isClosed
+        ? '<span class="park-price closed-label">CLOSED</span>'
+        : isBooked
+          ? '<span class="park-price booked-label">BOOKED</span>'
+          : '<span class="park-price">' + (label || '') + '<span class="per-hr"> /hr</span></span>';
 
-      // Spots row
-      var spotsText = isBooked
-        ? '<span class="park-spots no-spots">No spots</span>'
-        : (spots !== undefined && spots !== null
-            ? ('<span class="park-spots">' + spots + ' spot' + (spots !== 1 ? 's' : '') +
-               (rating > 0 ? ' &bull; <span class="star">&#9733;</span> ' + rating.toFixed(1) : '') +
-               '</span>')
-            : '');
+      // Spots row: closed shows "Outside hours", booked "No spots", else count
+      var spotsText = isClosed
+        ? '<span class="park-spots no-spots">Outside hours</span>'
+        : isBooked
+          ? '<span class="park-spots no-spots">No spots</span>'
+          : (spots !== undefined && spots !== null
+              ? ('<span class="park-spots">' + spots + ' spot' + (spots !== 1 ? 's' : '') +
+                 (rating > 0 ? ' &bull; <span class="star">&#9733;</span> ' + rating.toFixed(1) : '') +
+                 '</span>')
+              : '');
 
       var html =
         '<div class="park-card ' + statusCls + selCls + '">' +
@@ -249,13 +309,15 @@ const buildHtml = (
       if (!c) return;
       L.circle([c.lat, c.lng], {
         radius: c.radiusMeters,
-        color:'rgba(99,102,241,0.55)', weight:1.5,
-        fillColor:'rgba(99,102,241,1)', fillOpacity:0.12
+        color:'rgba(220,1,89,0.45)', weight:1.5,
+        fillColor:'#DC0159', fillOpacity:0.06
       }).addTo(circleLayer);
     }
 
     function recenter(lat, lng, latDelta){
-      var z = Math.round(Math.log2(360/latDelta));
+      // Fractional zoom (no rounding) so each radius frames its circle the same
+      // way — matches deltaToZoom on the RN side. zoomSnap:0 makes this honoured.
+      var z = Math.log2(360/latDelta);
       z = Math.max(3, Math.min(18, z));
       map.setView([lat, lng], z, { animate:true });
     }
@@ -273,6 +335,7 @@ const buildHtml = (
     window.addEventListener('message', function(e){ handleMessage(e.data); });
 
     send({ type:'ready' });
+    } // end: Leaflet-loaded guard
   </script>
 </body>
 </html>`;
@@ -281,11 +344,27 @@ const buildHtml = (
 const LeafletMap = forwardRef<LeafletMapHandle, LeafletMapProps>((props, ref) => {
   const {
     initialRegion, markers = [], circle = null,
-    interactive = true, onMarkerPress, onMapPress, style,
+    interactive = true, onMarkerPress, onMapPress, onRegionChange, style,
   } = props;
 
   const webRef = useRef<WebView>(null);
   const readyRef = useRef(false);
+  // If animateToRegion is called before the map is ready (e.g. GPS resolves faster
+  // than the WebView initialises), store it here and replay on the 'ready' event.
+  const pendingRecenterRef = useRef<{ lat: number; lng: number; latDelta: number } | null>(null);
+
+  // Offline / load-failure state. When the Leaflet CDN or the map tiles can't be
+  // fetched (no connection), we show a "Map unavailable" overlay with Retry
+  // instead of a bare grey box. `reloadKey` remounts the WebView to re-run the HTML.
+  const [mapError, setMapError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  const retry = useCallback(() => {
+    readyRef.current = false;
+    pendingRecenterRef.current = null;
+    setMapError(false);
+    setReloadKey((k) => k + 1); // fresh WebView → re-attempts the CDN/tile loads
+  }, []);
 
   // Build the HTML once (initial region). Subsequent updates go via postMessage.
   const html = useMemo(() => buildHtml(initialRegion, interactive), []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -308,7 +387,14 @@ const LeafletMap = forwardRef<LeafletMapHandle, LeafletMapProps>((props, ref) =>
 
   useImperativeHandle(ref, () => ({
     animateToRegion: (r) => {
-      post({ type: 'recenter', lat: r.latitude, lng: r.longitude, latDelta: r.latitudeDelta });
+      if (readyRef.current) {
+        post({ type: 'recenter', lat: r.latitude, lng: r.longitude, latDelta: r.latitudeDelta });
+      } else {
+        // Map not ready yet (WebView still loading) — queue the recenter so it
+        // fires as soon as Leaflet signals 'ready'. This covers the race between
+        // the GPS permission flow resolving and the WebView finishing init.
+        pendingRecenterRef.current = { lat: r.latitude, lng: r.longitude, latDelta: r.latitudeDelta };
+      }
     },
   }), [post]);
 
@@ -317,18 +403,31 @@ const LeafletMap = forwardRef<LeafletMapHandle, LeafletMapProps>((props, ref) =>
       const msg = JSON.parse(e.nativeEvent.data);
       if (msg.type === 'ready') {
         readyRef.current = true;
+        setMapError(false); // map came up fine
         pushState();
+        // Replay any recenter that was queued before the map was ready
+        if (pendingRecenterRef.current) {
+          const r = pendingRecenterRef.current;
+          pendingRecenterRef.current = null;
+          post({ type: 'recenter', lat: r.lat, lng: r.lng, latDelta: r.latDelta });
+        }
+      } else if (msg.type === 'loadError') {
+        // Leaflet lib or tiles failed to load (offline / CDN down).
+        setMapError(true);
       } else if (msg.type === 'markerPress') {
         onMarkerPress?.(msg.id);
       } else if (msg.type === 'mapPress') {
         onMapPress?.({ latitude: msg.lat, longitude: msg.lng });
+      } else if (msg.type === 'regionChange') {
+        onRegionChange?.({ latitude: msg.lat, longitude: msg.lng });
       }
     } catch {}
-  }, [pushState, onMarkerPress, onMapPress]);
+  }, [pushState, onMarkerPress, onMapPress, onRegionChange]);
 
   return (
     <View style={[styles.container, style]}>
       <WebView
+        key={reloadKey}
         ref={webRef}
         source={{ html }}
         style={styles.web}
@@ -338,7 +437,24 @@ const LeafletMap = forwardRef<LeafletMapHandle, LeafletMapProps>((props, ref) =>
         scrollEnabled={false}
         onMessage={onMessage}
         androidLayerType="hardware"
+        // Native-level failures (DNS/connection error loading the document, HTTP
+        // error, or the WebView renderer crashing) → same offline overlay.
+        onError={() => setMapError(true)}
+        onHttpError={() => setMapError(true)}
+        onRenderProcessGone={() => setMapError(true)}
       />
+
+      {mapError && (
+        <View style={styles.errorOverlay} pointerEvents="auto">
+          <WifiOff size={30} color="#94A3B8" />
+          <Text style={styles.errorTitle}>Map unavailable</Text>
+          <Text style={styles.errorSub}>Check your internet connection and try again.</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={retry} activeOpacity={0.85}>
+            <RefreshCw size={15} color="#fff" />
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 });
@@ -348,6 +464,38 @@ LeafletMap.displayName = 'LeafletMap';
 const styles = StyleSheet.create({
   container: { flex: 1, overflow: 'hidden' },
   web: { flex: 1, backgroundColor: '#e5e7eb' },
+  errorOverlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    gap: 6,
+  },
+  errorTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#334155',
+    marginTop: 4,
+  },
+  errorSub: {
+    fontSize: 12.5,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 12,
+    backgroundColor: '#DC0159',
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    borderRadius: 10,
+  },
+  retryText: { color: '#fff', fontSize: 13.5, fontWeight: '700' },
 });
 
 export default LeafletMap;

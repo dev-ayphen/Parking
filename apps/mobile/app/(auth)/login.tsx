@@ -14,7 +14,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import Svg, { Path, Defs, RadialGradient, Stop } from 'react-native-svg';
-import { Smartphone } from 'lucide-react-native';
 import { api } from '../../services/api';
 import { FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
 import { useTheme, type AppTheme } from '../../hooks/useTheme';
@@ -282,9 +281,13 @@ const makeStyles = ({ colors, spacing, radius, fontSize, fontWeight }: AppTheme)
     backgroundColor: colors.white,
     height: 60,
     marginBottom: Spacing.md,
+    // iOS keeps a whisper-soft shadow for subtle depth. On Android, `elevation`
+    // draws a hard grey halo that clashes with the 1px border (looks muddy/doubled
+    // on a rounded field), so we drop it and let the crisp border carry the look —
+    // the standard Material "outlined text field" treatment.
     ...Platform.select({
       ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 },
-      android: { elevation: 2 },
+      android: {},
     }),
   },
   phoneContainerError: {

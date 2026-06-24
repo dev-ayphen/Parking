@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth';
-import { bookingLimiter, sessionOtpVerifyLimiter } from '../middleware/rateLimit';
+import { bookingLimiter, bookingPerUserLimiter, sessionOtpVerifyLimiter } from '../middleware/rateLimit';
 import { idempotency } from '../middleware/idempotency';
 import { validate } from '../middleware/validate';
 import { createBookingSchema } from '../validations/booking.validation';
@@ -12,10 +12,11 @@ const router = Router();
 // All booking routes require authentication
 router.use(authenticate);
 
-// Booking creation: rate-limited + idempotent + validated
+// Booking creation: rate-limited (per-IP + per-user) + idempotent + validated
 router.post(
   '/',
   bookingLimiter,
+  bookingPerUserLimiter,
   idempotency,
   validate(createBookingSchema),
   bookingController.createBooking,
@@ -38,6 +39,7 @@ router.put('/:id/eta', bookingController.updateEta);
 router.get('/:id/otp', bookingController.generateSessionOtp);
 router.post('/:id/verify-otp', sessionOtpVerifyLimiter, bookingController.verifySessionOtp);
 router.put('/:id/leaving', bookingController.markLeavingSession);
+router.put('/:id/self-complete', bookingController.selfCompleteBooking);
 router.put('/:id/release', bookingController.releaseSpace);
 router.post('/:id/verification', bookingController.submitVerification);
 router.get('/:id/verification', bookingController.getVerification);

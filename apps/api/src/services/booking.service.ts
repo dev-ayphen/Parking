@@ -2,6 +2,10 @@ import { Request } from 'express';
 import { Prisma } from '@prisma/client';
 import { db } from '../config/database';
 import { auditService } from './audit.service';
+import { availabilityAlertService } from './availabilityAlert.service';
+import { isSpaceOpenAt, hoursLabel } from '../utils/availability';
+import { storageService } from './storage.service';
+import { BUCKETS } from '../config/supabase';
 import { redis } from '../config/redis';
 
 // Arrival-OTP brute-force lock: N wrong guesses on a booking → short lockout.
@@ -22,6 +26,20 @@ export const bookingService = {
       throw Object.assign(new Error('Invalid vehicle ID'), { statusCode: 400 });
     }
 
+    // Mandatory profile: a parker must have completed their profile (name) before
+    // booking, so the space owner always has a real name + phone to contact. The
+    // mobile app gates this too, but enforce server-side so it can't be bypassed.
+    const parker = await db.user.findUnique({
+      where: { id: parkerId },
+      select: { isProfileComplete: true, firstName: true },
+    });
+    if (!parker?.isProfileComplete || !parker.firstName) {
+      throw Object.assign(
+        new Error('Please complete your profile (name) before booking a space.'),
+        { statusCode: 403, code: 'PROFILE_INCOMPLETE' },
+      );
+    }
+
     // Wrap capacity check + booking creation in a SERIALIZABLE transaction so two
     // parallel requests can't both read capacity=N-1 and both insert (which would
     // exceed capacity). Under Serializable, Postgres aborts one with a
@@ -30,7 +48,10 @@ export const bookingService = {
     const runTxn = () => db.$transaction(async (tx) => {
       const space = await tx.space.findUnique({
         where: { id: spaceId },
-        select: { ownerId: true, hourlyRate: true, status: true, availability: true, capacity: true },
+        select: {
+          ownerId: true, hourlyRate: true, status: true, parkingFor: true,
+          availability: true, startTime: true, endTime: true, capacity: true,
+        },
       });
       if (!space) {
         throw Object.assign(new Error('Space not found'), { statusCode: 404 });
@@ -42,15 +63,18 @@ export const bookingService = {
         throw Object.assign(new Error('Owners cannot book their own parking spaces.'), { statusCode: 403 });
       }
 
-      // Availability schedule validation
-      const now = new Date();
-      const dayOfWeek = now.getDay();
-      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-      if (space.availability === 'Weekdays Only' && isWeekend) {
-        throw Object.assign(
-          new Error('This space is only available on weekdays (Monday–Friday)'),
-          { statusCode: 400 }
-        );
+      // Availability schedule validation — enforce the owner's operating window.
+      // Covers '24 Hours' (always ok), 'Weekdays Only' (Mon–Fri), and 'Custom
+      // Hours' (within startTime–endTime, incl. overnight ranges). Evaluated in
+      // IST. We check the ETA (when the parker actually arrives) rather than the
+      // request instant, since that's the time the spot is occupied.
+      const arrivalAt = data.eta ? new Date(data.eta) : new Date();
+      if (!isSpaceOpenAt(space, arrivalAt)) {
+        const label = hoursLabel(space);
+        const msg = space.availability === 'Weekdays Only'
+          ? 'This space is only available on weekdays (Monday–Friday).'
+          : `This space is only available during its open hours (${label}). Please pick an arrival time within that window.`;
+        throw Object.assign(new Error(msg), { statusCode: 400 });
       }
 
       // Verify vehicle belongs to parker
@@ -59,6 +83,17 @@ export const bookingService = {
       });
       if (!vehicle) {
         throw Object.assign(new Error('Vehicle not found or does not belong to you'), { statusCode: 404 });
+      }
+
+      // Vehicle-type gate:
+      //   Car space  → Car or Bike allowed (a car slot fits a bike)
+      //   Bike space → Bike only (a bike slot is too small for a car)
+      //   Both       → Car or Bike allowed
+      if (space.parkingFor === 'Bike' && vehicle.vehicleType !== 'BIKE') {
+        throw Object.assign(
+          new Error('This space only accepts bikes. Please book with a bike.'),
+          { statusCode: 400 },
+        );
       }
 
       // One active booking per parker. A parker who already has an in-flight
@@ -96,7 +131,10 @@ export const bookingService = {
         );
       }
 
-      const totalAmount = space.hourlyRate * durationHours;
+      const ratePerHour = space.hourlyRate;
+      // Store a clean integer rupee amount — never a fractional float (avoids
+      // IEEE-754 drift accumulating across sums/invoices).
+      const totalAmount = Math.round(ratePerHour * durationHours);
       const eta = data.eta ? new Date(data.eta) : new Date();
 
       return tx.booking.create({
@@ -106,6 +144,7 @@ export const bookingService = {
           vehicleId,
           duration: durationHours,
           eta,
+          ratePerHour,
           totalAmount,
           paymentMode: 'DIRECT_AT_SPACE',
           status: 'PENDING_APPROVAL',
@@ -150,14 +189,19 @@ export const bookingService = {
       include: {
         space: { select: { id: true, name: true, address: true, hourlyRate: true } },
         vehicle: { select: { licensePlate: true, vehicleType: true } },
-        // Include the rating so the home screen can tell a COMPLETED booking
-        // apart from one that still needs rating (the rating_pending session bar).
-        rating: { select: { id: true, rating: true, review: true } },
+        // Include ratings so the home screen can tell a COMPLETED booking apart
+        // from one the PARKER still needs to rate (the rating_pending session bar).
+        ratings: { select: { id: true, rating: true, review: true, raterId: true } },
       },
       orderBy: { createdAt: 'desc' },
       take: limit,
     });
-    return bookings;
+    // Flatten the PARKER's own rating to `rating` so the mobile contract is
+    // unchanged (it reads booking.rating to decide if a review is still pending).
+    return (bookings as any[]).map((b) => ({
+      ...b,
+      rating: b.ratings?.find((r: any) => r.raterId === parkerId) ?? null,
+    }));
   },
 
   getLiveSessions: async (ownerId: number) => {
@@ -229,16 +273,39 @@ export const bookingService = {
             owner: { select: { id: true, firstName: true, lastName: true, phone: true } },
           },
         },
-        vehicle: { select: { id: true, licensePlate: true, vehicleType: true } },
-        parker: { select: { id: true, firstName: true, lastName: true, phone: true } },
+        vehicle: { select: { id: true, licensePlate: true, vehicleType: true, brandModel: true, frontPhotoUrl: true } },
+        parker: { select: { id: true, firstName: true, lastName: true, phone: true, photoUrl: true } },
         verification: true,
-        rating: { select: { id: true, rating: true, review: true, createdAt: true } },
+        ratings: { select: { id: true, rating: true, review: true, createdAt: true, raterId: true } },
         // One incident per booking (bookingId is @unique) — lets the receipt screen
         // show the existing report on reload instead of offering "report" again.
         incidents: { select: { id: true, reportType: true, status: true, createdAt: true } },
       },
     });
     if (!booking) throw Object.assign(new Error('Booking not found'), { statusCode: 404 });
+
+    // Resolve vehicle front photo storage key → signed public URL
+    if ((booking as any).vehicle?.frontPhotoUrl) {
+      (booking as any).vehicle.frontPhotoUrl = await storageService
+        .resolveUrl((booking as any).vehicle.frontPhotoUrl, BUCKETS.PUBLIC)
+        .catch(() => null);
+    }
+
+    // Flatten the REQUESTOR's own rating to `rating` so the receipt screen can tell
+    // if THEY still need to rate (mobile contract reads booking.rating).
+    (booking as any).rating =
+      (booking as any).ratings?.find((r: any) => r.raterId === requestorId) ?? null;
+
+    // Parker's reputation (avg of ratings they RECEIVED), shown to the owner on
+    // the incoming request so they can screen parkers — like Uber/Turo.
+    const pAgg = await db.rating.aggregate({
+      where: { rateeId: booking.parkerId, isHidden: false },
+      _avg: { rating: true }, _count: { rating: true },
+    });
+    (booking as any).parkerRating = {
+      avg: pAgg._count.rating > 0 ? Math.round((pAgg._avg.rating || 0) * 10) / 10 : 0,
+      count: pAgg._count.rating,
+    };
 
     const isParker = booking.parkerId === requestorId;
     const isOwner = (booking.space as any)?.ownerId === requestorId;
@@ -271,10 +338,17 @@ export const bookingService = {
     if (booking.status !== 'PENDING_APPROVAL') {
       throw Object.assign(new Error('Booking is not in pending state'), { statusCode: 400 });
     }
-    const updated = await db.booking.update({
-      where: { id: bookingId },
+    // Atomic transition: only flips if it's STILL pending. A concurrent
+    // accept/cancel that already moved it makes count===0 → 409 instead of a
+    // double-write.
+    const res = await db.booking.updateMany({
+      where: { id: bookingId, status: 'PENDING_APPROVAL' },
       data: { status: 'APPROVED' },
     });
+    if (res.count === 0) {
+      throw Object.assign(new Error('Booking was already updated by another action'), { statusCode: 409 });
+    }
+    const updated = await db.booking.findUnique({ where: { id: bookingId } });
     await auditService.logBookingEvent({
       bookingId, event: 'BOOKING_APPROVED', fromStatus: booking.status, toStatus: 'APPROVED',
       actorId: ownerId, actorRole: 'OWNER', req,
@@ -294,14 +368,20 @@ export const bookingService = {
     if (!['PENDING_APPROVAL', 'APPROVED'].includes(booking.status)) {
       throw Object.assign(new Error('Booking cannot be declined in its current state'), { statusCode: 400 });
     }
-    const updated = await db.booking.update({
-      where: { id: bookingId },
+    const res = await db.booking.updateMany({
+      where: { id: bookingId, status: { in: ['PENDING_APPROVAL', 'APPROVED'] } },
       data: { status: 'REJECTED' },
     });
+    if (res.count === 0) {
+      throw Object.assign(new Error('Booking was already updated by another action'), { statusCode: 409 });
+    }
+    const updated = await db.booking.findUnique({ where: { id: bookingId } });
     await auditService.logBookingEvent({
       bookingId, event: 'BOOKING_REJECTED', fromStatus: booking.status, toStatus: 'REJECTED',
       actorId: ownerId, actorRole: 'OWNER', req,
     });
+    // A held slot just freed — alert anyone watching this space (fire-and-forget).
+    void availabilityAlertService.notifyOnSlotFreed(booking.spaceId);
     return { success: true, booking: updated };
   },
 
@@ -335,15 +415,24 @@ export const bookingService = {
     // initiated, and admin cancellations (no-shows are tagged separately by the
     // expiry loop). Keeps a single CANCELLED status while staying queryable.
     const cancelReason = isAdmin ? 'ADMIN_CANCELLED' : isOwner ? 'OWNER_CANCELLED' : 'USER_CANCELLED';
-    const updated = await db.booking.update({
-      where: { id: bookingId },
+    const res = await db.booking.updateMany({
+      where: { id: bookingId, status: { in: ['PENDING_APPROVAL', 'APPROVED'] } },
       data: { status: 'CANCELLED', cancelReason, sessionOtp: null },
     });
+    if (res.count === 0) {
+      throw Object.assign(
+        new Error('This booking can no longer be cancelled (already updated).'),
+        { statusCode: 409 }
+      );
+    }
+    const updated = await db.booking.findUnique({ where: { id: bookingId } });
     await auditService.logBookingEvent({
       bookingId, event: 'BOOKING_CANCELLED', fromStatus: booking.status, toStatus: 'CANCELLED',
       actorId: userId, actorRole: isAdmin ? 'ADMIN' : isOwner ? 'OWNER' : 'PARKER', req,
       payload: { reason: cancelReason, ...(reason ? { detail: reason } : {}) },
     });
+    // A held slot just freed — alert anyone watching this space (fire-and-forget).
+    void availabilityAlertService.notifyOnSlotFreed(booking.spaceId);
 
     // Tell the controller who to notify (the OTHER party) and by whom it was cancelled.
     return {
@@ -377,8 +466,18 @@ export const bookingService = {
     }
 
     // Brute-force lock: too many wrong guesses on this booking → temporary lockout.
+    // Fail CLOSED — if Redis is unreachable we cannot verify the attempt count, so
+    // we refuse rather than silently disabling the lock (which would read 0).
     const key = otpAttemptKey(bookingId);
-    const attempts = parseInt((await redis.get(key).catch(() => null)) ?? '0', 10);
+    let attempts: number;
+    try {
+      attempts = parseInt((await redis.get(key)) ?? '0', 10);
+    } catch {
+      throw Object.assign(
+        new Error('Verification is temporarily unavailable. Please try again shortly.'),
+        { statusCode: 503 },
+      );
+    }
     if (attempts >= OTP_MAX_ATTEMPTS) {
       throw Object.assign(
         new Error('Too many incorrect OTP attempts. Please wait a few minutes before trying again.'),
@@ -399,10 +498,16 @@ export const bookingService = {
 
     // Success — clear the attempt counter.
     await redis.del(key).catch(() => {});
-    const updated = await db.booking.update({
-      where: { id: bookingId },
+    // Atomic transition guarded on APPROVED so a concurrent cancel/duplicate
+    // verify can't drive an already-moved booking to ACTIVE.
+    const res = await db.booking.updateMany({
+      where: { id: bookingId, status: 'APPROVED' },
       data: { status: 'ACTIVE', sessionStartedAt: new Date(), sessionOtp: null },
     });
+    if (res.count === 0) {
+      throw Object.assign(new Error('This booking is no longer awaiting arrival verification.'), { statusCode: 409 });
+    }
+    const updated = await db.booking.findUnique({ where: { id: bookingId } });
     await auditService.logBookingEvent({
       bookingId, event: 'SESSION_STARTED', fromStatus: booking.status, toStatus: 'ACTIVE',
       actorId: userId ?? booking.parkerId, actorRole: 'OWNER', req,
@@ -474,8 +579,11 @@ export const bookingService = {
 
     const durationMs = exitTime.getTime() - entryTime.getTime();
     const durationHours = Math.max(0.5, durationMs / (1000 * 60 * 60));
-    const hourlyRate = (booking.space as any)?.hourlyRate ?? 0;
-    const totalAmount = Math.round(durationHours * hourlyRate);
+    // Bill from the rate SNAPSHOTTED at booking time — never the space's live
+    // rate (the owner may have edited it mid-session). Fall back to the live
+    // rate only for legacy bookings created before the snapshot column existed.
+    const ratePerHour = (booking as any).ratePerHour || (booking.space as any)?.hourlyRate || 0;
+    const totalAmount = Math.round(durationHours * ratePerHour);
 
     const updated = await db.booking.update({
       where: { id: bookingId },
@@ -485,6 +593,8 @@ export const bookingService = {
       bookingId, event: 'SESSION_ENDED', fromStatus: booking.status, toStatus: 'COMPLETED',
       actorId: booking.parkerId, actorRole: 'PARKER', req,
     });
+    // A slot just freed — alert anyone watching this space (fire-and-forget).
+    void availabilityAlertService.notifyOnSlotFreed(booking.spaceId);
     return {
       success: true,
       booking: updated,
@@ -496,6 +606,39 @@ export const bookingService = {
         parkerId: booking.parkerId,
       },
     };
+  },
+
+  // Parker self-completes after tapping "I Am Leaving" and owner hasn't confirmed.
+  // Only allowed when sessionEndedAt is already set (parker already notified owner).
+  selfCompleteBooking: async (bookingId: string, parkerId: number, req?: Request) => {
+    const booking = await db.booking.findUnique({
+      where: { id: bookingId },
+      include: { space: { select: { hourlyRate: true, ownerId: true } } },
+    });
+    if (!booking) throw Object.assign(new Error('Booking not found'), { statusCode: 404 });
+    if (booking.parkerId !== parkerId) throw Object.assign(new Error('Not your booking'), { statusCode: 403 });
+    if (booking.status !== 'ACTIVE') throw Object.assign(new Error('Booking is not active'), { statusCode: 400 });
+    if (!booking.sessionEndedAt) throw Object.assign(new Error('Tap "I Am Leaving" first before force-completing'), { statusCode: 400 });
+
+    const entryTime = booking.sessionStartedAt || booking.createdAt;
+    const exitTime = booking.sessionEndedAt; // use the time parker said they left
+    const durationMs = exitTime.getTime() - entryTime.getTime();
+    const durationHours = Math.max(0.5, durationMs / (1000 * 60 * 60));
+    const ratePerHour = (booking as any).ratePerHour || (booking.space as any)?.hourlyRate || 0;
+    const totalAmount = Math.round(durationHours * ratePerHour);
+
+    const updated = await db.booking.update({
+      where: { id: bookingId },
+      data: { status: 'COMPLETED', exitTime, totalAmount },
+    });
+    await auditService.logBookingEvent({
+      bookingId, event: 'SESSION_ENDED', fromStatus: 'ACTIVE', toStatus: 'COMPLETED',
+      actorId: parkerId, actorRole: 'PARKER', req,
+    });
+    void availabilityAlertService.notifyOnSlotFreed(booking.spaceId);
+    // Expose the owner id (lives on the space) so the controller can notify the
+    // owner in realtime and close their open Exit Verification screen.
+    return { success: true, booking: updated, ownerId: (booking.space as any)?.ownerId ?? null };
   },
 
   submitVerification: async (bookingId: string, ownerId: number, data: any, req?: Request) => {
@@ -561,17 +704,43 @@ export const bookingService = {
     }
 
     const v = (booking as any).verification;
+    // Damage photos are uploaded to the PRIVATE bucket and stored as KEYS, not
+    // URLs. Resolve each to a short-lived signed URL so the client can actually
+    // display the image (a bare key renders as a blank box). Legacy rows that
+    // already hold a full URL pass through unchanged.
+    const rawMedia: string[] = Array.isArray(v?.mediaUrls) ? v.mediaUrls : [];
+    const mediaUrls = await Promise.all(
+      rawMedia.map((u) => storageService.resolveUrl(u, BUCKETS.PRIVATE).catch(() => u)),
+    );
     return {
       success: true,
       verification: v
         ? {
             type: v.verificationType,
-            mediaUrls: v.mediaUrls || [],
+            mediaUrls,
             parkerAcknowledged: v.parkerAccepted,
             acceptedAt: v.acceptedAt,
           }
         : null,
     };
+  },
+
+  // Ownership gate for consent records: only the booking's parker, the space
+  // owner, or an admin may touch a booking's consent. Prevents IDOR on these
+  // legal/PII evidence records by guessing booking IDs.
+  assertConsentAccess: async (bookingId: string, requester: { id: number; role?: string }) => {
+    const booking = await db.booking.findUnique({
+      where: { id: bookingId },
+      select: { parkerId: true, space: { select: { ownerId: true } } },
+    });
+    if (!booking) throw Object.assign(new Error('Booking not found'), { statusCode: 404 });
+    const allowed =
+      requester.role === 'ADMIN' ||
+      booking.parkerId === requester.id ||
+      booking.space?.ownerId === requester.id;
+    if (!allowed) {
+      throw Object.assign(new Error('You do not have access to this booking'), { statusCode: 403 });
+    }
   },
 
   recordBookingConsent: async (bookingId: string, data: any) => {
@@ -624,20 +793,22 @@ export const bookingService = {
     const spaceNameMap: Record<number, string> = {};
     ownerSpaces.forEach((s) => { spaceNameMap[s.id] = s.name; });
 
-    // PENDING_APPROVAL: owner still needs to accept/reject — show all (they expire in 2 min anyway).
-    // APPROVED: only show once the parker has generated their arrival OTP (sessionOtp IS NOT NULL).
-    //   An APPROVED booking with sessionOtp = null means the parker was approved but never arrived;
-    //   showing it in the verify tab would create stale "ghost" cards.
+    // PENDING_APPROVAL: owner still needs to accept/reject.
+    // APPROVED (any): show all approved bookings so the owner can see who is
+    //   en-route vs arrived. The mobile app differentiates:
+    //   - no arrivedAt, no sessionOtp → "Parker is on the way" info card
+    //   - arrivedAt set               → condition-check flow
+    //   - sessionOtp set              → OTP scan flow
     const bookings = await db.booking.findMany({
       where: {
         spaceId: { in: spaceIds },
         OR: [
           { status: 'PENDING_APPROVAL' },
-          { status: 'APPROVED', sessionOtp: { not: null } },
+          { status: 'APPROVED' },
         ],
       },
       include: {
-        parker: { select: { id: true, firstName: true, lastName: true, phone: true } },
+        parker: { select: { id: true, firstName: true, lastName: true, phone: true, photoUrl: true } },
         vehicle: { select: { licensePlate: true, vehicleType: true, brandModel: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -645,7 +816,10 @@ export const bookingService = {
 
     return (bookings as any[]).map((b) => ({
       ...b,
+      arrivedAt: b.arrivedAt ?? null,
+      sessionOtp: b.sessionOtp ?? null,
       spaceName: spaceNameMap[b.spaceId] || 'Unknown Space',
+      parkerPhotoUrl: b.parker?.photoUrl || null,
       parkerName: b.parker?.firstName
         ? `${b.parker.firstName} ${b.parker.lastName || ''}`.trim()
         : b.parker?.phone || 'Unknown',
@@ -666,6 +840,13 @@ export const bookingService = {
     if (booking.parkerId !== parkerId) throw Object.assign(new Error('Forbidden'), { statusCode: 403 });
     if (booking.status !== 'APPROVED') {
       throw Object.assign(new Error('Booking must be approved before marking arrival'), { statusCode: 400 });
+    }
+    // Persist the arrival so the owner's Verify screen surfaces this parker even
+    // before the arrival OTP is generated (the OTP only appears after the owner's
+    // condition check is acknowledged — see getOwnerRequests). Idempotent: only
+    // stamp the first time.
+    if (!booking.arrivedAt) {
+      await db.booking.update({ where: { id: bookingId }, data: { arrivedAt: new Date() } });
     }
     await auditService.logBookingEvent({
       bookingId, event: 'PARKER_ARRIVED', fromStatus: booking.status, toStatus: booking.status,
@@ -698,7 +879,11 @@ export const bookingService = {
     if (!['PENDING_APPROVAL', 'APPROVED'].includes(booking.status)) {
       throw Object.assign(new Error('Cannot update ETA at this stage'), { statusCode: 400 });
     }
-    const updated = await db.booking.update({ where: { id: bookingId }, data: { eta } });
+    const updated = await db.booking.update({
+      where: { id: bookingId },
+      // Stamp etaUpdatedAt so the owner's card can flag this as an UPDATED arrival.
+      data: { eta, etaUpdatedAt: new Date() },
+    });
     await auditService.logBookingEvent({
       bookingId, event: 'ETA_UPDATED', fromStatus: booking.status, toStatus: booking.status,
       actorId: parkerId, actorRole: 'PARKER', req,

@@ -2,8 +2,24 @@ import { Router } from 'express';
 import { authenticate, requireRole } from '../middleware/auth';
 import { db } from '../config/database';
 import { emitToAdmin } from '../app';
+import { storageService } from '../services/storage.service';
+import { BUCKETS } from '../config/supabase';
 
 const router = Router();
+
+/**
+ * Evidence files live in the PRIVATE bucket (PII). Stored values are keys;
+ * resolve each to a short-lived signed URL before returning to a client.
+ * Legacy rows holding full public URLs pass through unchanged.
+ */
+const resolveEvidenceUrls = async (urls: unknown): Promise<string[]> => {
+  if (!Array.isArray(urls)) return [];
+  return Promise.all(
+    urls.map((u: string) =>
+      storageService.resolveUrl(u, BUCKETS.PRIVATE).catch(() => u)
+    )
+  );
+};
 
 // Report an incident (parker side)
 router.post('/', authenticate, async (req, res) => {
@@ -47,11 +63,12 @@ router.post('/', authenticate, async (req, res) => {
 // Admin: list all incidents with filters
 router.get('/', authenticate, requireRole('ADMIN'), async (req, res) => {
   try {
-    const { status, page = '1', search } = req.query;
+    const { status, page = '1', search, reportType } = req.query;
     const take = 20;
     const skip = (parseInt(page as string) - 1) * take;
     const where: any = {};
     if (status && status !== 'All') where.status = status;
+    if (reportType && reportType !== 'All') where.reportType = reportType;
     if (search) {
       where.OR = [
         { bookingId: { contains: search as string, mode: 'insensitive' } },
@@ -71,7 +88,13 @@ router.get('/', authenticate, requireRole('ADMIN'), async (req, res) => {
       }),
       db.incidentReport.count({ where }),
     ]);
-    res.json({ success: true, incidents, total, page: parseInt(page as string), pages: Math.ceil(total / take) });
+    const withSigned = await Promise.all(
+      incidents.map(async (inc) => ({
+        ...inc,
+        evidenceUrls: await resolveEvidenceUrls(inc.evidenceUrls),
+      }))
+    );
+    res.json({ success: true, incidents: withSigned, total, page: parseInt(page as string), pages: Math.ceil(total / take) });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
@@ -98,15 +121,29 @@ router.put('/:id/status', authenticate, requireRole('ADMIN'), async (req, res) =
   }
 });
 
-// Get incident details
+// Get incident details — reporter, the space owner, or an admin only.
 router.get('/:id', authenticate, async (req, res) => {
   try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     const report = await db.incidentReport.findUnique({
       where: { id: parseInt(req.params.id) },
-      include: { booking: { select: { id: true, parkerId: true, spaceId: true } } },
+      include: { booking: { select: { id: true, parkerId: true, spaceId: true, space: { select: { ownerId: true } } } } },
     });
     if (!report) return res.status(404).json({ error: 'Incident not found' });
-    res.json({ success: true, report });
+    // Authorize: the reporter, the owner of the involved space, or an admin.
+    const ownerId = (report.booking as any)?.space?.ownerId;
+    const isAllowed =
+      report.reportedByUserId === userId ||
+      ownerId === userId ||
+      req.user?.role === 'ADMIN';
+    if (!isAllowed) {
+      return res.status(403).json({ error: 'You do not have access to this incident' });
+    }
+    res.json({
+      success: true,
+      report: { ...report, evidenceUrls: await resolveEvidenceUrls(report.evidenceUrls) },
+    });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }

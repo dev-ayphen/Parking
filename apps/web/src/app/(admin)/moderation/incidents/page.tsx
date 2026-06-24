@@ -7,8 +7,9 @@ import {
   AlertTriangle, Loader2, User, ChevronLeft, ChevronRight, X, Check,
 } from 'lucide-react';
 import { adminApi } from '@/services/api';
-
-const SOCKET_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api').replace(/\/api\/?$/, '');
+import { useAuthStore } from '@/store/authStore';
+import { SOCKET_URL } from '@/lib/config';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 
 interface Incident {
   id: number;
@@ -52,6 +53,7 @@ export default function IncidentsPage() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 400);
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -62,11 +64,12 @@ export default function IncidentsPage() {
   const [newStatus, setNewStatus] = useState('INVESTIGATING');
   const [adminNotes, setAdminNotes] = useState('');
   const [updating, setUpdating] = useState(false);
+  const [updateError, setUpdateError] = useState('');
 
   const fetchIncidents = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await adminApi.listIncidents({ status: statusFilter || undefined, page });
+      const data = await adminApi.listIncidents({ status: statusFilter || undefined, search: debouncedSearch || undefined, page });
       if (data.success) {
         setIncidents(data.incidents || []);
         setTotal(data.total || 0);
@@ -77,13 +80,13 @@ export default function IncidentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, page]);
+  }, [statusFilter, debouncedSearch, page]);
 
   useEffect(() => { fetchIncidents(); }, [fetchIncidents]);
 
   // Live-refresh when a new incident is reported.
   useEffect(() => {
-    const socket = createSocket(SOCKET_URL, { transports: ['websocket'] });
+    const socket = createSocket(SOCKET_URL, { transports: ['websocket'], auth: { token: useAuthStore.getState().token } });
     socket.on('connect', () => socket.emit('admin:join'));
     socket.on('incident:new', () => fetchIncidents());
     return () => { socket.disconnect(); };
@@ -93,6 +96,7 @@ export default function IncidentsPage() {
     if (!updateIncident) return;
     try {
       setUpdating(true);
+      setUpdateError('');
       await adminApi.updateIncidentStatus(updateIncident.id, {
         status: newStatus,
         adminNotes: adminNotes || undefined,
@@ -101,19 +105,13 @@ export default function IncidentsPage() {
       setAdminNotes('');
       fetchIncidents();
     } catch (e: any) {
-      if (process.env.NODE_ENV === 'development') console.error('Update failed:', e);
+      setUpdateError(e?.response?.data?.error || e?.message || 'Failed to update incident status');
     } finally {
       setUpdating(false);
     }
   };
 
-  const filtered = incidents.filter(i => {
-    if (!search) return true;
-    const name = i.reportedByUser ? `${i.reportedByUser.firstName} ${i.reportedByUser.lastName}`.toLowerCase() : '';
-    return name.includes(search.toLowerCase()) || i.bookingId.toLowerCase().includes(search.toLowerCase());
-  });
-
-  const openCount = incidents.filter(i => ['REPORTED', 'INVESTIGATING'].includes(i.status)).length;
+  const openCount = incidents.filter(i => ['OPEN', 'INVESTIGATING'].includes(i.status)).length;
 
   const fmt = (iso: string) => new Date(iso).toLocaleDateString('en-IN', {
     day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
@@ -137,15 +135,15 @@ export default function IncidentsPage() {
       {/* Filters */}
       <div className="bg-white rounded-2xl border border-gray-100 p-4 flex flex-wrap gap-3">
         <input type="text" placeholder="Search by booking ID or reporter name..."
-          value={search} onChange={e => setSearch(e.target.value)}
+          value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
           className="flex-1 min-w-[220px] px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20" />
         <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
           className="px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none">
           <option value="">All Statuses</option>
-          <option value="REPORTED">Reported</option>
+          <option value="OPEN">Open</option>
           <option value="INVESTIGATING">Investigating</option>
           <option value="RESOLVED">Resolved</option>
-          <option value="CLOSED">Closed</option>
+          <option value="REJECTED">Rejected</option>
         </select>
       </div>
 
@@ -155,7 +153,7 @@ export default function IncidentsPage() {
           <div className="flex items-center justify-center py-16">
             <Loader2 className="animate-spin text-red-600" size={32} />
           </div>
-        ) : filtered.length === 0 ? (
+        ) : incidents.length === 0 ? (
           <div className="p-12 text-center">
             <AlertTriangle className="mx-auto text-gray-400 mb-3" size={32} />
             <p className="text-gray-500 text-sm">No incident reports found. This is a good sign!</p>
@@ -174,7 +172,7 @@ export default function IncidentsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filtered.map(inc => (
+                {incidents.map(inc => (
                   <tr key={inc.id} className="hover:bg-gray-50/50 transition-colors">
                     <td className="px-5 py-4">
                       <p className="text-sm font-semibold text-gray-900">#{inc.bookingId}</p>
@@ -208,6 +206,7 @@ export default function IncidentsPage() {
                           setUpdateIncident(inc);
                           setNewStatus(STATUS_TRANSITIONS[inc.status][0]);
                           setAdminNotes(inc.adminNotes || '');
+                          setUpdateError('');
                         }} className="text-indigo-600 hover:text-indigo-700 font-semibold text-sm">
                           Update
                         </button>
@@ -266,6 +265,9 @@ export default function IncidentsPage() {
                   placeholder="Describe the investigation findings or resolution..."
                   className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none resize-none" />
               </div>
+            )}
+            {updateError && (
+              <div className="bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2 rounded-xl text-sm">{updateError}</div>
             )}
             <button onClick={handleUpdate} disabled={updating}
               className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-semibold rounded-xl text-sm flex items-center justify-center gap-2">

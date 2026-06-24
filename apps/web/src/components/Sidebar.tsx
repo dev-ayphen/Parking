@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
@@ -12,7 +12,7 @@ import {
   MapPin,
   Calendar,
   CreditCard,
-  CreditCard as SubscriptionIcon, // Using CreditCard for Subscriptions too, or use something else if preferred
+  Repeat,
   Settings,
   LifeBuoy,
   BarChart3,
@@ -25,6 +25,8 @@ import {
   ChevronDown,
   Car,
   FileSearch,
+  Menu,
+  X,
 } from 'lucide-react';
 
 type BadgeKey = 'pendingSpaces' | 'openSupportTickets' | 'expiringSubscriptions' | 'openAbuseReports';
@@ -43,7 +45,7 @@ const navigation: NavItem[] = [
   { name: 'Spaces Management', href: '/spaces', icon: MapPin, badgeKey: 'pendingSpaces' },
   { name: 'Bookings & Sessions', href: '/bookings', icon: Calendar },
   { name: 'Payments & Billing', href: '/payments', icon: CreditCard },
-  { name: 'Subscriptions', href: '/subscriptions', icon: SubscriptionIcon, badgeKey: 'expiringSubscriptions' },
+  { name: 'Subscriptions', href: '/subscriptions', icon: Repeat, badgeKey: 'expiringSubscriptions' },
   { name: 'Platform Settings', href: '/settings', icon: Settings },
   { name: 'Support & Issues', href: '/support', icon: LifeBuoy, badgeKey: 'openSupportTickets' },
   { name: 'Cases & Evidence', href: '/cases', icon: FileSearch },
@@ -65,7 +67,6 @@ const navigation: NavItem[] = [
     icon: Scale,
     subItems: [
       { name: 'Documents & Policies', href: '/legal' },
-      { name: 'Case Evidence', href: '/cases' },
     ],
   },
   { name: 'System Logs', href: '/logs', icon: Server },
@@ -85,7 +86,11 @@ export function Sidebar() {
   const router = useRouter();
   const { user, logout } = useAuthStore();
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
+  const [mobileOpen, setMobileOpen] = useState(false);
   const counts = useSidebarCounts();
+
+  // Close the mobile drawer whenever the route changes.
+  useEffect(() => { setMobileOpen(false); }, [pathname]);
 
   const handleLogout = () => {
     logout();
@@ -97,7 +102,25 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="w-72 bg-[#0A0A0A] text-white h-screen fixed left-0 top-0 flex flex-col border-r border-white/5 font-sans z-50">
+    <>
+      {/* Mobile hamburger — only shows below lg */}
+      <button
+        onClick={() => setMobileOpen(true)}
+        aria-label="Open menu"
+        className="lg:hidden fixed top-4 left-4 z-[60] w-10 h-10 rounded-xl bg-[#0A0A0A] text-white flex items-center justify-center shadow-lg border border-white/10"
+      >
+        <Menu size={20} />
+      </button>
+
+      {/* Backdrop when the mobile drawer is open */}
+      {mobileOpen && (
+        <div
+          onClick={() => setMobileOpen(false)}
+          className="lg:hidden fixed inset-0 bg-black/50 z-[55]"
+        />
+      )}
+
+    <aside className={`w-72 bg-[#0A0A0A] text-white h-screen fixed left-0 top-0 flex flex-col border-r border-white/5 font-sans z-[60] transition-transform duration-300 lg:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
       {/* Logo */}
       <div className="p-6 border-b border-white/5 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-32 h-32 bg-primary/20 rounded-full blur-[50px]" />
@@ -109,6 +132,14 @@ export function Sidebar() {
             <h1 className="text-xl font-bold text-white tracking-tight">ParkSwift</h1>
             <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wider mt-0.5">Admin Dashboard</p>
           </div>
+          {/* Close button — only on mobile drawer */}
+          <button
+            onClick={() => setMobileOpen(false)}
+            aria-label="Close menu"
+            className="lg:hidden ml-auto text-gray-400 hover:text-white"
+          >
+            <X size={20} />
+          </button>
         </div>
       </div>
 
@@ -232,5 +263,6 @@ export function Sidebar() {
         }
       `}</style>
     </aside>
+    </>
   );
 }

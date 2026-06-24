@@ -4,15 +4,14 @@ import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { io as createSocket } from 'socket.io-client';
 import {
-  Search, Filter, MoreVertical, MapPin, Phone,
+  Search, MoreVertical, MapPin, Phone,
   CheckCircle2, XCircle, Clock, ChevronLeft, ChevronRight, Loader2, Car,
   FileText, ShieldCheck, AlertTriangle, ExternalLink, X, Eye, MapPinIcon, Users, Zap, DollarSign, Star,
 } from 'lucide-react';
 import { adminApi } from '@/services/api';
+import { useAuthStore } from '@/store/authStore';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
-
-const SOCKET_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api').replace(/\/api\/?$/, '');
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api';
+import { API_BASE, SOCKET_URL } from '@/lib/config';
 
 // Compact review count: 1200 → "1.2K", 1_500_000 → "1.5M".
 const fmtCount = (n: number) => {
@@ -108,6 +107,8 @@ const tabs = [
   { key: 'All Spaces', status: undefined },
   { key: 'Pending Review', status: 'PENDING' },
   { key: 'Approved', status: 'VERIFIED' },
+  { key: 'Rejected', status: 'REJECTED' },
+  { key: 'Blocked', status: 'BLOCKED' },
 ] as const;
 
 export default function SpacesPage() {
@@ -141,6 +142,10 @@ export default function SpacesPage() {
   const [rejectingSpaceId, setRejectingSpaceId] = useState<number | null>(null);
   const [spaceRejectReason, setSpaceRejectReason] = useState('');
   const [rejectingSpace, setRejectingSpace] = useState<AdminSpace | null>(null);
+  // "Request document" (soft ask) modal state.
+  const [requestDocSpace, setRequestDocSpace] = useState<AdminSpace | null>(null);
+  const [requestDocLabel, setRequestDocLabel] = useState('');
+  const [requestDocMessage, setRequestDocMessage] = useState('');
 
   const fetchSpaces = useCallback(async () => {
     try {
@@ -174,7 +179,7 @@ export default function SpacesPage() {
   }, [openMenuId]);
 
   useEffect(() => {
-    const socket = createSocket(SOCKET_URL, { transports: ['websocket'] });
+    const socket = createSocket(SOCKET_URL, { transports: ['websocket'], auth: { token: useAuthStore.getState().token } });
     socket.on('connect', () => socket.emit('admin:join'));
     socket.on('space:new', fetchSpaces);
     socket.on('space:updated', fetchSpaces);
@@ -188,7 +193,7 @@ export default function SpacesPage() {
     setDocuments([]);
     setDocCompliance(null);
     try {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null;
+      const token = useAuthStore.getState().token;
       const [docsRes, compRes] = await Promise.all([
         fetch(`${API_BASE}/admin/spaces/${space.id}/documents`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`${API_BASE}/spaces/${space.id}/document-compliance`, { headers: { Authorization: `Bearer ${token}` } }),
@@ -197,8 +202,11 @@ export default function SpacesPage() {
       const compJson = await compRes.json();
       if (docsJson.success) setDocuments(docsJson.documents || []);
       if (compJson.success) setDocCompliance({ compliant: compJson.compliant, missingDocs: compJson.missingDocs, rule: compJson.rule });
-    } catch {
-      /* ignore */
+      if (!docsJson.success && !compJson.success) {
+        setError(docsJson.error || compJson.error || 'Failed to load documents');
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Failed to load documents');
     } finally {
       setDocsLoading(false);
     }
@@ -207,13 +215,15 @@ export default function SpacesPage() {
   const openDetailsModal = async (space: AdminSpace) => {
     setDetailsSpaceId(space.id);
     setDetailsLoading(true);
+    // Seed from the already-correct list row so the modal shows owner/coords/count
+    // instantly, then enrich with the admin detail endpoint.
+    setDetailsSpace(space);
     try {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null;
-      const res = await fetch(`${API_BASE}/spaces/${space.id}`, { headers: { Authorization: `Bearer ${token}` } });
-      const json = await res.json();
+      const json = await adminApi.getSpaceForAdmin(space.id);
       if (json.success) setDetailsSpace(json.space);
-    } catch {
-      /* ignore */
+      else setError(json.error || 'Failed to load space details');
+    } catch (e: any) {
+      setError(e?.response?.data?.error || e?.message || 'Failed to load space details');
     } finally {
       setDetailsLoading(false);
     }
@@ -222,12 +232,17 @@ export default function SpacesPage() {
   const handleVerifyDoc = async (docId: number, action: 'VERIFIED' | 'REJECTED', rejectionReason?: string) => {
     try {
       setVerifyingDocId(docId);
-      const token = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null;
-      await fetch(`${API_BASE}/admin/spaces/${docPanelSpaceId}/documents/${docId}/verify`, {
+      setError('');
+      const token = useAuthStore.getState().token;
+      const verifyRes = await fetch(`${API_BASE}/admin/spaces/${docPanelSpaceId}/documents/${docId}/verify`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ action, rejectionReason }),
       });
+      if (!verifyRes.ok) {
+        const errJson = await verifyRes.json().catch(() => null);
+        throw new Error(errJson?.error || `Failed to ${action === 'VERIFIED' ? 'verify' : 'reject'} document`);
+      }
       // Refresh docs
       if (docPanelSpaceId) {
         const docsRes = await fetch(`${API_BASE}/admin/spaces/${docPanelSpaceId}/documents`, { headers: { Authorization: `Bearer ${token}` } });
@@ -236,8 +251,8 @@ export default function SpacesPage() {
       }
       setRejectDocId(null);
       setRejectReason('');
-    } catch {
-      /* ignore */
+    } catch (e: any) {
+      setError(e?.message || 'Failed to update document');
     } finally {
       setVerifyingDocId(null);
     }
@@ -246,10 +261,11 @@ export default function SpacesPage() {
   const handleApprove = async (spaceId: number) => {
     try {
       setActionId(spaceId);
+      setError('');
       await adminApi.approveSpace(spaceId);
       await fetchSpaces();
     } catch (e: any) {
-      alert(e?.response?.data?.error || e?.message || 'Failed to approve');
+      setError(e?.response?.data?.error || e?.message || 'Failed to approve');
     } finally {
       setActionId(null);
     }
@@ -261,17 +277,71 @@ export default function SpacesPage() {
     setSpaceRejectReason('');
   };
 
+  const handleBlock = async (spaceId: number) => {
+    if (!window.confirm('Block this space? Pending bookings will be cancelled and it will be removed from the map.')) return;
+    try {
+      setActionId(spaceId);
+      setError('');
+      await adminApi.blockSpace(spaceId);
+      await fetchSpaces();
+    } catch (e: any) {
+      setError(e?.response?.data?.error || e?.message || 'Failed to block');
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  const handleUnblock = async (spaceId: number) => {
+    try {
+      setActionId(spaceId);
+      setError('');
+      await adminApi.unblockSpace(spaceId);
+      await fetchSpaces();
+    } catch (e: any) {
+      setError(e?.response?.data?.error || e?.message || 'Failed to unblock');
+    } finally {
+      setActionId(null);
+    }
+  };
+
   const submitReject = async () => {
     if (!rejectingSpaceId) return;
     try {
       setActionId(rejectingSpaceId);
+      setError('');
       await adminApi.rejectSpace(rejectingSpaceId, spaceRejectReason || undefined);
       setRejectingSpaceId(null);
       setSpaceRejectReason('');
       setRejectingSpace(null);
       await fetchSpaces();
     } catch (e: any) {
-      alert(e?.response?.data?.error || e?.message || 'Failed to reject');
+      setError(e?.response?.data?.error || e?.message || 'Failed to reject');
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  const handleRequestDoc = (space: AdminSpace) => {
+    setRequestDocSpace(space);
+    setRequestDocLabel('');
+    setRequestDocMessage('');
+  };
+
+  const closeRequestDoc = () => {
+    setRequestDocSpace(null);
+    setRequestDocLabel('');
+    setRequestDocMessage('');
+  };
+
+  const submitRequestDoc = async () => {
+    if (!requestDocSpace || !requestDocLabel.trim()) return;
+    try {
+      setActionId(requestDocSpace.id);
+      setError('');
+      await adminApi.requestSpaceDocument(requestDocSpace.id, requestDocLabel.trim(), requestDocMessage.trim() || undefined);
+      closeRequestDoc();
+    } catch (e: any) {
+      setError(e?.response?.data?.error || e?.message || 'Failed to send request');
     } finally {
       setActionId(null);
     }
@@ -285,6 +355,8 @@ export default function SpacesPage() {
     if (!status) return tally.all;
     if (status === 'PENDING') return tally.pending;
     if (status === 'VERIFIED') return tally.verified;
+    if (status === 'REJECTED') return tally.rejected;
+    if (status === 'BLOCKED') return tally.blocked;
     return 0;
   };
 
@@ -336,9 +408,6 @@ export default function SpacesPage() {
               className="pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all w-64"
             />
           </div>
-          <button className="p-2 border border-gray-200 text-gray-600 rounded-xl hover:bg-gray-50 transition-colors">
-            <Filter size={18} />
-          </button>
         </div>
 
         {error && (
@@ -378,24 +447,23 @@ export default function SpacesPage() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {spaces.map((space) => (
-                  <tr key={space.id} className="hover:bg-gray-50/50 transition-colors group">
+                  <tr key={space.id} className="hover:bg-gray-50/50 transition-colors group align-top">
                     <td className="px-6 py-4">
                       <div className="flex items-start gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center flex-shrink-0">
+                        <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center flex-shrink-0 mt-0.5">
                           <Car size={18} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-start gap-2 mb-1">
-                            <p className="font-bold text-gray-900 text-sm">{space.name}</p>
+                          {/* Address intentionally omitted here — it made rows very tall.
+                              Full address is shown in the space details modal (Eye icon). */}
+                          <div className="flex items-center gap-2">
+                            <p className="font-bold text-gray-900 text-sm leading-snug">{space.name}</p>
                             {space.requiresAdminReview && (
                               <span className="px-1.5 py-0.5 bg-rose-50 text-rose-600 text-xs font-bold rounded border border-rose-200 flex-shrink-0 whitespace-nowrap">
                                 Review Required
                               </span>
                             )}
                           </div>
-                          <p className="text-xs text-gray-500 flex items-center gap-1">
-                            <MapPin size={11} className="flex-shrink-0" /> <span className="break-words">{space.address}</span>
-                          </p>
                         </div>
                       </div>
                     </td>
@@ -489,8 +557,19 @@ export default function SpacesPage() {
                               initial={{ opacity: 0, y: -10 }}
                               animate={{ opacity: 1, y: 0 }}
                               exit={{ opacity: 0, y: -10 }}
-                              className="absolute right-0 mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg z-50"
+                              className="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50"
                             >
+                              {/* Soft "please upload this document" request — available for
+                                  any space that isn't blocked, without changing its status. */}
+                              {space.status !== 'BLOCKED' && (
+                                <button
+                                  onClick={() => { handleRequestDoc(space); setOpenMenuId(null); }}
+                                  disabled={actionId === space.id}
+                                  className="w-full text-left px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50 transition-colors flex items-center gap-2 border-b border-gray-100"
+                                >
+                                  <FileText size={14} /> Request document
+                                </button>
+                              )}
                               {space.status === 'PENDING' && (
                                 <>
                                   <button
@@ -515,8 +594,32 @@ export default function SpacesPage() {
                                   </button>
                                 </>
                               )}
-                              {space.status !== 'PENDING' && (
-                                <p className="px-4 py-2 text-xs text-gray-500">No actions available</p>
+                              {space.status === 'VERIFIED' && (
+                                <button
+                                  onClick={() => { handleBlock(space.id); setOpenMenuId(null); }}
+                                  disabled={actionId === space.id}
+                                  className="w-full text-left px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50 transition-colors flex items-center gap-2"
+                                >
+                                  <XCircle size={14} /> Block space
+                                </button>
+                              )}
+                              {space.status === 'BLOCKED' && (
+                                <button
+                                  onClick={() => { handleUnblock(space.id); setOpenMenuId(null); }}
+                                  disabled={actionId === space.id}
+                                  className="w-full text-left px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 transition-colors flex items-center gap-2"
+                                >
+                                  <ShieldCheck size={14} /> Unblock space
+                                </button>
+                              )}
+                              {space.status === 'REJECTED' && (
+                                <button
+                                  onClick={() => { handleApprove(space.id); setOpenMenuId(null); }}
+                                  disabled={actionId === space.id}
+                                  className="w-full text-left px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 transition-colors flex items-center gap-2"
+                                >
+                                  <CheckCircle2 size={14} /> Approve anyway
+                                </button>
                               )}
                             </motion.div>
                           )}
@@ -687,9 +790,9 @@ export default function SpacesPage() {
                       </div>
                     )}
 
-                    {/* Step 4: Photos & Visibility */}
+                    {/* Step 4: Photos & Video */}
                     <div className="border border-gray-200 rounded-2xl p-4 bg-gray-50">
-                      <h3 className="font-bold text-gray-900 mb-4">Photos & Visibility</h3>
+                      <h3 className="font-bold text-gray-900 mb-4">Photos & Video</h3>
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                           <p className="text-xs text-gray-500 font-semibold uppercase mb-1">Front Photo</p>
@@ -707,6 +810,16 @@ export default function SpacesPage() {
                             <p className="text-sm font-semibold text-gray-400">— Not uploaded</p>
                           )}
                         </div>
+                        {(detailsSpace as any).videoUrl && (
+                          <div className="col-span-2">
+                            <p className="text-xs text-gray-500 font-semibold uppercase mb-1">Walkthrough Video</p>
+                            <video
+                              src={(detailsSpace as any).videoUrl}
+                              controls
+                              className="w-full rounded-xl border border-gray-200 max-h-48"
+                            />
+                          </div>
+                        )}
                         <div>
                           <p className="text-xs text-gray-500 font-semibold uppercase">Visibility</p>
                           <p className="text-sm font-semibold text-gray-900 mt-1">{detailsSpace.visibility || '—'}</p>
@@ -759,6 +872,12 @@ export default function SpacesPage() {
                         </div>
                         <p className="text-xs text-gray-400">Bookings: <span className="font-bold text-gray-600">{detailsSpace.bookingsCount}</span></p>
                       </div>
+                      {detailsSpace.status === 'REJECTED' && (detailsSpace as any).rejectionReason && (
+                        <div className="mt-3 p-3 bg-rose-50 border border-rose-200 rounded-xl">
+                          <p className="text-xs text-rose-600 font-semibold uppercase mb-1">Rejection Reason</p>
+                          <p className="text-sm text-rose-800 font-medium">{(detailsSpace as any).rejectionReason}</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -873,16 +992,36 @@ export default function SpacesPage() {
                         {doc.rejectionReason && (
                           <p className="text-xs text-rose-600 mt-1">Reason: {doc.rejectionReason}</p>
                         )}
-                        {/* View file — fileUrl is now a full Supabase (signed) URL.
-                            Fall back to the legacy SOCKET_URL prefix for old relative paths. */}
-                        <a
-                          href={/^https?:\/\//.test(doc.fileUrl) ? doc.fileUrl : `${SOCKET_URL}${doc.fileUrl}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-xs text-indigo-600 font-semibold mt-2 hover:text-indigo-800"
-                        >
-                          <ExternalLink size={11} /> View File
-                        </a>
+                        {(() => {
+                          // fileUrl is a full signed Supabase URL (legacy relative paths get the SOCKET_URL prefix).
+                          const href = /^https?:\/\//.test(doc.fileUrl) ? doc.fileUrl : `${SOCKET_URL}${doc.fileUrl}`;
+                          // Decide if the uploaded file is an image we can preview inline.
+                          const isImage = /^image\//i.test(doc.fileType || '') || /\.(jpe?g|png|webp|gif)(\?|$)/i.test(doc.fileUrl || '');
+                          return (
+                            <>
+                              {/* Show the actual uploaded photo inline so the admin SEES what
+                                  was submitted without leaving the panel. PDFs/other files
+                                  fall back to the View File link below. */}
+                              {isImage && (
+                                <a href={href} target="_blank" rel="noopener noreferrer" className="block mt-2">
+                                  <img
+                                    src={href}
+                                    alt={doc.documentLabel}
+                                    className="w-full max-h-56 object-contain rounded-xl border border-gray-200 bg-white"
+                                  />
+                                </a>
+                              )}
+                              <a
+                                href={href}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-xs text-indigo-600 font-semibold mt-2 hover:text-indigo-800"
+                              >
+                                <ExternalLink size={11} /> {isImage ? 'Open full size' : 'View File'}
+                              </a>
+                            </>
+                          );
+                        })()}
                       </div>
                     </div>
 
@@ -1020,6 +1159,106 @@ export default function SpacesPage() {
                     ) : (
                       <>
                         <XCircle size={14} /> Reject Space
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+
+        {/* ── Request-document modal (soft ask, no status change) ───────────── */}
+        {requestDocSpace && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/40 z-40"
+              onClick={closeRequestDoc}
+            />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            >
+              <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full">
+                <div className="px-6 py-5 border-b border-gray-200 bg-gradient-to-r from-indigo-50 to-blue-50">
+                  <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                    <FileText size={20} className="text-indigo-600" /> Request a document
+                  </h2>
+                  <p className="text-sm text-gray-600 mt-1">Ask the owner to upload a document. The space stays as-is.</p>
+                </div>
+
+                <div className="px-6 py-5 space-y-4">
+                  <p className="text-sm font-semibold text-gray-700">Space: {requestDocSpace.name}</p>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Which document? <span className="text-rose-600">*</span>
+                    </label>
+                    {/* Quick-pick chips for the common proof documents. */}
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {['Maintenance Bill', 'Parking Allocation Photo', 'Rental Agreement', 'EB Bill', 'Property Tax', 'Owner Permission'].map((d) => (
+                        <button
+                          key={d}
+                          type="button"
+                          onClick={() => setRequestDocLabel(d)}
+                          className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
+                            requestDocLabel === d
+                              ? 'bg-indigo-600 text-white border-indigo-600'
+                              : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                          }`}
+                        >
+                          {d}
+                        </button>
+                      ))}
+                    </div>
+                    <input
+                      type="text"
+                      value={requestDocLabel}
+                      onChange={(e) => setRequestDocLabel(e.target.value.slice(0, 80))}
+                      placeholder="e.g. Maintenance Bill"
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Message to owner <span className="text-gray-400 font-normal">(optional)</span>
+                    </label>
+                    <textarea
+                      value={requestDocMessage}
+                      onChange={(e) => setRequestDocMessage(e.target.value.slice(0, 300))}
+                      placeholder="e.g. The bill you uploaded is unclear — please re-upload a readable copy."
+                      rows={3}
+                      className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 resize-none"
+                    />
+                    <p className="text-xs text-gray-500 mt-1 text-right">{requestDocMessage.length}/300 characters</p>
+                  </div>
+                </div>
+
+                <div className="px-6 py-4 border-t border-gray-200 flex gap-3 bg-gray-50">
+                  <button
+                    onClick={closeRequestDoc}
+                    className="flex-1 py-2.5 text-sm font-semibold bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={submitRequestDoc}
+                    disabled={actionId === requestDocSpace.id || !requestDocLabel.trim()}
+                    className="flex-1 py-2.5 text-sm font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                  >
+                    {actionId === requestDocSpace.id ? (
+                      <>
+                        <Loader2 size={14} className="animate-spin" /> Sending...
+                      </>
+                    ) : (
+                      <>
+                        <FileText size={14} /> Send request
                       </>
                     )}
                   </button>

@@ -9,31 +9,34 @@ import {View,
   ActivityIndicator,
   RefreshControl,
   Modal,
-  ScrollView} from 'react-native';
+  ScrollView,
+  DeviceEventEmitter} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../../services/api';
+import { NETWORK_RECONNECTED } from '../../store/networkStore';
 import { PageHeader } from '../../components';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 import {
   Bell,
   Car,
-  MapPin,
   CheckCircle2,
-  AlertTriangle,
   Clock,
   Star,
   Info,
   XCircle,
   BellOff,
+  CreditCard,
+  Crown,
+  FileText,
 } from 'lucide-react-native';
 
 const READ_IDS_KEY = 'parkswift_read_notification_ids';
 
 interface Notification {
   id: string;
-  type: 'booking_request' | 'booking_approved' | 'booking_rejected' | 'session_started' | 'session_ended' | 'payment' | 'rating' | 'space' | 'space_rejected' | 'space_approved' | 'system';
+  type: 'booking_request' | 'booking_approved' | 'booking_rejected' | 'session_started' | 'session_ended' | 'payment' | 'subscription' | 'rating' | 'space' | 'space_rejected' | 'space_approved' | 'space_doc_requested' | 'system';
   title: string;
   body: string;
   time: string;
@@ -43,6 +46,8 @@ interface Notification {
     spaceId?: number;
     spaceName?: string;
     reason?: string;
+    documentLabel?: string;
+    note?: string;
   };
 }
 
@@ -58,6 +63,18 @@ const NotificationsScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null);
+  // The content rendered inside the modal. It LAGS behind selectedNotification on
+  // close — kept until the fade-out finishes — so the modal doesn't blank out and
+  // collapse its height while it's animating away.
+  const [detailContent, setDetailContent] = useState<Notification | null>(null);
+  useEffect(() => {
+    if (selectedNotification) {
+      setDetailContent(selectedNotification); // opening → show immediately
+    } else {
+      const t = setTimeout(() => setDetailContent(null), 220); // closing → after fade
+      return () => clearTimeout(t);
+    }
+  }, [selectedNotification]);
 
   // Load read IDs from AsyncStorage + fetch from API
   useEffect(() => {
@@ -67,9 +84,9 @@ const NotificationsScreen = () => {
         const ids: string[] = stored ? JSON.parse(stored) : [];
         setReadIds(new Set(ids));
         await fetchNotifications(new Set(ids));
-        // Mark all as read on server AFTER fetching so local state is already set,
-        // then update local state to reflect read
-        await markAllReadOnServer();
+        // NOTE: we intentionally do NOT mark everything read just because the
+        // screen opened. Unread items stay highlighted so the user can see what's
+        // new; a notification is marked read when TAPPED, or via "Mark all read".
       } catch {
         await fetchNotifications(new Set());
       }
@@ -111,9 +128,16 @@ const NotificationsScreen = () => {
   };
 
   const onRefresh = useCallback(async () => {
+    // Just reload — refreshing must not silently mark everything read.
     await fetchNotifications(readIds, true);
-    await markAllReadOnServer();
   }, [readIds]);
+
+  // Re-fetch when connectivity is restored (offline banner's "Retry" / auto-
+  // reconnect) so the list isn't left showing stale data.
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(NETWORK_RECONNECTED, () => { onRefresh(); });
+    return () => sub.remove();
+  }, [onRefresh]);
 
   const formatTime = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -144,6 +168,24 @@ const NotificationsScreen = () => {
     setReadIds(updated);
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
     await saveReadIds(updated);
+    // Persist server-side so the DB `isRead` flag (and the unread badge) actually
+    // update — otherwise the dot returns on the next fetch. Best-effort; the
+    // endpoint no-ops gracefully for synthetic (non-DB) ids.
+    try {
+      await api.post(`/home/notifications/${id}/read`);
+    } catch {}
+    // Let the Home bell badge recompute live (don't wait for refocus).
+    DeviceEventEmitter.emit('notification:read');
+  };
+
+  // Close the detail modal cleanly. We capture the id FIRST, close immediately
+  // (one state update → smooth fade, no "blank then collapse"), then mark-read
+  // on the next tick so its setState + network call don't re-render the modal
+  // mid-animation (that caused the height to shrink before it closed).
+  const closeDetail = () => {
+    const id = selectedNotification?.id;
+    setSelectedNotification(null);
+    if (id) setTimeout(() => markRead(id), 0);
   };
 
   const markAllRead = async () => {
@@ -151,6 +193,10 @@ const NotificationsScreen = () => {
     setReadIds(allIds);
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
     await saveReadIds(allIds);
+    // Hit the server so DB notifications are marked read and the badge clears
+    // permanently; without this the unread count returns on the next fetch.
+    await markAllReadOnServer();
+    DeviceEventEmitter.emit('notification:read');
   };
 
   // Build sections by date bucket
@@ -176,10 +222,12 @@ const NotificationsScreen = () => {
       case 'booking_rejected': return { icon: XCircle, bg: Colors.errorBg, color: Colors.errorAlt };
       case 'session_started': return { icon: Car, bg: ExtendedColors.indigoBg, color: ExtendedColors.indigoAccent };
       case 'session_ended': return { icon: Clock, bg: Colors.screenBg, color: Colors.textSecondary };
-      case 'payment': return { icon: MapPin, bg: Colors.successBg, color: Colors.success };
+      case 'payment': return { icon: CreditCard, bg: Colors.successBg, color: Colors.success };
+      case 'subscription': return { icon: Crown, bg: Colors.primaryBg, color: Colors.primary };
       case 'rating': return { icon: Star, bg: Colors.warningBg, color: Colors.warning };
       case 'space_approved': return { icon: CheckCircle2, bg: Colors.successBgAlt, color: Colors.successAlt };
       case 'space_rejected': return { icon: XCircle, bg: Colors.errorBg, color: Colors.errorAlt };
+      case 'space_doc_requested': return { icon: FileText, bg: Colors.primaryBg, color: Colors.primary };
       case 'system': return { icon: Info, bg: Colors.infoBg, color: Colors.info };
       default: return { icon: Bell, bg: Colors.screenBg, color: Colors.textSecondary };
     }
@@ -193,6 +241,8 @@ const NotificationsScreen = () => {
         style={[styles.notifItem, unread && styles.notifItemUnread]}
         onPress={() => {
           setSelectedNotification(item);
+          // Tapping a notification to view it marks THAT one read (and only it).
+          if (unread) markRead(item.id);
         }}
         activeOpacity={0.7}
       >
@@ -230,11 +280,17 @@ const NotificationsScreen = () => {
       <PageHeader
         title="Notifications"
         right={
-          unreadCount > 0 ? (
-            <TouchableOpacity onPress={markAllRead} style={styles.markAllBtn}>
-              <Text style={styles.markAllText}>Mark all read</Text>
-            </TouchableOpacity>
-          ) : undefined
+          // Always MOUNT the button so the header's right slot keeps a constant
+          // width — marking all read just makes it invisible/non-interactive, so
+          // the title never shifts position. (Unmounting it caused the jump.)
+          <TouchableOpacity
+            onPress={markAllRead}
+            style={[styles.markAllBtn, unreadCount === 0 && styles.markAllBtnHidden]}
+            disabled={unreadCount === 0}
+            accessibilityElementsHidden={unreadCount === 0}
+          >
+            <Text style={styles.markAllText}>Mark all read</Text>
+          </TouchableOpacity>
         }
       />
 
@@ -275,54 +331,53 @@ const NotificationsScreen = () => {
         visible={selectedNotification !== null}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => {
-          setSelectedNotification(null);
-          if (selectedNotification) markRead(selectedNotification.id);
-        }}
+        onRequestClose={closeDetail}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
               {/* Header */}
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>{selectedNotification?.title}</Text>
-                <TouchableOpacity
-                  onPress={() => {
-                    setSelectedNotification(null);
-                    if (selectedNotification) markRead(selectedNotification.id);
-                  }}
-                  style={styles.closeBtn}
-                >
+                <Text style={styles.modalTitle}>{detailContent?.title}</Text>
+                <TouchableOpacity onPress={closeDetail} style={styles.closeBtn}>
                   <Text style={styles.closeBtnText}>✕</Text>
                 </TouchableOpacity>
               </View>
 
               {/* Body Content */}
               <View style={styles.modalBody}>
-                <Text style={styles.modalMessage}>{selectedNotification?.body}</Text>
+                <Text style={styles.modalMessage}>{detailContent?.body}</Text>
 
                 {/* Rejection Reason (only if explicitly provided in metadata) */}
-                {selectedNotification?.metadata?.reason ? (
+                {detailContent?.metadata?.reason ? (
                   <View style={styles.reasonSection}>
                     <Text style={styles.reasonLabel}>
-                      {selectedNotification?.title?.includes('Rejected') ? 'Rejection Reason:' : 'Details:'}
+                      {detailContent?.title?.includes('Rejected') ? 'Rejection Reason:' : 'Details:'}
                     </Text>
                     <Text style={styles.reasonText}>
-                      {selectedNotification.metadata.reason}
+                      {detailContent.metadata.reason}
                     </Text>
+                  </View>
+                ) : null}
+
+                {/* Document request: show which document the admin asked for */}
+                {detailContent?.type === 'space_doc_requested' && detailContent?.metadata?.documentLabel ? (
+                  <View style={styles.reasonSection}>
+                    <Text style={styles.reasonLabel}>Document requested:</Text>
+                    <Text style={styles.reasonText}>{detailContent.metadata.documentLabel}</Text>
                   </View>
                 ) : null}
 
                 {/* Timestamp */}
                 <View style={styles.timestampSection}>
                   <Text style={styles.timestampLabel}>
-                    {selectedNotification?.type === 'space_rejected'
+                    {detailContent?.type === 'space_rejected'
                       ? 'Rejected On:'
                       : 'Received:'}
                   </Text>
                   <Text style={styles.timestampValue}>
-                    {selectedNotification
-                      ? new Date(selectedNotification.createdAt).toLocaleString(
+                    {detailContent
+                      ? new Date(detailContent.createdAt).toLocaleString(
                           'en-IN',
                           {
                             day: '2-digit',
@@ -338,17 +393,26 @@ const NotificationsScreen = () => {
                 </View>
               </View>
 
-              {/* Action Button */}
+              {/* Action Button(s) */}
               <View style={styles.modalFooter}>
-                <TouchableOpacity
-                  style={styles.doneBtn}
-                  onPress={() => {
-                    setSelectedNotification(null);
-                    if (selectedNotification) markRead(selectedNotification.id);
-                  }}
-                >
-                  <Text style={styles.doneBtnText}>Got It</Text>
-                </TouchableOpacity>
+                {/* Doc request → jump straight to editing/uploading on that space. */}
+                {detailContent?.type === 'space_doc_requested' && detailContent?.metadata?.spaceId ? (
+                  <TouchableOpacity
+                    style={styles.uploadActionBtn}
+                    onPress={() => {
+                      const sid = detailContent.metadata?.spaceId;
+                      closeDetail();
+                      if (sid) router.push(`/add-space?edit=${sid}`);
+                    }}
+                  >
+                    <FileText size={16} color={Colors.white} strokeWidth={2.5} />
+                    <Text style={styles.uploadActionBtnText}>Upload document</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity style={styles.doneBtn} onPress={closeDetail}>
+                    <Text style={styles.doneBtnText}>Got It</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </ScrollView>
           </View>
@@ -371,6 +435,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.primary,
   },
+  // Invisible but still occupies its full size, so the header's right slot keeps a
+  // constant width and the title never shifts when all notifications are read.
+  markAllBtnHidden: { opacity: 0 },
   markAllText: {
     fontSize: FontSize.sm,                          // 12 = sm ✓
     fontWeight: FontWeight.bold,
@@ -605,6 +672,20 @@ const styles = StyleSheet.create({
   },
   doneBtnText: {
     fontSize: FontSize.lg,                          // 15 = lg ✓
+    fontWeight: FontWeight.bold,
+    color: Colors.white,
+  },
+  uploadActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.md,
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.md,
+    paddingVertical: Spacing['2xl'],
+  },
+  uploadActionBtnText: {
+    fontSize: FontSize.lg,
     fontWeight: FontWeight.bold,
     color: Colors.white,
   },

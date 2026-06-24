@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
 import { Control, Controller, FieldErrors } from 'react-hook-form';
-import { Search } from 'lucide-react-native';
+import { Search, LocateFixed } from 'lucide-react-native';
 import LeafletMap, { LeafletMapHandle } from '../LeafletMap';
 import FormInput from '../FormInput';
 import { styles } from './addSpaceStyles';
@@ -21,6 +21,8 @@ type Props = {
   pickSuggestion: (s: Suggestion) => void;
   markerCoord: { latitude: number; longitude: number };
   reverseGeocode: (lat: number, lng: number) => void;
+  useCurrentLocation: () => void;
+  isLocatingMe: boolean;
   mapRef: React.RefObject<LeafletMapHandle | null>;
 };
 
@@ -35,6 +37,8 @@ export default function Step2Location({
   pickSuggestion,
   markerCoord,
   reverseGeocode,
+  useCurrentLocation,
+  isLocatingMe,
   mapRef,
 }: Props) {
   return (
@@ -110,6 +114,23 @@ export default function Step2Location({
           </View>
         )}
       </View>
+
+      {/* Use my current location */}
+      <TouchableOpacity
+        style={styles.currentLocationBtn}
+        onPress={useCurrentLocation}
+        disabled={isLocatingMe}
+        activeOpacity={0.7}
+      >
+        {isLocatingMe ? (
+          <ActivityIndicator size="small" color={Colors.primary} />
+        ) : (
+          <LocateFixed size={16} color={Colors.primary} />
+        )}
+        <Text style={styles.currentLocationBtnText}>
+          {isLocatingMe ? 'Getting your location…' : 'Use my current location'}
+        </Text>
+      </TouchableOpacity>
 
       {/* Real Map (OpenStreetMap) */}
       <View style={styles.mapContainer}>

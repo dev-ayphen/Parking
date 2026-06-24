@@ -1,6 +1,8 @@
 import { Prisma } from '@prisma/client';
 import { db } from '../config/database';
 import { bookingExpiryService } from './bookingExpiry.service';
+import { storageService } from './storage.service';
+import { BUCKETS } from '../config/supabase';
 
 /**
  * Space moderation: list, approve, reject, block.
@@ -65,7 +67,7 @@ export const spaceAdminService = {
       rows.forEach((row) => ratingMap.set(row.spaceId, { avg: row.avg, count: row.count }));
     }
 
-    const mapped = (spaces as any[]).map((s) => ({
+    const mapped = await Promise.all((spaces as any[]).map(async (s) => ({
       id: s.id,
       name: s.name,
       spaceType: s.spaceType,
@@ -83,7 +85,17 @@ export const spaceAdminService = {
       visibility: s.visibility,
       docType: s.docType,
       status: s.status,
+      rejectionReason: s.rejectionReason ?? null,
       requiresAdminReview: s.requiresAdminReview,
+      frontPhotoUrl: s.frontPhotoUrl
+        ? await storageService.resolveUrl(s.frontPhotoUrl, BUCKETS.PUBLIC).catch(() => s.frontPhotoUrl)
+        : null,
+      areaPhotoUrl: s.areaPhotoUrl
+        ? await storageService.resolveUrl(s.areaPhotoUrl, BUCKETS.PUBLIC).catch(() => s.areaPhotoUrl)
+        : null,
+      videoUrl: s.videoUrl
+        ? await storageService.resolveUrl(s.videoUrl, BUCKETS.PUBLIC).catch(() => s.videoUrl)
+        : null,
       bookingsCount: s.bookings.length,
       ratingCount: ratingMap.get(s.id)?.count ?? 0,
       ratingAvg: (ratingMap.get(s.id)?.count ?? 0) > 0
@@ -99,9 +111,87 @@ export const spaceAdminService = {
         : null,
       ownerConsent: s.ownerConsent ?? null,
       createdAt: s.createdAt,
-    }));
+    })));
 
     return { success: true, spaces: mapped, total, tally, page: Number(page), limit: Number(limit) };
+  },
+
+  // Full admin detail for one space — includes owner contact, coords, and the
+  // real bookings count. (The PUBLIC GET /spaces/:id deliberately hides owner
+  // email/phone and returns lat/lng + a bookings array, which the admin modal
+  // mis-read as latitude/longitude/bookingsCount — fixed by this endpoint.)
+  getSpaceForAdmin: async (spaceId: number) => {
+    const s: any = await db.space.findUnique({
+      where: { id: spaceId },
+      include: {
+        owner: { select: { id: true, firstName: true, lastName: true, phone: true, email: true } },
+        ownerConsent: {
+          select: {
+            acceptOwnerResponsibility: true,
+            acceptLegalCompliance: true,
+            acceptNonViolationDeclaration: true,
+            acceptedAt: true,
+          },
+        },
+      },
+    });
+    if (!s) throw Object.assign(new Error('Space not found'), { statusCode: 404 });
+
+    const [ratingAgg, bookingsCount] = await Promise.all([
+      db.rating.aggregate({
+        where: { booking: { spaceId }, isHidden: false },
+        _avg: { rating: true },
+        _count: { rating: true },
+      }),
+      db.booking.count({ where: { spaceId } }),
+    ]);
+
+    const [frontPhotoUrl, areaPhotoUrl, videoUrl] = await Promise.all([
+      s.frontPhotoUrl ? storageService.resolveUrl(s.frontPhotoUrl, BUCKETS.PUBLIC).catch(() => s.frontPhotoUrl) : null,
+      s.areaPhotoUrl  ? storageService.resolveUrl(s.areaPhotoUrl,  BUCKETS.PUBLIC).catch(() => s.areaPhotoUrl) : null,
+      s.videoUrl      ? storageService.resolveUrl(s.videoUrl,      BUCKETS.PUBLIC).catch(() => s.videoUrl) : null,
+    ]);
+
+    const space = {
+      id: s.id,
+      name: s.name,
+      spaceType: s.spaceType,
+      parkingFor: s.parkingFor,
+      address: s.address,
+      landmark: s.landmark,
+      capacity: s.capacity,
+      hourlyRate: s.hourlyRate,
+      dailyRate: s.dailyRate,
+      monthlyRate: s.monthlyRate,
+      availability: s.availability,
+      startTime: s.startTime,
+      endTime: s.endTime,
+      amenities: s.amenities,
+      visibility: s.visibility,
+      docType: s.docType,
+      status: s.status,
+      rejectionReason: s.rejectionReason ?? null,
+      requiresAdminReview: s.requiresAdminReview,
+      frontPhotoUrl,
+      areaPhotoUrl,
+      videoUrl,
+      latitude: s.lat,
+      longitude: s.lng,
+      bookingsCount,
+      ratingCount: ratingAgg._count.rating,
+      ratingAvg: ratingAgg._count.rating > 0 ? Math.round((ratingAgg._avg.rating || 0) * 10) / 10 : 0,
+      owner: s.owner
+        ? {
+            id: s.owner.id,
+            name: [s.owner.firstName, s.owner.lastName].filter(Boolean).join(' ') || s.owner.phone,
+            phone: s.owner.phone,
+            email: s.owner.email,
+          }
+        : null,
+      ownerConsent: s.ownerConsent ?? null,
+      createdAt: s.createdAt,
+    };
+    return { success: true, space };
   },
 
   approveSpace: async (spaceId: number) => {
@@ -155,6 +245,39 @@ export const spaceAdminService = {
     return { success: true, space };
   },
 
+  // Soft request: ask the owner to upload/replace a specific document WITHOUT
+  // rejecting or blocking the space. Sends a notification the owner sees in their
+  // space card + inbox, with a deep-link back to edit/re-upload. The space status
+  // is unchanged (a verified space stays live while the owner adds the doc).
+  requestSpaceDocument: async (spaceId: number, documentLabel: string, message?: string) => {
+    const space = await db.space.findUnique({ where: { id: spaceId } });
+    if (!space) throw Object.assign(new Error('Space not found'), { statusCode: 404 });
+
+    const label = documentLabel?.trim() || 'a required document';
+    const note = message?.trim();
+    const body = note
+      ? `Please upload "${label}" for your space "${space.name}". ${note}`
+      : `Please upload "${label}" for your space "${space.name}" so we can complete its verification.`;
+
+    if (space.ownerId) {
+      await db.notification.create({
+        data: {
+          userId: space.ownerId,
+          title: 'Document requested 📄',
+          message: body,
+          category: 'SPACE_DOC_REQUESTED',
+          metadata: {
+            spaceId: space.id,
+            spaceName: space.name,
+            documentLabel: label,
+            note: note ?? null,
+          },
+        },
+      });
+    }
+    return { success: true, spaceId: space.id, documentLabel: label };
+  },
+
   blockSpace: async (spaceId: number) => {
     const space = await db.space.update({
       where: { id: spaceId },
@@ -177,5 +300,24 @@ export const spaceAdminService = {
       'The space was blocked.',
     );
     return { success: true, space, cancelledBookings: cancelled };
+  },
+
+  // Lift a block — return the space to VERIFIED so it's live again.
+  unblockSpace: async (spaceId: number) => {
+    const space = await db.space.update({
+      where: { id: spaceId },
+      data: { status: 'VERIFIED' },
+    });
+    if (space.ownerId) {
+      await db.notification.create({
+        data: {
+          userId: space.ownerId,
+          title: 'Space Unblocked ✅',
+          message: `Your space "${space.name}" has been unblocked and is live on the map again.`,
+          category: 'SPACE',
+        },
+      });
+    }
+    return { success: true, space };
   },
 };

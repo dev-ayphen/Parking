@@ -6,10 +6,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { MapPin, Clock, XCircle, CheckCircle2, AlertCircle } from 'lucide-react-native';
+import { MapPin, Clock, XCircle, AlertCircle } from 'lucide-react-native';
 import { PageHeader } from '../../components';
 import NoActivitySvg from '../../components/Illustrations/NoActivitySvg';
 import { api } from '../../services/api';
+import { NETWORK_RECONNECTED } from '../../store/networkStore';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 
 interface Activity {
@@ -64,6 +65,7 @@ const RecentActivityScreen = () => {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [modalItem, setModalItem] = useState<Activity | null>(null);
 
   const filters = ['All', 'Parking', 'Earnings'];
@@ -105,8 +107,11 @@ const RecentActivityScreen = () => {
         });
         setActivities(mapped);
       }
+      setError(null);
     } catch (e) {
       if (__DEV__) console.log('[RECENT_ACTIVITY] fetch error:', e);
+      // "Failed to load" must not look like "no activity yet" — show retry instead.
+      setError((e as Error)?.message || 'Could not load your activity.');
     } finally {
       isRefresh ? setRefreshing(false) : setLoading(false);
     }
@@ -119,7 +124,7 @@ const RecentActivityScreen = () => {
 
   // Live refresh when any booking status changes server-side
   useEffect(() => {
-    const events = ['booking:expired', 'booking:approved', 'booking:rejected', 'booking:cancelled', 'session:started', 'session:completed'];
+    const events = ['booking:expired', 'booking:approved', 'booking:rejected', 'booking:cancelled', 'session:started', 'session:completed', NETWORK_RECONNECTED];
     const subs = events.map((evt) => DeviceEventEmitter.addListener(evt, () => fetchActivities(true)));
     return () => subs.forEach((s) => s.remove());
   }, [fetchActivities]);
@@ -214,6 +219,15 @@ const RecentActivityScreen = () => {
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      ) : error ? (
+        <View style={styles.emptyState}>
+          <AlertCircle size={48} color={Colors.error} strokeWidth={1.5} />
+          <Text style={styles.emptyTitle}>Couldn't load activity</Text>
+          <Text style={styles.emptyDescription}>{error}</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={() => fetchActivities()}>
+            <Text style={styles.retryBtnText}>Retry</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
@@ -341,7 +355,7 @@ const RecentActivityScreen = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.white },
-  list: { flex: 1, backgroundColor: Colors.white },
+  list: { flex: 1, backgroundColor: Colors.screenBg },
   filterContainer: {
     flexDirection: 'row',
     backgroundColor: Colors.screenBg,
@@ -356,7 +370,7 @@ const styles = StyleSheet.create({
   filterText: { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: Colors.textSecondary },  // 13 = base ✓
   filterTextActive: { color: Colors.white },
   content: { paddingBottom: Spacing['7xl'] },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.screenBg },
   activityItem: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.white,
     paddingVertical: Spacing['3xl'], paddingHorizontal: Spacing['3xl'],
@@ -372,10 +386,12 @@ const styles = StyleSheet.create({
   statusBadgeText: { fontSize: FontSize.base, fontWeight: FontWeight.semibold },  // 13 = base ✓
   activityAmount: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textPrimary },  // 15 = lg ✓
   emptyState: {
+    flex: 1,
     paddingVertical: 80,
     paddingHorizontal: Spacing['7xl'],
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: Colors.screenBg,
   },
   emptyIconWrapper: {
     marginBottom: Spacing.screenH,
@@ -390,6 +406,8 @@ const styles = StyleSheet.create({
   emptyDescription: {
     fontSize: FontSize.base, color: Colors.textMuted, textAlign: 'center', lineHeight: 20,  // 13 = base ✓
   },
+  retryBtn: { marginTop: Spacing['3xl'], paddingHorizontal: Spacing['4xl'], paddingVertical: Spacing.lg, backgroundColor: Colors.primaryBg, borderRadius: BorderRadius.lg },
+  retryBtnText: { color: Colors.primary, fontWeight: FontWeight.bold, fontSize: FontSize.md },
   // Modal styles
   modalOverlay: {
     flex: 1, backgroundColor: ExtendedColors.overlayHeavy,   // 'rgba(0,0,0,0.55)' ✓

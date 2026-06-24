@@ -8,8 +8,8 @@ import {
 } from 'lucide-react';
 import { io as createSocket } from 'socket.io-client';
 import { adminApi } from '@/services/api';
-
-const SOCKET_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api').replace(/\/api\/?$/, '');
+import { useAuthStore } from '@/store/authStore';
+import { SOCKET_URL } from '@/lib/config';
 
 interface LegalDocument {
   id: number;
@@ -71,6 +71,15 @@ export default function LegalCompliancePage() {
   const [logSearch, setLogSearch] = useState('');
   const [logTypeFilter, setLogTypeFilter] = useState('All');
   const [logsTotal, setLogsTotal] = useState(0);
+  const [logsPage, setLogsPage] = useState(1);
+  const LOGS_PAGE_SIZE = 50;
+  const logsTotalPages = Math.max(1, Math.ceil(logsTotal / LOGS_PAGE_SIZE));
+
+  // Disputes tab — DISPUTE-type incident reports.
+  const [disputes, setDisputes] = useState<any[]>([]);
+  const [disputesLoading, setDisputesLoading] = useState(false);
+  const [disputesError, setDisputesError] = useState('');
+  const [disputesLoaded, setDisputesLoaded] = useState(false);
 
   const [editingDoc, setEditingDoc] = useState<LegalDocument | null>(null);
   const [editTitle, setEditTitle] = useState('');
@@ -91,11 +100,11 @@ export default function LegalCompliancePage() {
     }
   }, []);
 
-  const fetchLogs = useCallback(async (search = logSearch, type = logTypeFilter) => {
+  const fetchLogs = useCallback(async (search = logSearch, type = logTypeFilter, page = logsPage) => {
     try {
       setLogsLoading(true);
       setLogsError('');
-      const res = await adminApi.listComplianceLogs({ page: 1, limit: 50, search: search || undefined, type: type !== 'All' ? type : undefined });
+      const res = await adminApi.listComplianceLogs({ page, limit: LOGS_PAGE_SIZE, search: search || undefined, type: type !== 'All' ? type : undefined });
       setLogs(res.logs || []);
       setLogsTotal(res.total || 0);
     } catch (e: any) {
@@ -104,6 +113,20 @@ export default function LegalCompliancePage() {
       setLogsLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logsPage]);
+
+  const fetchDisputes = useCallback(async () => {
+    try {
+      setDisputesLoading(true);
+      setDisputesError('');
+      const res = await adminApi.listIncidents({ reportType: 'DISPUTE' });
+      setDisputes(res.incidents || []);
+      setDisputesLoaded(true);
+    } catch (e: any) {
+      setDisputesError(e?.response?.data?.error || e?.message || 'Failed to load disputes');
+    } finally {
+      setDisputesLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -111,8 +134,13 @@ export default function LegalCompliancePage() {
     fetchLogs();
   }, [fetchDocuments, fetchLogs]);
 
+  // Lazy-load disputes the first time that tab is opened.
   useEffect(() => {
-    const socket = createSocket(SOCKET_URL, { transports: ['websocket'] });
+    if (activeTab === 'disputes' && !disputesLoaded) fetchDisputes();
+  }, [activeTab, disputesLoaded, fetchDisputes]);
+
+  useEffect(() => {
+    const socket = createSocket(SOCKET_URL, { transports: ['websocket'], auth: { token: useAuthStore.getState().token } });
     socket.on('connect', () => socket.emit('admin:join'));
     socket.on('compliance:update', fetchLogs);
     socket.on('legal:update', fetchDocuments);
@@ -133,6 +161,7 @@ export default function LegalCompliancePage() {
     if (!editingDoc) return;
     try {
       setSaving(true);
+      setDocsError('');
       await adminApi.upsertLegalDocument(editingDoc.slug, {
         title: editTitle,
         content: editContent,
@@ -142,7 +171,7 @@ export default function LegalCompliancePage() {
       await fetchDocuments();
       closeEditor();
     } catch (e: any) {
-      alert(e?.response?.data?.error || e?.message || 'Failed to save document');
+      setDocsError(e?.response?.data?.error || e?.message || 'Failed to save document');
     } finally {
       setSaving(false);
     }
@@ -150,10 +179,11 @@ export default function LegalCompliancePage() {
 
   const updateLogStatus = async (id: number, status: string) => {
     try {
+      setLogsError('');
       await adminApi.updateComplianceLog(id, { status });
       fetchLogs();
     } catch (e: any) {
-      alert(e?.response?.data?.error || e?.message || 'Failed to update log');
+      setLogsError(e?.response?.data?.error || e?.message || 'Failed to update log');
     }
   };
 
@@ -296,15 +326,57 @@ export default function LegalCompliancePage() {
         )}
 
         {activeTab === 'disputes' && (
-          <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-16 flex flex-col items-center justify-center text-center">
-            <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
-              <Scale size={32} className="text-gray-400" />
-            </div>
-            <h3 className="text-lg font-bold text-gray-900 mb-1">No Active Disputes</h3>
-            <p className="text-gray-500 text-sm max-w-sm">
-              All legal and payment disputes have been resolved. New dispute tickets will appear here.
-            </p>
-          </div>
+          <>
+            {disputesLoading ? (
+              <div className="flex items-center justify-center py-24">
+                <Loader2 className="animate-spin text-primary" size={28} />
+              </div>
+            ) : disputesError ? (
+              <div className="flex items-center gap-2 bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl">
+                <AlertCircle size={18} /> <span className="text-sm">{disputesError}</span>
+              </div>
+            ) : disputes.length === 0 ? (
+              <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-16 flex flex-col items-center justify-center text-center">
+                <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
+                  <Scale size={32} className="text-gray-400" />
+                </div>
+                <h3 className="text-lg font-bold text-gray-900 mb-1">No Active Disputes</h3>
+                <p className="text-gray-500 text-sm max-w-sm">
+                  No dispute reports have been filed. New disputes raised by parkers or owners will appear here.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {disputes.map((d) => {
+                  const reporter = d.reportedByUser
+                    ? [d.reportedByUser.firstName, d.reportedByUser.lastName].filter(Boolean).join(' ') || d.reportedByUser.phone
+                    : 'Unknown';
+                  const statusColor =
+                    d.status === 'RESOLVED' ? 'bg-emerald-50 text-emerald-700'
+                    : d.status === 'INVESTIGATING' ? 'bg-amber-50 text-amber-700'
+                    : d.status === 'REJECTED' ? 'bg-gray-100 text-gray-600'
+                    : 'bg-blue-50 text-blue-700';
+                  return (
+                    <div key={d.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-start gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center flex-shrink-0">
+                        <Scale size={18} className="text-rose-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-mono text-xs font-bold text-gray-500">INC-{String(d.id).padStart(5, '0')}</span>
+                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${statusColor}`}>{d.status}</span>
+                        </div>
+                        <p className="text-sm text-gray-800 line-clamp-2">{d.description || 'No description provided.'}</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Reported by {reporter} · {new Date(d.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
         )}
 
         {activeTab === 'logs' && (
@@ -318,13 +390,13 @@ export default function LegalCompliancePage() {
                   placeholder="Search by name, phone or email..."
                   value={logSearch}
                   onChange={(e) => setLogSearch(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && fetchLogs(logSearch, logTypeFilter)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { setLogsPage(1); fetchLogs(logSearch, logTypeFilter, 1); } }}
                   className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
                 />
               </div>
               <select
                 value={logTypeFilter}
-                onChange={(e) => { setLogTypeFilter(e.target.value); fetchLogs(logSearch, e.target.value); }}
+                onChange={(e) => { setLogTypeFilter(e.target.value); setLogsPage(1); fetchLogs(logSearch, e.target.value, 1); }}
                 className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
               >
                 <option value="All">All Types</option>
@@ -438,6 +510,29 @@ export default function LegalCompliancePage() {
                   </table>
                 </div>
               )}
+
+              {/* Pagination */}
+              {logsTotalPages > 1 && (
+                <div className="flex items-center justify-between px-5 py-4 border-t border-gray-100">
+                  <p className="text-sm text-gray-500">Page {logsPage} of {logsTotalPages}</p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setLogsPage((p) => Math.max(1, p - 1))}
+                      disabled={logsPage <= 1}
+                      className="px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      onClick={() => setLogsPage((p) => Math.min(logsTotalPages, p + 1))}
+                      disabled={logsPage >= logsTotalPages}
+                      className="px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -507,7 +602,13 @@ export default function LegalCompliancePage() {
               </div>
             </div>
 
-            <div className="p-6 border-t border-gray-100 flex justify-end gap-3">
+            <div className="p-6 border-t border-gray-100 flex flex-col gap-3">
+              {docsError && (
+                <div className="flex items-center gap-2 bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2 rounded-xl text-sm">
+                  <AlertCircle size={16} /> {docsError}
+                </div>
+              )}
+              <div className="flex justify-end gap-3">
               <button
                 onClick={closeEditor}
                 className="px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50"
@@ -522,6 +623,7 @@ export default function LegalCompliancePage() {
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                 {saving ? 'Saving...' : 'Save Changes'}
               </button>
+              </div>
             </div>
           </motion.div>
         </div>

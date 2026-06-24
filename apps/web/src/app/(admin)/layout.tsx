@@ -15,7 +15,7 @@ export default function AdminLayout({
       <OfflineBanner />
       <div className="flex bg-[#0A0A0A] h-screen overflow-hidden">
         <Sidebar />
-        <main className="flex-1 ml-72 bg-gray-50 h-screen rounded-tl-[2.5rem] overflow-hidden shadow-2xl relative">
+        <main className="flex-1 ml-0 lg:ml-72 bg-gray-50 h-screen overflow-hidden shadow-2xl relative lg:rounded-tl-[2.5rem]">
           <div className="p-8 h-full overflow-y-auto">{children}</div>
         </main>
       </div>

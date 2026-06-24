@@ -1,10 +1,12 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, StatusBar, Modal, Pressable } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, StatusBar, Modal, Pressable, DeviceEventEmitter, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../hooks/useTheme';
-import { ChevronLeft, Clock, XCircle, AlertCircle, CheckCircle2, ThumbsUp } from 'lucide-react-native';
-import { useRouter } from 'expo-router';
+import { Clock, XCircle, AlertCircle, CheckCircle2, ThumbsUp } from 'lucide-react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '../../services/api';
+import { NETWORK_RECONNECTED } from '../../store/networkStore';
+import PageHeader from '../../components/PageHeader';
 import NoActivitySvg from '../../components/Illustrations/NoActivitySvg';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 
@@ -45,6 +47,7 @@ export default function RecentRequestsScreen() {
       const mapped = (json.recentRequests || []).map((r: any) => ({
         id: String(r.id),
         parkerName: r.parkerName || 'Unknown',
+        parkerPhotoUrl: r.parkerPhotoUrl || null,
         spaceName: r.spaceName || '—',
         status: r.status || '',
         amount: r.amount || 0,
@@ -62,6 +65,18 @@ export default function RecentRequestsScreen() {
     fetchRequests();
   }, [fetchRequests]);
 
+  useFocusEffect(useCallback(() => {
+    DeviceEventEmitter.emit('sessionbar:suppress', true);
+    return () => { DeviceEventEmitter.emit('sessionbar:suppress', false); };
+  }, []));
+
+  // Re-fetch when connectivity is restored (offline banner's "Retry" / auto-
+  // reconnect) so the list isn't left showing stale data.
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(NETWORK_RECONNECTED, () => fetchRequests(true));
+    return () => sub.remove();
+  }, [fetchRequests]);
+
   const renderItem = ({ item: req }: { item: any }) => {
     const badge = REQUEST_STATUS_BADGE[req.status] || { label: req.status, color: Colors.textSecondary, bg: Colors.surfaceBg };
     return (
@@ -71,7 +86,11 @@ export default function RecentRequestsScreen() {
         onPress={() => setModalItem({ ...req, status: req.status.toUpperCase() })}
       >
         <View style={styles.recentReqAvatar}>
-          <Text style={styles.recentReqAvatarText}>{req.parkerName.charAt(0).toUpperCase()}</Text>
+          {req.parkerPhotoUrl ? (
+            <Image source={{ uri: req.parkerPhotoUrl }} style={styles.recentReqAvatarImg} resizeMode="cover" />
+          ) : (
+            <Text style={styles.recentReqAvatarText}>{req.parkerName.charAt(0).toUpperCase()}</Text>
+          )}
         </View>
         <View style={styles.recentReqInfo}>
           <Text style={styles.recentReqName}>{req.parkerName}</Text>
@@ -88,15 +107,9 @@ export default function RecentRequestsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <ChevronLeft size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>All Recent Requests</Text>
-        <View style={{ width: 40 }} />
-      </View>
+      <PageHeader title="All Recent Requests" onBack={() => router.back()} />
 
       {loading ? (
         <View style={styles.center}>
@@ -230,19 +243,7 @@ export default function RecentRequestsScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: Colors.white },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.screenH,
-    paddingVertical: Spacing.xl,
-    backgroundColor: Colors.white,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceBg,
-  },
-  backButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.screenBg, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: FontSize['2xl'], fontWeight: FontWeight.bold, color: Colors.textPrimary },  // 18 = 2xl ✓
+  container: { flex: 1, backgroundColor: Colors.white },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   list: { flex: 1, backgroundColor: Colors.screenBg },
   content: { padding: Spacing['3xl'], paddingBottom: Spacing['7xl'] },
@@ -253,8 +254,9 @@ const styles = StyleSheet.create({
   },
   recentReqAvatar: {
     width: 38, height: 38, borderRadius: BorderRadius.circle, backgroundColor: Colors.surfaceBg,  // 19 = circle ✓
-    alignItems: 'center', justifyContent: 'center', marginRight: Spacing.xl,
+    alignItems: 'center', justifyContent: 'center', marginRight: Spacing.xl, overflow: 'hidden',
   },
+  recentReqAvatarImg: { width: '100%', height: '100%', borderRadius: BorderRadius.circle },
   recentReqAvatarText: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textSecondary },  // 15 = lg ✓
   recentReqInfo: { flex: 1 },
   recentReqName: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textPrimary },  // 14 = md ✓

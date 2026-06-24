@@ -19,19 +19,46 @@ import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../theme
 import { toast } from '../../utils/toast';
 
 interface Plan {
-  id: string;
+  id: number;
   name: string;
   description: string;
   price: number;
   yearlyPrice: number;
   features: string[];
+  maxSpaces?: number;
+  hasAnalytics?: boolean;
+  hasFeaturedListing?: boolean;
+  hasCsvExport?: boolean;
+  hasPrioritySupport?: boolean;
 }
+
+// Human-readable "spaces" limit derived from the plan's maxSpaces capability.
+// -1 = unlimited; 0/undefined = no listing allowed (free tier).
+const spacesLimitLabel = (maxSpaces?: number): string | null => {
+  if (maxSpaces == null) return null;
+  if (maxSpaces === -1) return 'Unlimited spaces';
+  if (maxSpaces === 0) return null;
+  return `Up to ${maxSpaces} space${maxSpaces === 1 ? '' : 's'}`;
+};
 
 type BillingCycle = 'MONTHLY' | 'YEARLY';
 
 const formatPrice = (amount: number, cycle: BillingCycle): string => {
   if (amount === 0) return 'Free';
   return `₹${amount.toLocaleString('en-IN')}/${cycle === 'MONTHLY' ? 'month' : 'year'}`;
+};
+
+const formatDate = (dateStr?: string | null): string => {
+  if (!dateStr) return '—';
+  try {
+    return new Date(dateStr).toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  } catch {
+    return dateStr;
+  }
 };
 
 const calcSavings = (monthly: number, yearly: number): number | null => {
@@ -45,9 +72,9 @@ export default function SubscriptionPlansScreen() {
   const router = useRouter();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activePlanId, setActivePlanId] = useState<string | null>(null);
+  const [activePlanId, setActivePlanId] = useState<number | null>(null);
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('MONTHLY');
-  const [subscribing, setSubscribing] = useState<string | null>(null);
+  const [subscribing, setSubscribing] = useState<number | null>(null);
 
   const fetchPlans = useCallback(async () => {
     try {
@@ -61,8 +88,10 @@ export default function SubscriptionPlansScreen() {
       } else if (plansJson?.plans) {
         setPlans(plansJson.plans as Plan[]);
       }
-      if (meJson?.currentPlan?.id) {
-        setActivePlanId(meJson.currentPlan.id);
+      // Compare against the CATALOG plan id (currentPlan.planId), not the
+      // subscription id (currentPlan.id), so the right card shows "Current Plan".
+      if (meJson?.currentPlan?.planId != null) {
+        setActivePlanId(meJson.currentPlan.planId);
       }
     } catch (e) {
       if (__DEV__) console.log('[SUBSCRIPTION_PLANS] error', e);
@@ -79,11 +108,11 @@ export default function SubscriptionPlansScreen() {
   const handleSelectPlan = (plan: Plan) => {
     if (plan.id === activePlanId) return;
     const price = billingCycle === 'MONTHLY' ? plan.price : plan.yearlyPrice;
-    const cycleLabel = billingCycle === 'MONTHLY' ? 'month' : 'year';
-    const priceStr = price === 0 ? 'Free' : `₹${price.toLocaleString('en-IN')}/${cycleLabel}`;
+    const amountStr = price === 0 ? 'Free' : `₹${price.toLocaleString('en-IN')}`;
+    const cycleLabel = billingCycle === 'MONTHLY' ? 'Monthly' : 'Yearly';
     Alert.alert(
       `Subscribe to ${plan.name}`,
-      `Subscribe to ${plan.name} for ${priceStr}?`,
+      `Amount: ${amountStr}\nBilling Cycle: ${cycleLabel}`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -91,11 +120,19 @@ export default function SubscriptionPlansScreen() {
           onPress: async () => {
             try {
               setSubscribing(plan.id);
-              await api.post('/subscriptions', {
+              // Price is derived server-side — do NOT send it.
+              const res = await api.post('/subscriptions', {
                 planId: plan.id,
                 billingCycle,
               });
-              toast.success(`Subscribed to ${plan.name}!`);
+              if (res?.scheduled === true) {
+                Alert.alert(
+                  'Downgrade Scheduled',
+                  `Your ${plan.name} plan starts on ${formatDate(res.effectiveOn)}. You keep your current plan until then.`
+                );
+              } else {
+                toast.success(`Subscribed to ${plan.name}!`);
+              }
               router.back();
             } catch (e) {
               if (__DEV__) console.log('[SUBSCRIBE] error', e);
@@ -235,8 +272,16 @@ export default function SubscriptionPlansScreen() {
                 ) : null}
               </View>
 
-              {/* Features list */}
+              {/* Features list — lead with the real space limit from maxSpaces. */}
               <View style={styles.featuresSection}>
+                {spacesLimitLabel(plan.maxSpaces) && (
+                  <View style={styles.featureRow}>
+                    <CheckCircle2 size={15} color={Colors.successAlt} strokeWidth={2.5} />
+                    <Text style={[styles.featureText, styles.featureTextStrong]}>
+                      {spacesLimitLabel(plan.maxSpaces)}
+                    </Text>
+                  </View>
+                )}
                 {(plan.features ?? []).map((feature, idx) => (
                   <View key={idx} style={styles.featureRow}>
                     <CheckCircle2 size={15} color={Colors.successAlt} strokeWidth={2.5} />
@@ -497,6 +542,9 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.medium,
     color: Colors.textPrimary,
     flex: 1,
+  },
+  featureTextStrong: {
+    fontWeight: FontWeight.bold,
   },
   selectButton: {
     marginHorizontal: Spacing['3xl'],

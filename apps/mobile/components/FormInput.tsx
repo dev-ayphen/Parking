@@ -30,6 +30,11 @@ const FormInput = forwardRef<TextInput, FormInputProps>(
     },
     ref
   ) => {
+    // A multiline field (e.g. a full address) needs a TALLER box that grows with
+    // the text and aligns content to the TOP — otherwise the fixed single-line
+    // height clips the text and alignItems:'center' hides the first/last lines.
+    const isMultiline = !!textInputProps.multiline;
+    const rows = isMultiline ? (textInputProps.numberOfLines ?? 3) : 1;
     const theme = useTheme();
     const focusAnim = useRef(new Animated.Value(0)).current;
 
@@ -72,6 +77,13 @@ const FormInput = forwardRef<TextInput, FormInputProps>(
         <Animated.View
           style={[
             styles.inputBox,
+            isMultiline && {
+              // Grow with content instead of clipping; ~22px per line + padding.
+              height: undefined,
+              minHeight: 22 * rows + 20,
+              alignItems: 'stretch',
+              paddingVertical: 10,
+            },
             {
               borderColor,
               backgroundColor,
@@ -81,7 +93,12 @@ const FormInput = forwardRef<TextInput, FormInputProps>(
           {leftElement}
           <TextInput
             ref={ref}
-            style={[styles.textInput, { color: theme.colors.textPrimary }]}
+            style={[
+              styles.textInput,
+              { color: theme.colors.textPrimary },
+              // Multiline text must flow from the TOP, not be vertically centered.
+              isMultiline && { textAlignVertical: 'top', paddingTop: 0 },
+            ]}
             placeholderTextColor={theme.colors.textMuted}
             editable={editable}
             onFocus={handleFocus}

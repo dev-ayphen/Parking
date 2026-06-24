@@ -7,8 +7,8 @@ import {View,
   TouchableOpacity,
   Dimensions} from 'react-native';
 import {
-  Home,
-  MapPin,
+  LayoutDashboard,
+  Navigation,
   Car,
   Settings,
   HelpCircle,
@@ -16,6 +16,8 @@ import {
   X,
   User,
   ChevronRight,
+  FileWarning,
+  Building2,
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../hooks/useTheme';
@@ -62,7 +64,7 @@ const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
   const defaultItems: DrawerMenuItem[] = [
     {
       id: 'home',
-      icon: <Home size={22} color={activeRoute === 'home' ? theme.colors.primary : standardIconColor} strokeWidth={2.5} />,
+      icon: <LayoutDashboard size={22} color={activeRoute === 'home' ? theme.colors.primary : standardIconColor} strokeWidth={2.5} />,
       label: 'Home',
       onPress: () => {
         onMenuItemPress?.('home');
@@ -71,7 +73,7 @@ const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
     },
     {
       id: 'find-parking',
-      icon: <MapPin size={22} color={activeRoute === 'find-parking' ? theme.colors.primary : standardIconColor} strokeWidth={2.5} />,
+      icon: <Navigation size={22} color={activeRoute === 'find-parking' ? theme.colors.primary : standardIconColor} strokeWidth={2.5} />,
       label: 'Find Parking',
       onPress: () => {
         onMenuItemPress?.('find-parking');
@@ -89,13 +91,22 @@ const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
     },
     {
       id: 'my-spaces',
-      icon: <MapPin size={22} color={activeRoute === 'my-spaces' ? theme.colors.primary : standardIconColor} strokeWidth={2.5} />,
+      icon: <Building2 size={22} color={activeRoute === 'my-spaces' ? theme.colors.primary : standardIconColor} strokeWidth={2.5} />,
       label: 'My Spaces',
       onPress: () => {
         onMenuItemPress?.('my-spaces');
         onClose();
       },
       badge: userRole === 'owner' || userRole === 'both' ? undefined : undefined,
+    },
+    {
+      id: 'my-reports',
+      icon: <FileWarning size={22} color={activeRoute === 'my-reports' ? theme.colors.primary : standardIconColor} strokeWidth={2.5} />,
+      label: 'My Reports',
+      onPress: () => {
+        onMenuItemPress?.('my-reports');
+        onClose();
+      },
     },
     {
       id: 'settings',
@@ -176,11 +187,13 @@ const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
             )}
 
             <View style={styles.userInfo}>
+              {/* No role label — every user can both find parking and list spaces,
+                  so a "Driver" / "Owner" tag would be misleading. */}
               <Text style={[styles.userName, dynamicStyles.userNameText]} numberOfLines={1}>
                 {userName}
               </Text>
               <Text style={[styles.userRole, dynamicStyles.userRoleText]} numberOfLines={1}>
-                {userRole === 'both' ? 'Driver & Space Owner' : userRole === 'parker' ? 'Driver' : 'Space Owner'}
+                Tap to view profile
               </Text>
             </View>
 

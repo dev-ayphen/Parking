@@ -5,12 +5,19 @@ import { ErrorCode } from '../utils/errorCodes';
 
 /**
  * Generic evidence upload — used by support tickets, incident reports, and abuse
- * reports. The client uploads files here first, gets back public URLs, then
- * includes those URLs in the report's `evidenceUrls` / `attachmentUrls` array
- * when it submits the report.
+ * reports. These files are PII (incident/damage photos, possibly of people), so
+ * they go to the PRIVATE bucket — same as KYC documents.
+ *
+ * The client uploads files here first, gets back storage KEYS (NOT public URLs),
+ * then includes those keys in the report's `evidenceUrls` / `attachmentUrls`
+ * array when it submits the report. The DB stores the KEY, and every read site
+ * resolves it to a short-lived signed URL via storageService.resolveUrl().
+ *
+ * The response field is still named `urls` for client back-compat, but the
+ * values are now private-bucket keys.
  */
 export const uploadController = {
-  /** POST /uploads/evidence — multipart `files[]` (up to 5). Returns { urls: string[] }. */
+  /** POST /uploads/evidence — multipart `files[]` (up to 5). Returns { urls: string[] } (private keys). */
   evidence: async (req: Request, res: Response) => {
     try {
       assertAuth(req);
@@ -22,7 +29,7 @@ export const uploadController = {
       const folder = `evidence/${req.user.id}`;
       const stored = await Promise.all(
         files.map((f) =>
-          storageService.uploadPublic({
+          storageService.uploadPrivate({
             buffer: f.buffer,
             originalName: f.originalname,
             mimeType: f.mimetype,
@@ -31,7 +38,9 @@ export const uploadController = {
         )
       );
 
-      res.json({ success: true, urls: stored.map((s) => s.url).filter(Boolean) });
+      // Return the private-bucket KEYS — the client stores these, and read sites
+      // resolve them to signed URLs on the way back out.
+      res.json({ success: true, urls: stored.map((s) => s.key).filter(Boolean) });
     } catch (error) {
       sendError(res, error);
     }

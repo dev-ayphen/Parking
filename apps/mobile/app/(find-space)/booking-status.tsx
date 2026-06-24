@@ -7,9 +7,11 @@ import {View,
   ActivityIndicator,
   ScrollView,
   Linking,
-  Alert} from 'react-native';
+  Alert,
+  BackHandler,
+  DeviceEventEmitter} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import {
   Clock,
   CheckCircle2,
@@ -19,7 +21,7 @@ import {
   Navigation,
 } from 'lucide-react-native';
 import { api } from '../../services/api';
-import { useNetworkStore } from '../../store/networkStore';
+import { useNetworkStore, NETWORK_RECONNECTED } from '../../store/networkStore';
 import PageHeader from '../../components/PageHeader';
 import { useRealtime } from '../../hooks/useRealtime';
 import { useSessionBarStore, computeExpiresAt } from '../../store/sessionBarStore';
@@ -91,29 +93,69 @@ export default function BookingStatusScreen() {
     fetchBooking();
   }, [fetchBooking]);
 
+  // Back should always land on the Home hub — the user reaches this screen from
+  // several places (booking-success, my-bookings, recent-activity), and a plain
+  // router.back() can drop them back into the now-stale booking-creation flow.
+  // replace() avoids stacking and guarantees a predictable destination.
+  const handleBack = useCallback(() => {
+    router.replace('/(home)');
+  }, [router]);
+
+  // Android hardware back button: route to Home too (not just the on-screen
+  // chevron). Without this, the system back does a default pop that can land the
+  // user back in the stale booking-creation flow. Returning true blocks the pop.
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        handleBack();
+        return true;
+      });
+      return () => sub.remove();
+    }, [handleBack])
+  );
+
+  // Re-fetch when connectivity is restored (offline banner's "Retry" / auto-
+  // reconnect) so the booking status reloads instead of going stale.
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(NETWORK_RECONNECTED, () => fetchBooking());
+    return () => sub.remove();
+  }, [fetchBooking]);
+
   // Realtime updates
   const { onEvent } = useRealtime();
 
+  // Apply a new status to the local booking IMMEDIATELY from the socket payload,
+  // so the screen flips the instant the event arrives — without waiting for a
+  // full re-fetch round-trip. We still refetch in the background to fill in any
+  // extra detail (reason, amounts), but the user sees the change with no delay.
+  const applyStatusNow = useCallback((status: BookingData['status']) => {
+    setBooking((prev) => (prev ? { ...prev, status } : prev));
+    setLoading(false);
+  }, []);
+
   useEffect(() => {
     if (!bookingId) return;
+    const forThis = (data: any) => String(data?.bookingId) === String(bookingId);
+
     const unsub1 = onEvent('booking:approved', (data: any) => {
-      if (String(data.bookingId) === String(bookingId)) fetchBooking();
+      if (forThis(data)) { applyStatusNow('APPROVED'); fetchBooking(); }
     });
     const unsub2 = onEvent('booking:rejected', (data: any) => {
-      if (String(data.bookingId) === String(bookingId)) fetchBooking();
+      if (forThis(data)) { applyStatusNow('REJECTED'); fetchBooking(); }
     });
     const unsub3 = onEvent('session:started', (data: any) => {
-      if (String(data.bookingId) === String(bookingId)) fetchBooking();
+      if (forThis(data)) { applyStatusNow('ACTIVE'); fetchBooking(); }
     });
     const unsub4 = onEvent('verification:ready', (data: any) => {
-      if (String(data.bookingId) === String(bookingId)) fetchBooking();
+      if (forThis(data)) fetchBooking();
     });
     const unsub5 = onEvent('booking:expired', (data: any) => {
-      if (String(data.bookingId) === String(bookingId)) fetchBooking();
+      if (forThis(data)) { applyStatusNow('EXPIRED'); fetchBooking(); }
     });
-    // Auto-cancellation (e.g. parker no-show released by the server).
+    // Cancellation — by the owner, the other party, or an auto no-show release.
+    // This is the cross-device case: flip to CANCELLED the instant it arrives.
     const unsub6 = onEvent('booking:cancelled', (data: any) => {
-      if (String(data.bookingId) === String(bookingId)) fetchBooking();
+      if (forThis(data)) { applyStatusNow('CANCELLED'); fetchBooking(); }
     });
 
     return () => {
@@ -124,7 +166,7 @@ export default function BookingStatusScreen() {
       unsub5();
       unsub6();
     };
-  }, [bookingId, fetchBooking, onEvent]);
+  }, [bookingId, fetchBooking, onEvent, applyStatusNow]);
 
   // ── Feed session bar from this screen's booking data ──────────────────
   useEffect(() => {
@@ -181,6 +223,17 @@ export default function BookingStatusScreen() {
     const t = setInterval(() => setNowTs(Date.now()), 1000);
     return () => clearInterval(t);
   }, [booking?.status]);
+
+  // Data-poll fallback: while the booking is still in flight (not a terminal
+  // state), refetch every 8s. The socket pushes updates instantly; this only
+  // covers the case where a socket event was missed (e.g. dropped on flaky Wi-Fi
+  // in Expo Go), so the screen never stays stale waiting on a push that didn't land.
+  useEffect(() => {
+    const terminal = ['CANCELLED', 'REJECTED', 'EXPIRED', 'COMPLETED'];
+    if (!booking || terminal.includes(booking.status)) return;
+    const t = setInterval(() => { fetchBooking(); }, 8000);
+    return () => clearInterval(t);
+  }, [booking?.status, fetchBooking]);
 
   // Remaining seconds in the 2-minute approval window (null when not waiting)
   const countdownSec =
@@ -253,7 +306,7 @@ export default function BookingStatusScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <PageHeader title="Booking Status" onBack={() => router.back()} />
+        <PageHeader title="Booking Status" onBack={handleBack} />
         <View style={styles.center}>
           <ActivityIndicator size="large" color={C.primary} />
         </View>
@@ -264,7 +317,7 @@ export default function BookingStatusScreen() {
   if (error || !booking) {
     return (
       <SafeAreaView style={styles.container}>
-        <PageHeader title="Booking Status" onBack={() => router.back()} />
+        <PageHeader title="Booking Status" onBack={handleBack} />
         <View style={styles.center}>
           <Text style={styles.errorText}>{error || 'Booking not found'}</Text>
           <TouchableOpacity style={styles.retryBtn} onPress={fetchBooking}>
@@ -275,50 +328,55 @@ export default function BookingStatusScreen() {
     );
   }
 
-  // Derived UI variables based on status
-  let heroColor: string = C.warningBgAlt; // Default amber
-  let heroIcon = <Clock size={40} color={C.warning} />;
+  // Status visuals — SOFT tinted card (light bg + colored icon + dark text),
+  // not a harsh solid banner. Calmer, more premium, consistent with the app.
+  let heroTint  = '#B45309'; // amber-700 (icon/accent)
+  let heroSoft  = '#FEF3C7'; // amber-100 (badge bg)
+  let heroIcon  = (c: string) => <Clock size={22} color={c} strokeWidth={2.5} />;
   let heroTitle = 'Waiting for Approval';
-  let heroSub = 'The owner has been notified.';
+  let heroSub   = 'The owner has been notified.';
 
   if (booking.status === 'APPROVED') {
-    heroColor = C.successBg;
-    heroIcon = <CheckCircle2 size={40} color={C.success} />;
+    heroTint = '#15803D'; heroSoft = '#DCFCE7';
+    heroIcon = (c) => <CheckCircle2 size={22} color={c} strokeWidth={2.5} />;
     heroTitle = 'Booking Approved 🎉';
-    heroSub = 'Head to the space.';
+    heroSub   = 'Head to the space.';
   } else if (booking.status === 'REJECTED' || booking.status === 'CANCELLED') {
-    heroColor = C.errorBg;
-    heroIcon = <XCircle size={40} color={C.error} />;
+    heroTint = '#B91C1C'; heroSoft = '#FEE2E2';
+    heroIcon = (c) => <XCircle size={22} color={c} strokeWidth={2.5} />;
     heroTitle = booking.status === 'REJECTED' ? 'Booking Rejected' : 'Booking Cancelled';
-    heroSub = 'The owner declined this booking.'; // Or extract from reason if provided
+    heroSub   = 'The owner declined this booking.';
   } else if (booking.status === 'ACTIVE') {
-    heroColor = ExtendedColors.activeBlueBg;
-    heroIcon = <CheckCircle2 size={40} color={ExtendedColors.activeBlueText} />;
+    heroTint = '#1D4ED8'; heroSoft = '#DBEAFE';
+    heroIcon = (c) => <CheckCircle2 size={22} color={c} strokeWidth={2.5} />;
     heroTitle = 'Session Active';
-    heroSub = '';
+    heroSub   = '';
   } else if (booking.status === 'EXPIRED') {
-    heroColor = C.surfaceBg;
-    heroIcon = <Clock size={40} color={C.textSecondary} />;
+    heroTint = '#475569'; heroSoft = '#E2E8F0';
+    heroIcon = (c) => <Clock size={22} color={c} strokeWidth={2.5} />;
     heroTitle = 'Request Expired';
-    heroSub = 'Owner did not respond within 2 minutes.';
+    heroSub   = 'Owner did not respond within 2 minutes.';
   }
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
-      <PageHeader title="Booking Status" onBack={() => router.back()} />
+      <PageHeader title="Booking Status" onBack={handleBack} />
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentInner} showsVerticalScrollIndicator={false}>
-        {/* Status Hero */}
-        <View style={[styles.heroCard, { backgroundColor: heroColor }]}>
-          <View style={styles.heroIconWrap}>{heroIcon}</View>
-          <Text style={[styles.heroTitle, { color: C.textPrimary }]}>{heroTitle}</Text>
-          {heroSub ? <Text style={styles.heroSub}>{heroSub}</Text> : null}
+
+        {/* Status Hero — compact horizontal row */}
+        <View style={[styles.heroCard, { backgroundColor: heroSoft, borderColor: heroTint + '40' }]}>
+          {heroIcon(heroTint)}
+          <View style={styles.heroTextWrap}>
+            <Text style={[styles.heroTitle, { color: heroTint }]}>{heroTitle}</Text>
+            {heroSub ? <Text style={styles.heroSub}>{heroSub}</Text> : null}
+          </View>
           {booking.status === 'PENDING_APPROVAL' && countdownSec != null && (
-            <View style={styles.countdownPill}>
-              <Clock size={14} color={ExtendedColors.warningText} />
+            <View style={[styles.countdownPill, { backgroundColor: heroTint }]}>
+              <Clock size={12} color="#fff" />
               <Text style={styles.countdownText}>
-                {countdownSec > 0 ? `${fmtCountdown(countdownSec)} remaining` : 'Taking longer than expected…'}
+                {countdownSec > 0 ? fmtCountdown(countdownSec) : '—'}
               </Text>
             </View>
           )}
@@ -354,45 +412,57 @@ export default function BookingStatusScreen() {
             <Text style={styles.summaryLabel}>Amount</Text>
             <Text style={styles.summaryValAmount}>₹{booking.totalAmount}</Text>
           </View>
-        </View>
 
-        {/* Contact Owner (Only if approved) */}
-        {booking.status === 'APPROVED' && (
-          <View style={styles.contactCard}>
-            <Text style={styles.cardTitle}>Contact Owner</Text>
-            <View style={styles.actionRow}>
+          {/* Contact actions — a compact strip inside the Summary card (only once
+              approved), so there's no separate big "Contact Owner" card. */}
+          {booking.status === 'APPROVED' && (
+            <View style={styles.contactStrip}>
               <TouchableOpacity
-                style={styles.actionCircleBtn}
+                style={styles.contactAction}
+                activeOpacity={0.7}
                 onPress={() => {
                   const num = booking.space?.owner?.phoneNumber;
                   if (num) Linking.openURL(`tel:${num}`);
                   else Alert.alert('Unavailable', 'Phone number not provided.');
                 }}
               >
-                <Phone size={24} color={C.textPrimary} />
+                <View style={[styles.contactIcon, { backgroundColor: C.successBg }]}>
+                  <Phone size={18} color={C.success} strokeWidth={2.2} />
+                </View>
+                <Text style={styles.contactLabel}>Call</Text>
               </TouchableOpacity>
+
               <TouchableOpacity
-                style={styles.actionCircleBtn}
+                style={styles.contactAction}
+                activeOpacity={0.7}
                 onPress={() => {
                   const num = booking.space?.owner?.phoneNumber;
                   if (num) Linking.openURL(`sms:${num}`);
                   else Alert.alert('Unavailable', 'Phone number not provided.');
                 }}
               >
-                <MessageSquare size={24} color={C.textPrimary} />
+                <View style={[styles.contactIcon, { backgroundColor: ExtendedColors.indigoBg }]}>
+                  <MessageSquare size={18} color={ExtendedColors.indigoAccent} strokeWidth={2.2} />
+                </View>
+                <Text style={styles.contactLabel}>Message</Text>
               </TouchableOpacity>
+
               <TouchableOpacity
-                style={styles.actionCircleBtn}
+                style={styles.contactAction}
+                activeOpacity={0.7}
                 onPress={() => {
                   const { lat, lng } = booking.space;
                   Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`);
                 }}
               >
-                <Navigation size={24} color={C.textPrimary} />
+                <View style={[styles.contactIcon, { backgroundColor: C.primaryBg }]}>
+                  <Navigation size={18} color={C.primary} strokeWidth={2.2} />
+                </View>
+                <Text style={styles.contactLabel}>Navigate</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        )}
+          )}
+        </View>
 
         {/* Update Arrival Time (while waiting or on the way) */}
         {(booking.status === 'PENDING_APPROVAL' || booking.status === 'APPROVED') && (
@@ -415,16 +485,22 @@ export default function BookingStatusScreen() {
               })}
             </View>
             <TouchableOpacity
-              style={[styles.etaUpdateBtn, (selectedEtaMin == null || etaUpdating) && styles.etaUpdateBtnDisabled]}
+              // Outlined/muted until a time is picked, then a clear FILLED pink
+              // call-to-action so it's obvious this sends the update to the owner.
+              style={[
+                styles.etaUpdateBtn,
+                selectedEtaMin != null && styles.etaUpdateBtnReady,
+                etaUpdating && styles.etaUpdateBtnDisabled,
+              ]}
               onPress={handleUpdateEta}
               disabled={selectedEtaMin == null || etaUpdating}
-              activeOpacity={0.8}
+              activeOpacity={0.85}
             >
               {etaUpdating ? (
-                <ActivityIndicator color={C.primary} size="small" />
+                <ActivityIndicator color={C.white} size="small" />
               ) : (
-                <Text style={styles.etaUpdateBtnText}>
-                  {selectedEtaMin ? `Notify owner — arriving in ${selectedEtaMin} min` : 'Select a new arrival time'}
+                <Text style={[styles.etaUpdateBtnText, selectedEtaMin != null && styles.etaUpdateBtnTextReady]}>
+                  {selectedEtaMin ? 'Update Arrival Time' : 'Select a time above'}
                 </Text>
               )}
             </TouchableOpacity>
@@ -484,27 +560,36 @@ export default function BookingStatusScreen() {
 }
 
 const makeStyles = ({ colors: C }: AppTheme) => StyleSheet.create({
+  // White SafeAreaView so the header + top safe-area inset match every other
+  // screen (which use white). The scrollable content below keeps its grey bg
+  // (see `content`) so the cards still stand out.
   container: { flex: 1, backgroundColor: C.white },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.screenBg },
   errorText: { color: C.error, marginBottom: Spacing.xl },           // 12 = xl ✓
   retryBtn: { padding: Spacing.xl, backgroundColor: C.errorBg, borderRadius: BorderRadius.sm },  // 12 = xl ✓
   retryBtnText: { color: C.error, fontWeight: FontWeight.semibold },
-  content: { flex: 1 },
+  content: { flex: 1, backgroundColor: C.screenBg },
   contentInner: { padding: Spacing.screenH, gap: Spacing['3xl'], paddingBottom: 28 },
   heroCard: {
-    padding: Spacing['4xl'],
-    borderRadius: BorderRadius.lg,                    // 16 = lg ✓
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: Spacing.xl,
+    paddingVertical: Spacing['2xl'],
+    paddingHorizontal: Spacing['3xl'],
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
   },
-  heroIconWrap: { marginBottom: Spacing.xl },          // 12 = xl ✓
-  heroTitle: { fontSize: FontSize['3xl'], fontWeight: FontWeight.extrabold, marginBottom: Spacing.xs },  // 20 = 3xl ✓
-  heroSub: { fontSize: FontSize.md, color: C.textDark },              // 14 = md ✓
+  heroIconCircle: {},
+  heroTextWrap: { flex: 1 },
+  heroTitle: { fontSize: FontSize.xl, fontWeight: FontWeight.extrabold },
+  heroSub: { fontSize: FontSize.sm, color: C.textSecondary, marginTop: 2 },
   countdownPill: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.xl,  // 12 = xl ✓
-    backgroundColor: 'rgba(255,255,255,0.7)', paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm, borderRadius: 20,
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.sm, borderRadius: 20, marginTop: Spacing.lg,
+    alignSelf: 'flex-start',
   },
-  countdownText: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: ExtendedColors.warningDeep },  // 13 = base ✓
+  countdownText: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: '#fff' },
   summaryCard: {
     backgroundColor: C.white,
     borderRadius: BorderRadius.lg,                    // 16 = lg ✓
@@ -530,7 +615,7 @@ const makeStyles = ({ colors: C }: AppTheme) => StyleSheet.create({
     borderWidth: 1,
     borderColor: C.border,                       // '#E2E8F0' = border ✓
   },
-  actionRow: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center' },
+  actionRow: { flexDirection: 'row', gap: Spacing.md },
   etaCard: {
     backgroundColor: C.white,
     borderRadius: BorderRadius.lg,                    // 16 = lg ✓
@@ -552,24 +637,49 @@ const makeStyles = ({ colors: C }: AppTheme) => StyleSheet.create({
   etaChipText: { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: C.textSecondary },  // 13 = base ✓
   etaChipTextActive: { color: C.primary },
   etaUpdateBtn: {
+    // Default (no time picked): muted outlined placeholder — clearly not yet tappable.
     borderWidth: 1.5,
-    borderColor: C.primary,
+    borderColor: C.border,
     borderRadius: BorderRadius.md,                    // 12 = md ✓
     paddingVertical: Spacing['2xl'],
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: C.white,
   },
-  etaUpdateBtnDisabled: { opacity: 0.5 },
-  etaUpdateBtnText: { color: C.primary, fontSize: FontSize.md, fontWeight: FontWeight.bold },  // 14 = md ✓
-  actionCircleBtn: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: C.screenBg,
+  // A time is selected → solid pink call-to-action.
+  etaUpdateBtnReady: {
+    backgroundColor: C.primary,
+    borderColor: C.primary,
+  },
+  etaUpdateBtnDisabled: { opacity: 0.6 },
+  etaUpdateBtnText: { color: C.textMuted, fontSize: FontSize.md, fontWeight: FontWeight.bold },  // 14 = md ✓
+  etaUpdateBtnTextReady: { color: C.white },
+  // Compact contact strip INSIDE the Summary card (dashed top divider), so the
+  // 3 actions don't need their own large "Contact Owner" card.
+  contactStrip: {
+    flexDirection: 'row',
+    marginTop: Spacing.xl,
+    paddingTop: Spacing.xl,
+    borderTopWidth: 1,
+    borderTopColor: C.surfaceBg,
+  },
+  contactAction: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: C.border,                       // '#E2E8F0' = border ✓
+    gap: Spacing.sm,
+  },
+  contactIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  contactLabel: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+    color: C.textPrimary,
   },
   footer: {
     padding: Spacing.screenH,

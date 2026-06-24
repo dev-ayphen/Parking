@@ -67,6 +67,14 @@ type Props = {
   uploadedDocs: Array<{ name: string; uri: string; id?: number }>;
   setUploadedDocs: React.Dispatch<React.SetStateAction<Array<{ name: string; uri: string; id?: number }>>>;
   handlePickDocument: () => void;
+  // Remove an uploaded doc. For a server-persisted doc (has `id`) the parent
+  // also DELETEs it on the server; new local-only docs are just dropped.
+  onRemoveUploadedDoc?: (index: number, doc: { name: string; uri: string; id?: number }) => void;
+  // Server-sourced document rules (from GET /spaces/document-rules). When
+  // provided they override the local fallback maps so the requirements never
+  // drift from the backend's source of truth.
+  docRulesMap?: Record<string, string[]>;
+  proofTextMap?: Record<string, string>;
   // Space media pickers + current selections
   frontPhotoUri?: string | null;
   areaPhotoUri?: string | null;
@@ -86,6 +94,9 @@ export default function Step4Documents({
   uploadedDocs,
   setUploadedDocs,
   handlePickDocument,
+  onRemoveUploadedDoc,
+  docRulesMap,
+  proofTextMap,
   frontPhotoUri,
   areaPhotoUri,
   areaVideoUri,
@@ -93,6 +104,10 @@ export default function Step4Documents({
   onPickAreaPhoto,
   onPickAreaVideo,
 }: Props) {
+  // Prefer server-sourced rules (no drift); fall back to local constants if the
+  // fetch hasn't completed or failed.
+  const docReqs = docRulesMap ?? SPACE_DOC_REQUIREMENTS;
+  const proofText = proofTextMap ?? REQUIRED_PROOF_TEXT;
   return (
     <View style={styles.formCard}>
       <Text style={styles.stepTitle}>Photos & Documents</Text>
@@ -159,7 +174,7 @@ export default function Step4Documents({
                           ]}
                           onPress={() => {
                             onChange(item);
-                            setValue('docType', SPACE_DOC_REQUIREMENTS[item]?.[0] as any);
+                            setValue('docType', docReqs[item]?.[0] as any);
                             setShowSpaceTypeModal(false);
                           }}
                         >
@@ -193,7 +208,7 @@ export default function Step4Documents({
             color={watch('spaceType') === 'Open Frontage Area' ? Colors.warningAlt : Colors.primary}
           />
           <Text style={styles.requiredProofText}>
-            {REQUIRED_PROOF_TEXT[watch('spaceType')] || 'Select space type above'}
+            {proofText[watch('spaceType')] || 'Select space type above'}
           </Text>
         </View>
         {watch('spaceType') === 'Open Frontage Area' && (
@@ -232,7 +247,13 @@ export default function Step4Documents({
               )}
             </View>
             <TouchableOpacity
-              onPress={() => setUploadedDocs((prev) => prev.filter((_, i) => i !== index))}
+              onPress={() => {
+                if (onRemoveUploadedDoc) {
+                  onRemoveUploadedDoc(index, doc);
+                } else {
+                  setUploadedDocs((prev) => prev.filter((_, i) => i !== index));
+                }
+              }}
             >
               <Trash2 size={16} color={Colors.errorAlt} />
             </TouchableOpacity>

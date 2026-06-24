@@ -11,7 +11,10 @@ import {
 
 const OTP_VALIDITY_MINUTES = 10;
 const RATE_LIMIT_WINDOW_MINUTES = 15;
-const MAX_OTP_REQUESTS = 20; // Increased for development/testing
+// Cap OTP *requests* per window. Each request mints a fresh OTP and resets the
+// wrong-guess counter, so a high cap effectively multiplies the brute-force
+// space (5 guesses × N requests). Keep this low. Allow more in dev for testing.
+const MAX_OTP_REQUESTS = process.env.NODE_ENV === 'production' ? 5 : 20;
 const MAX_OTP_ATTEMPTS = 5;
 
 // Redis key prefixes
@@ -26,7 +29,7 @@ const getOTPFromRedis = async (phone: string): Promise<{ otp: string; attempts: 
     const data = await redis.get(`${OTP_KEY_PREFIX}${phone}`);
     return data ? JSON.parse(data) : null;
   } catch (error) {
-    console.error(`[REDIS] Error getting OTP for ${phone}:`, error);
+    if (process.env.NODE_ENV !== 'production') console.error('[REDIS] Error getting OTP');
     return null;
   }
 };
@@ -51,9 +54,8 @@ const setOTPInRedis = async (
       OTP_VALIDITY_MINUTES * 60,
       JSON.stringify(otpData)
     );
-    console.log(`[REDIS] OTP stored for ${phone}`);
   } catch (error) {
-    console.error(`[REDIS] Error setting OTP for ${phone}:`, error);
+    if (process.env.NODE_ENV !== 'production') console.error('[REDIS] Error setting OTP');
     throw error;
   }
 };
@@ -64,9 +66,8 @@ const setOTPInRedis = async (
 const deleteOTPFromRedis = async (phone: string) => {
   try {
     await redis.del(`${OTP_KEY_PREFIX}${phone}`);
-    console.log(`[REDIS] OTP deleted for ${phone}`);
   } catch (error) {
-    console.error(`[REDIS] Error deleting OTP for ${phone}:`, error);
+    if (process.env.NODE_ENV !== 'production') console.error('[REDIS] Error deleting OTP');
   }
 };
 
@@ -74,13 +75,10 @@ const deleteOTPFromRedis = async (phone: string) => {
  * Get rate limit count from Redis
  */
 const getRateLimitFromRedis = async (phone: string) => {
-  try {
-    const data = await redis.get(`${RATE_LIMIT_KEY_PREFIX}${phone}`);
-    return data ? JSON.parse(data) : null;
-  } catch (error) {
-    console.error(`[REDIS] Error getting rate limit for ${phone}:`, error);
-    return null;
-  }
+  // Fail CLOSED: if we can't read the counter we must not silently disable the
+  // rate limit. Let the error propagate so the OTP request is refused.
+  const data = await redis.get(`${RATE_LIMIT_KEY_PREFIX}${phone}`);
+  return data ? JSON.parse(data) : null;
 };
 
 /**
@@ -99,7 +97,7 @@ const setRateLimitInRedis = async (phone: string, count: number) => {
       JSON.stringify(rateLimitData)
     );
   } catch (error) {
-    console.error(`[REDIS] Error setting rate limit for ${phone}:`, error);
+    if (process.env.NODE_ENV !== 'production') console.error('[REDIS] Error setting rate limit');
   }
 };
 
@@ -150,10 +148,10 @@ export const authService = {
       const otp = generateOTP();
       await setOTPInRedis(formattedPhone, otp, 0);
 
-      // Log OTP to console (development mode)
+      // OTP delivery. Stays in 'development' (console) until MSG91 is wired up;
+      // switch to NODE_ENV-based once SMS is configured. sendOTPViaSMS THROWS on
+      // a real delivery failure, so we never report success without sending.
       await sendOTPViaSMS(formattedPhone, otp, 'development');
-
-      console.log(`[AUTH_OTP] OTP sent to ${formattedPhone}`);
 
       return {
         success: true,
@@ -161,7 +159,7 @@ export const authService = {
         ...(process.env.NODE_ENV !== 'production' && { devOtp: otp }),
       };
     } catch (error) {
-      console.error('[AUTH_OTP] Error requesting OTP:', error);
+      if (process.env.NODE_ENV !== 'production') console.error('[AUTH_OTP] Error requesting OTP');
       throw error;
     }
   },
@@ -185,13 +183,9 @@ export const authService = {
     const formattedPhone = formatPhoneNumber(phone);
 
     try {
-      // Debug logging
-      console.log(`[VERIFY_OTP_DEBUG] Received phone: ${phone}, Formatted: ${formattedPhone}`);
-
       // Check if OTP exists
       const otpData = await getOTPFromRedis(formattedPhone);
       if (!otpData) {
-        console.log(`[VERIFY_OTP_DEBUG] OTP not found for phone: ${formattedPhone}`);
         const error = new Error('OTP not found or expired');
         (error as any).status = 400;
         throw error;
@@ -227,13 +221,6 @@ export const authService = {
       });
 
       let isNewUser = false;
-
-      console.log(`[AUTH] Verifying phone: ${formattedPhone}, Found user:`, {
-        id: user?.id,
-        phone: user?.phone,
-        isProfileComplete: user?.isProfileComplete,
-        isNewUser: !user,
-      });
 
       if (!user) {
         isNewUser = true;

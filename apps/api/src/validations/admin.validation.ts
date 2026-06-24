@@ -49,8 +49,12 @@ export const refundTransactionSchema = z.object({
   amount: z.coerce.number().positive().optional(),
 });
 
+// Must match the actual Transaction.status domain (schema.prisma: SUCCESS | PENDING
+// | FAILED) and the service allow-list (billingAdmin.service). The old enum used
+// COMPLETED/REFUNDED/CANCELLED — values the system never stores — so the admin
+// "Mark Paid" action (sends SUCCESS) was 400-rejected before reaching the controller.
 export const updateTransactionStatusSchema = z.object({
-  status: z.enum(['PENDING', 'COMPLETED', 'FAILED', 'REFUNDED', 'CANCELLED']),
+  status: z.enum(['SUCCESS', 'PENDING', 'FAILED']),
 });
 
 // ─── Subscription plans ─────────────────────────────────────────────
@@ -65,6 +69,12 @@ export const createSubscriptionPlanSchema = z.object({
   colorKey: z.string().trim().max(50).optional(),
   isActive: z.boolean().optional(),
   sortOrder: z.coerce.number().int().optional(),
+  // Real capability limits (-1 maxSpaces = unlimited).
+  maxSpaces: z.coerce.number().int().min(-1).optional(),
+  hasAnalytics: z.boolean().optional(),
+  hasFeaturedListing: z.boolean().optional(),
+  hasCsvExport: z.boolean().optional(),
+  hasPrioritySupport: z.boolean().optional(),
 });
 
 export const updateSubscriptionPlanSchema = createSubscriptionPlanSchema.partial();

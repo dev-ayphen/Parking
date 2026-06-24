@@ -11,10 +11,11 @@ import {View,
   DeviceEventEmitter,
   Alert} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MapPin, Clock, CheckCircle, Car, LogOut } from 'lucide-react-native';
+import { MapPin, Clock, Car, LogOut } from 'lucide-react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { PageHeader } from '../../components';
 import { api } from '../../services/api';
+import { NETWORK_RECONNECTED } from '../../store/networkStore';
 import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 import { useTheme, type AppTheme } from '../../hooks/useTheme';
 import { useSessionBarStore, minsUntil } from '../../store/sessionBarStore';
@@ -47,9 +48,17 @@ export default function ActiveSessionsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchSessions = useCallback(async (isRefresh = false) => {
+  // `mode`:
+  //   'initial' → full-screen spinner (first load only)
+  //   'refresh' → pull-to-refresh spinner
+  //   'silent'  → 8s poll / socket refresh — NO loader toggles. The poll used to
+  //               set loading=true every 8s, which re-showed the full-screen
+  //               spinner each tick (looked like it loaded forever, esp. on slow
+  //               Wi-Fi). Silent refreshes update data without flashing the loader.
+  const fetchSessions = useCallback(async (mode: 'initial' | 'refresh' | 'silent' = 'initial') => {
     try {
-      isRefresh ? setRefreshing(true) : setLoading(true);
+      if (mode === 'initial') setLoading(true);
+      else if (mode === 'refresh') setRefreshing(true);
       const json = await api.get('/bookings/live-sessions');
       if (json.success) {
         setSessions(json.sessions || []);
@@ -57,7 +66,8 @@ export default function ActiveSessionsScreen() {
     } catch (e) {
       if (__DEV__) console.log('[ACTIVE] error', e);
     } finally {
-      isRefresh ? setRefreshing(false) : setLoading(false);
+      if (mode === 'initial') setLoading(false);
+      else if (mode === 'refresh') setRefreshing(false);
     }
   }, []);
 
@@ -65,15 +75,21 @@ export default function ActiveSessionsScreen() {
   // fallback for missed socket events (flaky network / socket reconnecting) —
   // mirrors the parker's active-session screen so the owner isn't left stale.
   useFocusEffect(useCallback(() => {
-    fetchSessions();
-    const poll = setInterval(() => fetchSessions(), 8000);
-    return () => clearInterval(poll);
+    fetchSessions('initial');
+    const poll = setInterval(() => fetchSessions('silent'), 8000);
+    // Live Sessions already shows the session in full — hide the floating bar
+    // (which would just point here / duplicate it) while this screen is focused.
+    DeviceEventEmitter.emit('sessionbar:suppress', true);
+    return () => {
+      clearInterval(poll);
+      DeviceEventEmitter.emit('sessionbar:suppress', false);
+    };
   }, [fetchSessions]));
 
   // Live refresh on session lifecycle events
   useEffect(() => {
-    const events = ['session:started', 'session:completed', 'parker:leaving', 'booking:cancelled', 'notification:new'];
-    const subs = events.map((evt) => DeviceEventEmitter.addListener(evt, () => fetchSessions(true)));
+    const events = ['session:started', 'session:completed', 'parker:leaving', 'booking:cancelled', 'notification:new', NETWORK_RECONNECTED];
+    const subs = events.map((evt) => DeviceEventEmitter.addListener(evt, () => fetchSessions('silent')));
     return () => subs.forEach((s) => s.remove());
   }, [fetchSessions]);
 
@@ -135,7 +151,7 @@ export default function ActiveSessionsScreen() {
       <ScrollView
         style={styles.container}
         contentContainerStyle={{ paddingBottom: 120 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchSessions(true)} tintColor={C.primary} colors={[C.primary]} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchSessions('refresh')} tintColor={C.primary} colors={[C.primary]} />}
       >
         {sessions.length === 0 ? (
           <View style={styles.emptyState}>
@@ -218,7 +234,9 @@ export default function ActiveSessionsScreen() {
 
 const makeStyles = ({ colors: C }: AppTheme) => StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: C.white },
-  container: { flex: 1, backgroundColor: C.white, paddingHorizontal: Spacing['3xl'], paddingTop: Spacing.md },
+  // Grey content area so the white session cards stand out (white-on-white made
+  // them blend in). SafeAreaView/header stays white to match other screens.
+  container: { flex: 1, backgroundColor: C.screenBg, paddingHorizontal: Spacing['3xl'], paddingTop: Spacing.md },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: C.screenBg },
   card: {
     backgroundColor: C.white,

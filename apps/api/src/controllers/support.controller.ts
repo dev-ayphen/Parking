@@ -23,7 +23,8 @@ export const supportController = {
       emitAdminEvent('support:new', result.ticket);
       res.json(result);
     } catch (error) {
-      res.status(400).json({ error: (error as Error).message });
+      const status = (error as any)?.statusCode || 400;
+      res.status(status).json({ error: (error as Error).message, code: (error as any)?.code });
     }
   },
 

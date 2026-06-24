@@ -16,7 +16,7 @@ export const invoiceController = {
           parker: { select: { id: true, firstName: true, lastName: true, phone: true, email: true } },
           space: {
             select: {
-              name: true, address: true,
+              name: true, address: true, ownerId: true,
               owner: { select: { firstName: true, lastName: true, phone: true } },
             },
           },
@@ -29,9 +29,11 @@ export const invoiceController = {
         return;
       }
 
-      // Only the parker or the space owner can download this invoice
+      // Only the parker or the actual space owner can download this invoice.
+      // (Previously this checked `parkerId !== userId`, which let ANY logged-in
+      // user who wasn't the parker pull the invoice — an info-disclosure bug.)
       const isParker = booking.parkerId === userId;
-      const isOwner = booking.space.owner && booking.parkerId !== userId;
+      const isOwner = booking.space.ownerId === userId;
       if (!isParker && !isOwner) {
         res.status(403).json({ error: 'Access denied' });
         return;
@@ -153,8 +155,11 @@ export const invoiceController = {
       doc.fontSize(12).fillColor('#555555').font('Helvetica').text('Total Amount', 70, y + 15);
       doc.fontSize(10).fillColor('#888888').font('Helvetica').text('(inclusive of platform fee)', 70, y + 32);
 
+      // Use "Rs." not the ₹ glyph — PDFKit's built-in Helvetica has no rupee
+      // glyph (U+20B9), so ₹ rendered as a broken "¹". "Rs." renders everywhere
+      // and is a standard convention on Indian invoices.
       doc.fontSize(26).fillColor('#DC0159').font('Helvetica-Bold')
-        .text(`₹${booking.totalAmount.toFixed(2)}`, 50, y + 14, { align: 'right', width: 480 });
+        .text(`Rs. ${booking.totalAmount.toFixed(2)}`, 50, y + 14, { align: 'right', width: 480 });
 
       y += 90;
 

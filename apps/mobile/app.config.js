@@ -17,7 +17,7 @@ module.exports = {
   expo: {
     name: 'ParkSwift',
     slug: 'parkswift',
-    version: '0.0.1',
+    version: '1.0.0',
     orientation: 'portrait',
     scheme: 'parkswift',
     icon: './assets/icon.png',
@@ -35,6 +35,8 @@ module.exports = {
       },
     },
     splash: {
+      image: './assets/splash-icon.png',
+      resizeMode: 'contain',
       backgroundColor: '#ffffff',
     },
     assetBundlePatterns: ['**/*'],
@@ -74,6 +76,18 @@ module.exports = {
       'expo-secure-store',
       'expo-status-bar',
       'expo-video',
+      'expo-audio',
+      [
+        // Registers the native location module + permission strings for EAS/
+        // production builds. Without this, foreground-location requests can fail
+        // to set up correctly outside Expo Go (current location "not detected").
+        'expo-location',
+        {
+          locationWhenInUsePermission:
+            'ParkSwift uses your location to find nearby parking spaces.',
+          isAndroidForegroundServiceEnabled: false,
+        },
+      ],
       '@react-native-community/datetimepicker',
       [
         'expo-notifications',

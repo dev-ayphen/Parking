@@ -11,14 +11,16 @@ import {View,
   Alert,
   Linking,
   Modal,
-  TextInput} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+  TextInput,
+  DeviceEventEmitter} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Phone, MessageSquare, AlertTriangle, ShieldCheck, Flag, X, Headphones, CheckSquare } from 'lucide-react-native';
+import { Phone, MessageSquare, AlertTriangle, ShieldCheck, Flag, X, Headphones, CheckSquare, Search, Navigation } from 'lucide-react-native';
 import { api } from '../../services/api';
-import { useNetworkStore } from '../../store/networkStore';
+import { useNetworkStore, NETWORK_RECONNECTED } from '../../store/networkStore';
 import PageHeader from '../../components/PageHeader';
 import ReportSubmitted from '../../components/ReportSubmitted';
+import SessionStepper, { type SessionStep } from '../../components/FindSpace/SessionStepper';
 import { useRealtime } from '../../hooks/useRealtime';
 import { useSessionBarStore, computeEndsAtISO, minsUntil } from '../../store/sessionBarStore';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
@@ -26,6 +28,7 @@ import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } f
 export default function ActiveSessionScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const bookingId = params.bookingId as string;
   const setBarForSource = useSessionBarStore((s) => s.setBarForSource);
   const clearSource = useSessionBarStore((s) => s.clearSource);
@@ -80,6 +83,13 @@ export default function ActiveSessionScreen() {
     fetchBooking();
   }, [fetchBooking]);
 
+  // Re-fetch when connectivity is restored (offline banner's "Retry" / auto-
+  // reconnect) so an in-progress session screen reloads instead of going stale.
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(NETWORK_RECONNECTED, () => fetchBooking());
+    return () => sub.remove();
+  }, [fetchBooking]);
+
   // Polling fallback — Socket.IO is primary, but if an event is missed (flaky
   // network, socket reconnecting, app resumed from background) we still self-heal.
   // Polls every 8s while the booking is in a non-final state; stops when terminal.
@@ -111,12 +121,17 @@ export default function ActiveSessionScreen() {
     const unsub4 = onEvent('booking:cancelled', (data: any) => {
       if (String(data.bookingId) === String(bookingId)) fetchBooking();
     });
+    // App resumed from background OR socket reconnected after a network drop —
+    // re-fetch immediately so we recover any state change we missed while away,
+    // rather than waiting for the next 8s poll tick.
+    const unsub5 = onEvent('app:resumed', () => fetchBooking());
 
     return () => {
       unsub1();
       unsub2();
       unsub3();
       unsub4();
+      unsub5();
     };
   }, [bookingId, fetchBooking, onEvent]);
 
@@ -258,6 +273,41 @@ export default function ActiveSessionScreen() {
     }
   };
 
+  const handleArrived = async () => {
+    if (!useNetworkStore.getState().requireOnline()) return;
+    try {
+      setActionLoading(true);
+      await api.put(`/bookings/${bookingId}/arrived`);
+      fetchBooking();
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleSelfComplete = async () => {
+    if (!useNetworkStore.getState().requireOnline()) return;
+    Alert.alert(
+      'Complete without owner?',
+      "The owner hasn't confirmed your exit. You can complete the session yourself — the amount will be calculated based on your reported exit time.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Complete Session', style: 'destructive', onPress: async () => {
+          try {
+            setActionLoading(true);
+            await api.put(`/bookings/${bookingId}/self-complete`);
+            fetchBooking();
+          } catch (err: any) {
+            Alert.alert('Error', err.message);
+          } finally {
+            setActionLoading(false);
+          }
+        }},
+      ]
+    );
+  };
+
   const handleLeaving = async () => {
     if (!useNetworkStore.getState().requireOnline()) return;
     try {
@@ -295,8 +345,10 @@ export default function ActiveSessionScreen() {
 
   // Determine Sub-state (strict ordering — OTP only AFTER the parker acknowledges)
   const isApproved = booking.status === 'APPROVED';
+  // 0. Parker hasn't tapped "I Have Arrived" yet — show booking info + action buttons
+  const notYetArrived = isApproved && !booking.arrivedAt && !booking.sessionOtp;
   // 1. Owner hasn't recorded the vehicle condition yet → parker waits
-  const waitingForCondition = isApproved && !verification;
+  const waitingForCondition = isApproved && !notYetArrived && !verification;
   // 2. Condition recorded, parker hasn't acknowledged it yet → must read + confirm
   const requiresAcknowledgement = isApproved && verification && !verification.parkerAcknowledged;
   // 3. Acknowledged → arrival OTP (auto-generated). OTP NEVER appears before this.
@@ -304,9 +356,24 @@ export default function ActiveSessionScreen() {
   const isActive = booking.status === 'ACTIVE';
   // Parker tapped "I Am Leaving" — waiting for owner to confirm exit & finalize amount
   const isLeaving = isActive && !!booking.sessionEndedAt;
+  const isCompleted = booking.status === 'COMPLETED';
+
+  // Map the sub-state to a step in the progress tracker.
+  const currentStep: SessionStep =
+    isCompleted ? 'done'
+    : isActive ? 'active'
+    : requiresOtp ? 'verify'
+    : (requiresAcknowledgement || waitingForCondition) ? 'check'
+    : 'arrived';
+
+  // Compact one-line booking facts, shown on EVERY state so the parker keeps
+  // context (space, vehicle, amount) even while waiting on the owner.
+  const spaceName = booking.space?.name ?? '—';
+  const plate = booking.vehicle?.licensePlate ?? '—';
+  const amount = booking.totalAmount ?? 0;
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <StatusBar barStyle="dark-content" />
       <PageHeader title="Active Session" onBack={() => router.back()} />
 
@@ -317,12 +384,112 @@ export default function ActiveSessionScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={() => fetchBooking(true)} tintColor={Colors.primary} />
         }
       >
-        {/* SUBSTATE 1: Waiting for owner to check the vehicle condition */}
+        {/* Progress tracker — always visible so the parker sees where they are. */}
+        <View style={styles.stepperCard}>
+          <SessionStepper current={currentStep} />
+        </View>
+
+        {/* Compact booking facts — always visible so context is never lost while
+            waiting on the owner. */}
+        <View style={styles.factsCard}>
+          <View style={styles.factItem}>
+            <Text style={styles.factLabel}>SPACE</Text>
+            <Text style={styles.factValue} numberOfLines={1}>{spaceName}</Text>
+          </View>
+          <View style={styles.factDivider} />
+          <View style={styles.factItem}>
+            <Text style={styles.factLabel}>VEHICLE</Text>
+            <Text style={styles.factValue} numberOfLines={1}>{plate}</Text>
+          </View>
+          <View style={styles.factDivider} />
+          <View style={styles.factItem}>
+            <Text style={styles.factLabel}>AMOUNT</Text>
+            <Text style={[styles.factValue, { color: Colors.primary }]}>₹{amount}</Text>
+          </View>
+        </View>
+
+        {/* SUBSTATE 0: Approved, parker hasn't arrived yet */}
+        {notYetArrived && (
+          <>
+            {/* Status banner */}
+            <View style={styles.enRouteBanner}>
+              <Text style={styles.enRouteBannerEmoji}>🚗</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.enRouteBannerTitle}>Head to the Space</Text>
+                <Text style={styles.enRouteBannerSub}>Your booking is approved. Tap "I Have Arrived" when you reach the location.</Text>
+              </View>
+            </View>
+
+            {/* Booking details */}
+            <View style={[styles.card, { marginTop: Spacing.screenH }]}>
+              <Text style={styles.enRouteSection}>Booking Details</Text>
+              <View style={styles.enRouteRow}>
+                <Text style={styles.enRouteLabel}>Space</Text>
+                <Text style={styles.enRouteValue}>{booking.space?.name || '—'}</Text>
+              </View>
+              {!!booking.space?.address && (
+                <View style={styles.enRouteRow}>
+                  <Text style={styles.enRouteLabel}>Address</Text>
+                  <Text style={[styles.enRouteValue, { flex: 2 }]} numberOfLines={2}>{booking.space.address}</Text>
+                </View>
+              )}
+              <View style={styles.enRouteRow}>
+                <Text style={styles.enRouteLabel}>Vehicle</Text>
+                <Text style={styles.enRouteValue}>{booking.vehicle?.licensePlate || '—'} ({booking.vehicle?.vehicleType || '—'})</Text>
+              </View>
+              <View style={styles.enRouteRow}>
+                <Text style={styles.enRouteLabel}>Duration</Text>
+                <Text style={styles.enRouteValue}>{booking.duration}h</Text>
+              </View>
+              <View style={[styles.enRouteRow, { borderBottomWidth: 0 }]}>
+                <Text style={styles.enRouteLabel}>Amount</Text>
+                <Text style={[styles.enRouteValue, { color: Colors.primary, fontWeight: FontWeight.extrabold }]}>₹{booking.totalAmount}</Text>
+              </View>
+            </View>
+
+            {/* Contact + Navigate owner */}
+            <View style={[styles.card, { marginTop: Spacing.xl, flexDirection: 'row', padding: 0, overflow: 'hidden' }]}>
+              <TouchableOpacity
+                style={styles.contactBtn}
+                onPress={() => {
+                  const phone = booking.space?.owner?.phone;
+                  if (!phone) { Alert.alert('Unavailable', 'Owner phone not available.'); return; }
+                  const n = /^\+/.test(phone) ? phone : `+91${phone}`;
+                  Linking.openURL(`tel:${n}`).catch(() => Alert.alert('Error', 'Could not open dialler.'));
+                }}
+              >
+                <Phone size={20} color={Colors.textPrimary} />
+                <Text style={styles.contactBtnText}>Call Owner</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.contactBtn, { borderRightWidth: 0 }]}
+                onPress={() => {
+                  if (!booking.space?.lat || !booking.space?.lng) { Alert.alert('Unavailable', 'Location not available.'); return; }
+                  const url = `https://www.google.com/maps/dir/?api=1&destination=${booking.space.lat},${booking.space.lng}`;
+                  Linking.openURL(url).catch(() => Alert.alert('Error', 'Could not open maps.'));
+                }}
+              >
+                <Navigation size={20} color={Colors.textPrimary} />
+                <Text style={styles.contactBtnText}>Navigate</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+
+        {/* SUBSTATE 1: Waiting for owner to check the vehicle condition.
+            Single box — the waitOwnerBox IS the card (no outer wrapper). */}
         {waitingForCondition && (
-          <View style={styles.card}>
-            <View style={styles.otpLoadingBox}>
-              <ActivityIndicator color={Colors.primary} />
-              <Text style={styles.otpLoadingText}>Waiting for the owner to check your vehicle…</Text>
+          <View style={styles.waitOwnerBox}>
+            <View style={styles.waitOwnerIcon}>
+              <Search size={26} color={Colors.primary} strokeWidth={2.2} />
+            </View>
+            <Text style={styles.waitOwnerTitle}>Owner is checking your vehicle</Text>
+            <Text style={styles.waitOwnerSub}>
+              The space owner is verifying your vehicle’s condition. This usually takes a moment — you’ll be notified the instant it’s done.
+            </Text>
+            <View style={styles.waitOwnerStatus}>
+              <ActivityIndicator size="small" color={Colors.primary} />
+              <Text style={styles.waitOwnerStatusText}>In progress…</Text>
             </View>
           </View>
         )}
@@ -343,7 +510,7 @@ export default function ActiveSessionScreen() {
                 {verification.mediaUrls && verification.mediaUrls.length > 0 && (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.mediaStrip}>
                     {verification.mediaUrls.map((url: string, i: number) => (
-                      <Image key={i} source={{ uri: url }} style={styles.thumb} />
+                      <Image key={i} source={{ uri: url }} style={styles.thumb} resizeMode="cover" />
                     ))}
                   </ScrollView>
                 )}
@@ -572,31 +739,55 @@ export default function ActiveSessionScreen() {
         </View>
       </Modal>
 
-      {/* Sticky Footer */}
-      <View style={styles.footer}>
-        {requiresAcknowledgement && (
-          <TouchableOpacity style={styles.btnPrimary} onPress={handleAcknowledge} disabled={actionLoading}>
-            {actionLoading ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.btnPrimaryText}>Accept & Continue</Text>}
-          </TouchableOpacity>
-        )}
-        {requiresOtp && (
-          <View style={styles.waitingHint}>
-            <Text style={styles.waitingHintText}>
-              {generatedOtp ? 'Waiting for owner to verify your OTP…' : 'Preparing your arrival code…'}
-            </Text>
-          </View>
-        )}
-        {isActive && !isLeaving && (
-          <TouchableOpacity style={styles.btnPrimary} onPress={handleLeaving} disabled={actionLoading}>
-            {actionLoading ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.btnPrimaryText}>I Am Leaving</Text>}
-          </TouchableOpacity>
-        )}
-        {isLeaving && (
-          <View style={styles.waitingHint}>
-            <Text style={styles.waitingHintText}>Waiting for owner to confirm your exit…</Text>
-          </View>
-        )}
-      </View>
+      {/* Sticky Footer — pad the bottom by the safe-area inset (gesture bar /
+          system nav) plus the base padding so the action button is never clipped
+          by the device navigation. */}
+      {/* Only render the footer when there's actually a button/hint for the
+          current sub-state. Otherwise (e.g. "owner is checking your vehicle",
+          whose content lives in the scroll body) it drew an empty white box with
+          a top border at the bottom of the screen. */}
+      {(notYetArrived || requiresAcknowledgement || requiresOtp || (isActive && !isLeaving) || isLeaving) && (
+        <View style={[styles.footer, { paddingBottom: Spacing.screenH + Math.max(insets.bottom, Spacing.xs) }]}>
+          {notYetArrived && (
+            <TouchableOpacity style={styles.btnPrimary} onPress={handleArrived} disabled={actionLoading}>
+              {actionLoading ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.btnPrimaryText}>I Have Arrived</Text>}
+            </TouchableOpacity>
+          )}
+          {requiresAcknowledgement && (
+            <TouchableOpacity style={styles.btnPrimary} onPress={handleAcknowledge} disabled={actionLoading}>
+              {actionLoading ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.btnPrimaryText}>Accept & Continue</Text>}
+            </TouchableOpacity>
+          )}
+          {requiresOtp && (
+            <View style={styles.waitingHint}>
+              <Text style={styles.waitingHintText}>
+                {generatedOtp ? 'Waiting for owner to verify your OTP…' : 'Preparing your arrival code…'}
+              </Text>
+            </View>
+          )}
+          {isActive && !isLeaving && (
+            <TouchableOpacity style={styles.btnPrimary} onPress={handleLeaving} disabled={actionLoading}>
+              {actionLoading ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.btnPrimaryText}>I Am Leaving</Text>}
+            </TouchableOpacity>
+          )}
+          {isLeaving && (
+            <View style={{ gap: Spacing.md }}>
+              <View style={styles.waitingHint}>
+                <Text style={styles.waitingHintText}>Waiting for owner to confirm your exit…</Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.btnPrimary, { backgroundColor: Colors.white, borderWidth: 1.5, borderColor: Colors.error }]}
+                onPress={handleSelfComplete}
+                disabled={actionLoading}
+              >
+                {actionLoading
+                  ? <ActivityIndicator color={Colors.error} />
+                  : <Text style={[styles.btnPrimaryText, { color: Colors.error }]}>Owner not responding? Complete session</Text>}
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -606,7 +797,30 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   errorText: { color: Colors.error, marginBottom: Spacing.xl },                    // 12 = xl ✓
   errorTextSmall: { color: Colors.error, marginTop: Spacing.lg, textAlign: 'center' },
-  content: { flex: 1, padding: Spacing.screenH },                                  // 20 = screenH ✓
+  // Grey scroll area so the white cards stand out (white-on-white made them
+  // blend in). The SafeAreaView/header stays white to match other screens.
+  content: { flex: 1, padding: Spacing.screenH, backgroundColor: Colors.screenBg },
+  stepperCard: {
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.lg,
+    paddingHorizontal: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginBottom: Spacing.xl,
+  },
+  factsCard: {
+    flexDirection: 'row',
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.lg,
+    paddingVertical: Spacing.xl,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginBottom: Spacing.xl,
+  },
+  factItem: { flex: 1, alignItems: 'center', paddingHorizontal: Spacing.sm },
+  factLabel: { fontSize: FontSize.micro, fontWeight: FontWeight.bold, color: Colors.textMuted, letterSpacing: 0.4, marginBottom: 3 },
+  factValue: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  factDivider: { width: 1, backgroundColor: Colors.surfaceBg },
   card: {
     backgroundColor: Colors.white,
     borderRadius: BorderRadius.lg,                                                  // 16 = lg ✓
@@ -653,6 +867,53 @@ const styles = StyleSheet.create({
   },
   otpLoadingText: { fontSize: FontSize.base, color: Colors.textSecondary, fontWeight: FontWeight.medium },  // 13=base ✓
   waitingHint: { paddingVertical: Spacing['2xl'], alignItems: 'center' },           // 14='2xl' ✓
+  // "Owner is checking your vehicle" — single standalone card (white), no nesting.
+  waitOwnerBox: {
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.lg,
+    paddingVertical: Spacing['5xl'],
+    paddingHorizontal: Spacing['4xl'],
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  waitOwnerIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: Colors.primaryBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing['2xl'],
+  },
+  waitOwnerTitle: {
+    fontSize: FontSize.xl,                                                           // 16 = xl ✓
+    fontWeight: FontWeight.bold,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: Spacing.md,
+  },
+  waitOwnerSub: {
+    fontSize: FontSize.base,                                                         // 13 = base ✓
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 19,
+    marginBottom: Spacing['3xl'],
+  },
+  waitOwnerStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    backgroundColor: Colors.primaryBg,
+    paddingHorizontal: Spacing['2xl'],
+    paddingVertical: Spacing.lg,
+    borderRadius: BorderRadius.circleXl,
+  },
+  waitOwnerStatusText: {
+    fontSize: FontSize.sm,                                                           // 12 = sm ✓
+    fontWeight: FontWeight.semibold,
+    color: Colors.primary,
+  },
   waitingHintText: { fontSize: FontSize.md, color: Colors.textSecondary, fontWeight: FontWeight.medium },   // 14=md ✓
 
   activeCard: {
@@ -741,4 +1002,20 @@ const styles = StyleSheet.create({
   submitBtn: { backgroundColor: Colors.error, borderRadius: BorderRadius.button, paddingVertical: Spacing['3xl'], alignItems: 'center' as const },
   submitBtnDisabled: { opacity: 0.6 },
   submitBtnText: { color: Colors.white, fontSize: FontSize.lg, fontWeight: FontWeight.bold },
+
+  // ── Not-yet-arrived state ──────────────────────────────────────────────
+  enRouteBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.lg,
+    backgroundColor: Colors.infoBg, borderRadius: BorderRadius.lg, padding: Spacing['3xl'],
+  },
+  enRouteBannerEmoji: { fontSize: 28 },
+  enRouteBannerTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  enRouteBannerSub: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 2, lineHeight: 17 },
+  enRouteSection: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.xl },
+  enRouteRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingVertical: Spacing.lg, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBg,
+  },
+  enRouteLabel: { fontSize: FontSize.base, color: Colors.textSecondary, flex: 1 },
+  enRouteValue: { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: Colors.textPrimary, textAlign: 'right' },
 });

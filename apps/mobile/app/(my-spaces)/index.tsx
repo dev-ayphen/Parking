@@ -9,17 +9,37 @@ import {View,
   StatusBar,
   DeviceEventEmitter,
   Modal,
-  Pressable} from 'react-native';
+  Pressable,
+  Image,
+  Alert} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../hooks/useTheme';
-import { CheckCircle, AlertCircle, ArrowRight, Activity, TrendingUp, MapPin, Clock, Star, Zap, User, XCircle } from 'lucide-react-native';
+import { CheckCircle, AlertCircle, ArrowRight, Activity, TrendingUp, MapPin, Clock, Star, Zap, XCircle, Lock } from 'lucide-react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { PageHeader } from '../../components';
+import { PageHeader, LoadErrorState } from '../../components';
 import NoActivitySvg from '../../components/Illustrations/NoActivitySvg';
 import { api } from '../../services/api';
+import { NETWORK_RECONNECTED } from '../../store/networkStore';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 import { useSessionBarStore, computeExpiresAt, minsUntil } from '../../store/sessionBarStore';
+
+interface Entitlements {
+  planName: string;
+  maxSpaces: number;
+  hasAnalytics: boolean;
+  hasFeaturedListing: boolean;
+  hasCsvExport: boolean;
+  hasPrioritySupport: boolean;
+  isSubscribed: boolean;
+}
+
+interface Usage {
+  spacesUsed: number;
+  maxSpaces: number;
+  daysRemaining: number;
+  isExpired: boolean;
+}
 
 interface DashboardData {
   isSubscribed: boolean;
@@ -28,9 +48,12 @@ interface DashboardData {
   revenueTrend: string;
   activeSpacesCount: number;
   todayBookingsCount: number;
-  pendingRequests: { id: string; parkerName: string; spaceName: string; licensePlate: string; amount: number; durationHours: number; duration: string; eta: string; createdAt: string }[];
-  liveSessions: { id: string; parkerName: string; spaceName: string; licensePlate: string; timeLeft: string; endTimeISO: string | null; isLeaving: boolean }[];
-  recentRequests: { id: string; parkerName: string; spaceName: string; status: string; amount: number; createdAt: string }[];
+  pendingRequests: { id: string; parkerName: string; parkerPhotoUrl: string | null; spaceName: string; licensePlate: string; amount: number; durationHours: number; duration: string; eta: string; createdAt: string }[];
+  liveSessions: { id: string; parkerName: string; parkerPhotoUrl: string | null; spaceName: string; licensePlate: string; timeLeft: string; endTimeISO: string | null; isLeaving: boolean }[];
+  awaitingArrival: { id: string; parkerName: string; spaceName: string; licensePlate: string; etaText: string | null; atGate: boolean }[];
+  recentRequests: { id: string; parkerName: string; parkerPhotoUrl: string | null; spaceName: string; status: string; amount: number; createdAt: string }[];
+  entitlements: Entitlements | null;
+  usage: Usage | null;
 }
 
 // Status badge styling for retained recent requests
@@ -65,7 +88,10 @@ const EMPTY_DASHBOARD: DashboardData = {
   todayBookingsCount: 0,
   pendingRequests: [],
   liveSessions: [],
+  awaitingArrival: [],
   recentRequests: [],
+  entitlements: null,
+  usage: null,
 };
 
 
@@ -79,6 +105,11 @@ export default function OwnerDashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState<DashboardData>(EMPTY_DASHBOARD);
+  // Track whether a load has EVER succeeded. If a fetch fails before we ever have
+  // real data (e.g. opened the screen offline), we show a full "can't load" state
+  // instead of a misleading default dashboard (₹0, fake "all caught up").
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [nowTs, setNowTs] = useState(Date.now()); // ticks for the live approval countdown
   const [modalItem, setModalItem] = useState<any>(null);
 
@@ -87,6 +118,8 @@ export default function OwnerDashboardScreen() {
       isRefresh ? setRefreshing(true) : setLoading(true);
       const json = await api.get('/home/owner-dashboard');
       if (!json.success) return;
+      setLoadFailed(false);
+      setHasLoaded(true);
 
       const trendPct = json.revenue?.trendPct ?? 0;
       setDashboardData({
@@ -99,6 +132,7 @@ export default function OwnerDashboardScreen() {
         pendingRequests: (json.pendingRequests || []).map((r: any) => ({
           id: String(r.id),
           parkerName: r.parkerName || 'Unknown',
+          parkerPhotoUrl: r.parkerPhotoUrl || null,
           spaceName: r.spaceName || '—',
           licensePlate: r.licensePlate || '',
           amount: r.amount || 0,
@@ -110,23 +144,38 @@ export default function OwnerDashboardScreen() {
         liveSessions: (json.liveSessions || []).map((s: any) => ({
           id: String(s.id),
           parkerName: s.parkerName || 'Unknown',
+          parkerPhotoUrl: s.parkerPhotoUrl || null,
           spaceName: s.spaceName || '—',
           licensePlate: s.licensePlate || '',
           timeLeft: s.remainingText || '—',
           endTimeISO: s.endTimeISO || null,
           isLeaving: !!s.isLeaving,
         })),
+        awaitingArrival: (json.awaitingArrival || []).map((a: any) => ({
+          id: String(a.id),
+          parkerName: a.parkerName || 'Unknown',
+          spaceName: a.spaceName || '—',
+          licensePlate: a.licensePlate || '',
+          etaText: a.etaText || null,
+          atGate: !!a.atGate,
+        })),
         recentRequests: (json.recentRequests || []).map((r: any) => ({
           id: String(r.id),
           parkerName: r.parkerName || 'Unknown',
+          parkerPhotoUrl: r.parkerPhotoUrl || null,
           spaceName: r.spaceName || '—',
           status: r.status || '',
           amount: r.amount || 0,
           createdAt: r.createdAt || '',
         })),
+        entitlements: json.entitlements ?? null,
+        usage: json.usage ?? null,
       });
     } catch (e) {
       if (__DEV__) console.log('[OWNER_DASHBOARD] error', e);
+      // Mark the load as failed so we can show a proper "can't load" screen when
+      // we have no real data yet (rather than the misleading default dashboard).
+      setLoadFailed(true);
     } finally {
       isRefresh ? setRefreshing(false) : setLoading(false);
     }
@@ -137,7 +186,7 @@ export default function OwnerDashboardScreen() {
   // Refresh on focus + live refresh on new booking / arrival / session events
   useFocusEffect(useCallback(() => { fetchDashboard(); }, [fetchDashboard]));
   useEffect(() => {
-    const events = ['booking:new', 'booking:expired', 'booking:cancelled', 'parker:arrived', 'parker:eta-update', 'parker:leaving', 'session:started', 'session:completed', 'notification:new'];
+    const events = ['booking:new', 'booking:expired', 'booking:cancelled', 'parker:arrived', 'parker:eta-update', 'parker:leaving', 'session:started', 'session:completed', 'notification:new', NETWORK_RECONNECTED];
     const subs = events.map((evt) => DeviceEventEmitter.addListener(evt, () => fetchDashboard(true)));
     return () => subs.forEach((s) => s.remove());
   }, [fetchDashboard]);
@@ -151,7 +200,9 @@ export default function OwnerDashboardScreen() {
 
   // ── Feed session bar from owner dashboard state ──────────────────────
   useEffect(() => {
-    const { pendingRequests, liveSessions } = dashboardData;
+    // Default to [] — older cached dashboardData (or a partial fetch) may not have
+    // the awaitingArrival field yet, and `undefined.length` would crash the screen.
+    const { pendingRequests, liveSessions, awaitingArrival = [] } = dashboardData;
 
     if (pendingRequests.length > 0) {
       const req = pendingRequests[0];
@@ -200,6 +251,27 @@ export default function OwnerDashboardScreen() {
       return;
     }
 
+    // Accepted but not started: "Parker at gate — verify OTP" (arrived) else
+    // "Parker is on the way". Prefer an at-gate booking so the owner is nudged
+    // to the verify action when one is ready.
+    if (awaitingArrival.length > 0) {
+      const target = awaitingArrival.find((a) => a.atGate) ?? awaitingArrival[0];
+      setBar({
+        variant: target.atGate ? 'parker_at_gate' : 'parker_en_route',
+        bookingId: String(target.id),
+        spaceName: target.spaceName,
+        parkerName: target.parkerName,
+        vehiclePlate: target.licensePlate,
+        amount: null,
+        durationHours: null,
+        expiresAt: null,
+        endsAtISO: null,
+        otp: null,
+        etaText: target.etaText ?? null,
+      });
+      return;
+    }
+
     clearBar();
   }, [dashboardData, setBar, clearBar]);
 
@@ -211,6 +283,32 @@ export default function OwnerDashboardScreen() {
   };
   const fmtCountdown = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
+  // ── Subscription gate (Task B & C) ───────────────────────────────────
+  // Owners with no active subscription (or an expired one) cannot list spaces.
+  // entitlements.isSubscribed is the source of truth; usage.isExpired flags a
+  // lapsed plan so we can show "renew" copy instead of "subscribe".
+  const ent = dashboardData.entitlements;
+  const usage = dashboardData.usage;
+  const isSubscribed = ent ? ent.isSubscribed : dashboardData.isSubscribed;
+  const isExpired = !!usage?.isExpired;
+  const subscriptionLocked = !isSubscribed || isExpired;
+
+  // Gate the Add Space entry: route to plans (with a nudge) when not subscribed.
+  const handleAddSpace = useCallback(() => {
+    if (subscriptionLocked) {
+      Alert.alert(
+        'Subscription Required',
+        'A subscription is required to list a parking space. Choose a plan to start earning.',
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'View Plans', onPress: () => router.push('/(my-spaces)/subscription-plans') },
+        ],
+      );
+      return;
+    }
+    router.push('/add-space');
+  }, [subscriptionLocked, router]);
+
   if (loading) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -219,6 +317,20 @@ export default function OwnerDashboardScreen() {
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.primary} />
         </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Couldn't load and we have no real data to show yet (e.g. opened offline).
+  // Show a full "can't load / try again" state instead of a misleading default
+  // dashboard. Once data has loaded once, we keep showing it (a transient refresh
+  // failure shouldn't blank the screen).
+  if (loadFailed && !hasLoaded) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="dark-content" />
+        <PageHeader title="Manage Spaces" />
+        <LoadErrorState onRetry={() => fetchDashboard()} />
       </SafeAreaView>
     );
   }
@@ -234,6 +346,35 @@ export default function OwnerDashboardScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
       >
+        {/* Subscription lock banner — the key revenue nudge. Shown when the owner
+            has no active subscription or it has expired, so they can't list spaces. */}
+        {subscriptionLocked && (
+          <View style={styles.lockBanner}>
+            <View style={styles.lockBannerIcon}>
+              <Lock size={18} color={Colors.error} />
+            </View>
+            <View style={styles.lockBannerBody}>
+              <Text style={styles.lockBannerTitle}>
+                {isExpired ? 'Subscription Expired' : 'Subscription Required'}
+              </Text>
+              <Text style={styles.lockBannerText}>
+                {isExpired
+                  ? 'Renew to continue listing and managing your parking spaces.'
+                  : 'Subscribe to list and manage your parking spaces.'}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.lockBannerBtn}
+              activeOpacity={0.8}
+              onPress={() => router.push('/(my-spaces)/subscription-plans')}
+            >
+              <Text style={styles.lockBannerBtnText}>
+                {isExpired ? 'Renew' : 'View Plans'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Premium Banner - Floating Style */}
         <LinearGradient
           colors={dashboardData.isSubscribed ? [Colors.textPrimary, ExtendedColors.darkCard, Colors.textDark] : [ExtendedColors.darkGrad1, ExtendedColors.darkGrad2, ExtendedColors.darkGrad3]}
@@ -337,7 +478,11 @@ export default function OwnerDashboardScreen() {
                 >
                   <View style={styles.actionCardHeader}>
                     <View style={styles.avatarCircle}>
-                      <Text style={styles.avatarText}>{request.parkerName.charAt(0)}</Text>
+                      {request.parkerPhotoUrl ? (
+                        <Image source={{ uri: request.parkerPhotoUrl }} style={styles.avatarImg} resizeMode="cover" />
+                      ) : (
+                        <Text style={styles.avatarText}>{request.parkerName.charAt(0)}</Text>
+                      )}
                     </View>
                     <View style={styles.actionCardInfo}>
                       <Text style={styles.actionCardName}>{request.parkerName}</Text>
@@ -412,12 +557,18 @@ export default function OwnerDashboardScreen() {
             {dashboardData.recentRequests.slice(0, 2).map((req) => {
               const badge = REQUEST_STATUS_BADGE[req.status] || { label: req.status, color: Colors.textSecondary, bg: Colors.surfaceBg };
               return (
-                <View
+                <TouchableOpacity
                   key={req.id}
                   style={styles.recentReqCard}
+                  activeOpacity={0.7}
+                  onPress={() => setModalItem(req)}
                 >
                   <View style={styles.recentReqAvatar}>
-                    <Text style={styles.recentReqAvatarText}>{req.parkerName.charAt(0).toUpperCase()}</Text>
+                    {req.parkerPhotoUrl ? (
+                      <Image source={{ uri: req.parkerPhotoUrl }} style={styles.recentReqAvatarImg} resizeMode="cover" />
+                    ) : (
+                      <Text style={styles.recentReqAvatarText}>{req.parkerName.charAt(0).toUpperCase()}</Text>
+                    )}
                   </View>
                   <View style={styles.recentReqInfo}>
                     <Text style={styles.recentReqName}>{req.parkerName}</Text>
@@ -429,7 +580,7 @@ export default function OwnerDashboardScreen() {
                     </View>
                     <Text style={styles.recentReqTime}>{timeAgo(req.createdAt)}</Text>
                   </View>
-                </View>
+                </TouchableOpacity>
               );
             })}
           </View>
@@ -445,10 +596,10 @@ export default function OwnerDashboardScreen() {
               {dashboardData.activeSpacesCount === 0 ? " Add a space to start earning." : " We'll notify you when you get a booking."}
             </Text>
             {dashboardData.activeSpacesCount === 0 && (
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.emptyStateBtn}
                 activeOpacity={0.8}
-                onPress={() => router.push('/add-space')}
+                onPress={handleAddSpace}
               >
                 <Text style={styles.emptyStateBtnText}>Add a Space</Text>
               </TouchableOpacity>
@@ -496,6 +647,21 @@ export default function OwnerDashboardScreen() {
                 </View>
                 <Text style={[styles.modalTitle, { color: Colors.error }]}>Booking Cancelled</Text>
                 <Text style={styles.modalSub}>This booking was cancelled.</Text>
+              </View>
+            )}
+            {(modalItem?.status === 'APPROVED' || modalItem?.status === 'COMPLETED') && (
+              <View style={styles.modalHeader}>
+                <View style={[styles.modalIconWrap, { backgroundColor: Colors.successBg }]}>
+                  <CheckCircle size={32} color={Colors.success} />
+                </View>
+                <Text style={[styles.modalTitle, { color: Colors.success }]}>
+                  {modalItem?.status === 'COMPLETED' ? 'Booking Completed' : 'Request Approved'}
+                </Text>
+                <Text style={styles.modalSub}>
+                  {modalItem?.status === 'COMPLETED'
+                    ? 'This parking session was completed successfully.'
+                    : 'You approved this booking request.'}
+                </Text>
               </View>
             )}
 
@@ -566,6 +732,51 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing['3xl'],
     paddingTop: Spacing['3xl'],
     paddingBottom: Spacing['7xl'],
+  },
+  lockBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.errorBg,
+    borderRadius: BorderRadius.lg,                  // 16 = lg ✓
+    borderWidth: 1,
+    borderColor: Colors.error,
+    padding: Spacing.xl,
+    marginBottom: Spacing.xl,
+  },
+  lockBannerIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.lg,
+  },
+  lockBannerBody: {
+    flex: 1,
+    marginRight: Spacing.md,
+  },
+  lockBannerTitle: {
+    fontSize: FontSize.md,                          // 14 = md ✓
+    fontWeight: FontWeight.bold,
+    color: Colors.error,
+    marginBottom: 2,
+  },
+  lockBannerText: {
+    fontSize: FontSize.sm,                          // 12 = sm ✓
+    color: Colors.textSecondary,
+    lineHeight: 16,
+  },
+  lockBannerBtn: {
+    backgroundColor: Colors.error,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.input,               // 10 = input ✓
+  },
+  lockBannerBtnText: {
+    color: Colors.white,
+    fontWeight: FontWeight.bold,
+    fontSize: FontSize.sm,                          // 12 = sm ✓
   },
   heroBanner: {
     borderRadius: BorderRadius.circleXl,            // 20 = circleXl ✓
@@ -709,6 +920,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: Spacing.lg,
+    overflow: 'hidden',
+  },
+  avatarImg: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 20,
   },
   avatarText: {
     fontSize: FontSize.xl,                          // 16 = xl ✓
@@ -778,8 +995,9 @@ const styles = StyleSheet.create({
   },
   recentReqAvatar: {
     width: 38, height: 38, borderRadius: BorderRadius.circle, backgroundColor: Colors.surfaceBg,  // 19 = circle ✓
-    alignItems: 'center', justifyContent: 'center', marginRight: Spacing.xl,
+    alignItems: 'center', justifyContent: 'center', marginRight: Spacing.xl, overflow: 'hidden',
   },
+  recentReqAvatarImg: { width: '100%', height: '100%', borderRadius: BorderRadius.circle },
   recentReqAvatarText: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textSecondary },  // 15 = lg ✓
   recentReqInfo: { flex: 1 },
   recentReqName: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textPrimary },  // 14 = md ✓

@@ -10,8 +10,9 @@ import {View,
   RefreshControl} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { ChevronLeft, Ticket, Clock, CheckCircle2, ChevronRight, XCircle, MessageSquare, Pause } from 'lucide-react-native';
+import { Ticket, Clock, CheckCircle2, ChevronRight, XCircle, MessageSquare, Pause } from 'lucide-react-native';
 import { api } from '../../../services/api';
+import PageHeader from '../../../components/PageHeader';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../../theme';
 
 
@@ -107,13 +108,7 @@ export default function MySupportTicketsScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()} activeOpacity={0.7}>
-          <ChevronLeft size={18} color={Colors.textDark} strokeWidth={2.5} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>My Support Tickets</Text>
-        <View style={{ width: 40 }} />
-      </View>
+      <PageHeader title="My Support Tickets" onBack={() => router.back()} />
 
       <View style={styles.tabsContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsScroll}>
@@ -213,34 +208,7 @@ export default function MySupportTicketsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.screenBg,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.screenH,
-    paddingVertical: Spacing['3xl'],
     backgroundColor: Colors.white,
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4 },
-      android: { elevation: 4 },
-    }),
-  },
-  backButton: {
-    width: 38,
-    height: 38,
-    borderRadius: BorderRadius.circle,              // 19 = circle ✓
-    backgroundColor: Colors.screenBg,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBg,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    fontSize: FontSize['3xl'],                      // 20 = 3xl ✓
-    fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
   },
   tabsContainer: {
     backgroundColor: Colors.white,

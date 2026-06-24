@@ -39,6 +39,23 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Tolerate empty / malformed-empty JSON bodies. Some clients (e.g. React Native
+// fetch) send `Content-Type: application/json` even for bodyless calls like
+// PUT /bookings/:id/accept, with an empty or NUL payload that express.json()
+// rejects as "Unexpected token '\x00' is not valid JSON" (400). If the parse
+// failed only because the body was effectively empty, recover with req.body = {}
+// instead of 400ing a perfectly valid bodyless request.
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+  if (err && err.type === 'entity.parse.failed') {
+    const raw = typeof err.body === 'string' ? err.body.replace(/\x00/g, '').trim() : '';
+    if (raw === '') {
+      req.body = {};
+      return next();
+    }
+  }
+  return next(err);
+});
+
 // NOTE: Files are now stored in Supabase Storage (see services/storage.service.ts),
 // not on local disk — the legacy `/uploads` static handler has been removed.
 

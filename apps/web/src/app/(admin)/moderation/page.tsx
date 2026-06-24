@@ -5,12 +5,12 @@ import { motion } from 'framer-motion';
 import { io as createSocket } from 'socket.io-client';
 import {
   ShieldAlert, UserCheck, Ban, MessageSquareWarning,
-  Search, Filter, CheckCircle2, XCircle, AlertTriangle,
+  Search, Filter, CheckCircle2, AlertTriangle,
   Shield, FileText, Loader2, Star, Eye, EyeOff,
 } from 'lucide-react';
 import { adminApi } from '@/services/api';
-
-const SOCKET_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api').replace(/\/api\/?$/, '');
+import { useAuthStore } from '@/store/authStore';
+import { SOCKET_URL } from '@/lib/config';
 
 interface ModerationUser {
   id: number;
@@ -47,6 +47,8 @@ interface AdminReview {
   createdAt: string;
   isHidden: boolean;
   reviewerName: string;
+  rateeName: string;
+  direction: 'PARKER_RATED_OWNER' | 'OWNER_RATED_PARKER';
   space: { id: number; name: string } | null;
 }
 
@@ -58,6 +60,9 @@ export default function ModerationPage() {
   const [blockedSpaces, setBlockedSpaces] = useState<BlockedSpace[]>([]);
   const [reviews, setReviews] = useState<AdminReview[]>([]);
   const [reviewFilter, setReviewFilter] = useState<'all' | 'visible' | 'hidden'>('all');
+  const [reviewsPage, setReviewsPage] = useState(1);
+  const [reviewsTotal, setReviewsTotal] = useState(0);
+  const [reviewsPages, setReviewsPages] = useState(1);
   const [hiddenCount, setHiddenCount] = useState(0);
   const [actioningId, setActioningId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -90,26 +95,35 @@ export default function ModerationPage() {
       const res = await adminApi.listReviews({
         status: reviewFilter === 'all' ? undefined : reviewFilter,
         search: searchQuery || undefined,
+        page: reviewsPage,
       });
       setReviews(res.reviews || []);
       setHiddenCount(res.hiddenCount || 0);
+      setReviewsTotal(res.total || 0);
+      setReviewsPages(Math.max(1, res.pages || 1));
     } catch (e: any) {
       if (process.env.NODE_ENV === 'development') console.error('Reviews:', e);
     }
-  }, [reviewFilter, searchQuery]);
+  }, [reviewFilter, searchQuery, reviewsPage]);
 
   useEffect(() => {
     if (activeTab === 'reviews') fetchReviews();
   }, [activeTab, fetchReviews]);
 
+  // Reset to page 1 whenever the reviews tab is opened or a review filter/search changes
+  useEffect(() => {
+    setReviewsPage(1);
+  }, [activeTab, reviewFilter, searchQuery]);
+
   const toggleReviewVisibility = async (review: AdminReview) => {
     try {
       setActioningId(review.id);
+      setError('');
       if (review.isHidden) await adminApi.unhideReview(review.id);
       else await adminApi.hideReview(review.id);
       await fetchReviews();
     } catch (e: any) {
-      if (process.env.NODE_ENV === 'development') console.error('Toggle review:', e);
+      setError(e?.response?.data?.error || e?.message || 'Failed to update review visibility');
     } finally {
       setActioningId(null);
     }
@@ -122,7 +136,7 @@ export default function ModerationPage() {
 
   // Real-time: refresh on any user/space update
   useEffect(() => {
-    const socket = createSocket(SOCKET_URL, { transports: ['websocket'] });
+    const socket = createSocket(SOCKET_URL, { transports: ['websocket'], auth: { token: useAuthStore.getState().token } });
     socket.on('connect', () => socket.emit('admin:join'));
     socket.on('user:updated', fetchAll);
     socket.on('user:deleted', fetchAll);
@@ -132,20 +146,24 @@ export default function ModerationPage() {
   }, [fetchAll]);
 
   const handleReinstate = async (userId: number) => {
+    if (!window.confirm('Reinstate this user? They will be able to log in and use the platform again.')) return;
     try {
+      setError('');
       await adminApi.unsuspendUser(userId);
       await fetchAll();
     } catch (e: any) {
-      alert(e?.response?.data?.error || 'Failed to reinstate');
+      setError(e?.response?.data?.error || e?.message || 'Failed to reinstate');
     }
   };
 
   const handleApproveSpace = async (spaceId: number) => {
+    if (!window.confirm('Unblock this space? It will be restored to the map and become bookable again.')) return;
     try {
+      setError('');
       await adminApi.approveSpace(spaceId);
       await fetchAll();
     } catch (e: any) {
-      alert(e?.response?.data?.error || 'Failed to approve');
+      setError(e?.response?.data?.error || e?.message || 'Failed to approve');
     }
   };
 
@@ -156,7 +174,7 @@ export default function ModerationPage() {
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Moderation & Security</h1>
           <p className="text-gray-500 mt-1">Manage user verifications, suspensions, and flagged content.</p>
         </div>
-        <a href="/system-logs" className="flex items-center gap-2 bg-indigo-50 text-indigo-700 px-4 py-2 rounded-xl font-medium border border-indigo-100 hover:bg-indigo-100 transition-colors">
+        <a href="/logs" className="flex items-center gap-2 bg-indigo-50 text-indigo-700 px-4 py-2 rounded-xl font-medium border border-indigo-100 hover:bg-indigo-100 transition-colors">
           <Shield size={18} /> Audit Logs
         </a>
       </motion.div>
@@ -239,7 +257,7 @@ export default function ModerationPage() {
                           <td className="p-4 text-sm text-gray-600">{user.type}</td>
                           <td className="p-4">
                             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
-                              <AlertTriangle size={14} />Profile Incomplete
+                              <AlertTriangle size={14} />Inactive
                             </span>
                           </td>
                           <td className="p-4 text-sm text-gray-500">{user.joined}</td>
@@ -391,7 +409,7 @@ export default function ModerationPage() {
                           <th className="px-5 py-3.5 font-semibold">Space</th>
                           <th className="px-5 py-3.5 font-semibold">Rating</th>
                           <th className="px-5 py-3.5 font-semibold">Review</th>
-                          <th className="px-5 py-3.5 font-semibold">By</th>
+                          <th className="px-5 py-3.5 font-semibold">By → To</th>
                           <th className="px-5 py-3.5 font-semibold">Action</th>
                         </tr>
                       </thead>
@@ -406,6 +424,13 @@ export default function ModerationPage() {
                             </td>
                             <td className="px-5 py-4">
                               <p className="text-sm font-semibold text-gray-900">{r.space?.name || '—'}</p>
+                              <span className={`mt-1 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                r.direction === 'PARKER_RATED_OWNER'
+                                  ? 'bg-indigo-50 text-indigo-700'
+                                  : 'bg-amber-50 text-amber-700'
+                              }`}>
+                                {r.direction === 'PARKER_RATED_OWNER' ? 'Parker → Owner' : 'Owner → Parker'}
+                              </span>
                             </td>
                             <td className="px-5 py-4">
                               <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold ${
@@ -419,7 +444,11 @@ export default function ModerationPage() {
                               <p className="text-sm text-gray-700 line-clamp-2">{r.review || <span className="text-gray-400 italic">No text</span>}</p>
                             </td>
                             <td className="px-5 py-4">
-                              <p className="text-sm text-gray-600">{r.reviewerName}</p>
+                              <p className="text-sm text-gray-700">
+                                <span className="font-medium text-gray-900">{r.reviewerName}</span>
+                                <span className="text-gray-400"> → </span>
+                                <span className="text-gray-600">{r.rateeName}</span>
+                              </p>
                             </td>
                             <td className="px-5 py-4">
                               <button
@@ -444,6 +473,31 @@ export default function ModerationPage() {
                     </table>
                   )}
                 </div>
+
+                {/* Pagination */}
+                {reviewsTotal > 0 && (
+                  <div className="flex items-center justify-between mt-4">
+                    <p className="text-sm text-gray-500">
+                      Page {reviewsPage} of {reviewsPages} · {reviewsTotal.toLocaleString('en-IN')} review{reviewsTotal === 1 ? '' : 's'}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setReviewsPage((p) => Math.max(1, p - 1))}
+                        disabled={reviewsPage <= 1}
+                        className="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Previous
+                      </button>
+                      <button
+                        onClick={() => setReviewsPage((p) => Math.min(reviewsPages, p + 1))}
+                        disabled={reviewsPage >= reviewsPages}
+                        className="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </>

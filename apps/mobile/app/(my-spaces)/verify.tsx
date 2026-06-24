@@ -14,9 +14,9 @@ import {View,
   Linking} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'react-native';
-import { Check, X, Camera, Phone, ShieldCheck, Clock, CheckCircle, Car, MapPin, Plus } from 'lucide-react-native';
-import * as ImagePicker from 'expo-image-picker';
-import { useFocusEffect } from 'expo-router';
+import { Check, X, Camera, Phone, ShieldCheck, CheckCircle, Car, MapPin, Plus, Navigation, Clock } from 'lucide-react-native';
+import { pickMedia } from '../../utils/pickMedia';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { PageHeader } from '../../components';
 import { api } from '../../services/api';
 import { useNetworkStore } from '../../store/networkStore';
@@ -26,11 +26,16 @@ import { useSessionBarStore } from '../../store/sessionBarStore';
 interface OwnerRequest {
   id: string;
   status: string;
+  arrivedAt: string | null;
+  sessionOtp: string | null;
   parkerName: string;
+  parkerPhotoUrl: string | null;
   phone: string;
   spaceName: string;
   durationHours: number;
   etaText: string;
+  // Raw ETA + whether the parker updated it (so the card can flag the new time).
+  etaUpdatedAt: string | null;
   vehicle: string;
   amount: number;
 }
@@ -43,6 +48,7 @@ const formatEta = (eta: string | null | undefined) => {
 };
 
 export default function VerifyScreen() {
+  const router = useRouter();
   const setBarForSource = useSessionBarStore((s) => s.setBarForSource);
   const clearSource = useSessionBarStore((s) => s.clearSource);
   const setBar = useCallback((b: any) => setBarForSource('owner', b), [setBarForSource]);
@@ -50,7 +56,8 @@ export default function VerifyScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [pending, setPending] = useState<OwnerRequest[]>([]);
-  const [approved, setApproved] = useState<OwnerRequest[]>([]);
+  const [enRoute, setEnRoute] = useState<OwnerRequest[]>([]);   // APPROVED, not yet arrived
+  const [approved, setApproved] = useState<OwnerRequest[]>([]);  // APPROVED + arrived/OTP
 
   // Reject flow
   const [rejectTarget, setRejectTarget] = useState<OwnerRequest | null>(null);
@@ -66,20 +73,31 @@ export default function VerifyScreen() {
   const [enteredOtp, setEnteredOtp] = useState('');
   const [verifyingOtp, setVerifyingOtp] = useState(false);
 
-  const fetchRequests = useCallback(async (isRefresh = false) => {
+  // `mode`:
+  //   'initial' → show the full-screen loader (first load only)
+  //   'refresh' → show the pull-to-refresh spinner
+  //   'silent'  → background poll / socket refresh — NO loader toggles, so it
+  //               never unmounts the screen (which was making the open OTP modal
+  //               flicker closed-then-open every 8s).
+  const fetchRequests = useCallback(async (mode: 'initial' | 'refresh' | 'silent' = 'initial') => {
     try {
-      isRefresh ? setRefreshing(true) : setLoading(true);
+      if (mode === 'initial') setLoading(true);
+      else if (mode === 'refresh') setRefreshing(true);
       const json = await api.get('/bookings/owner-requests');
       if (!json.success) return;
 
       const mapped: OwnerRequest[] = (json.bookings || []).map((b: any) => ({
         id: String(b.id),
         status: b.status,
+        arrivedAt: b.arrivedAt || null,
+        sessionOtp: b.sessionOtp || null,
         parkerName: b.parkerName || 'Unknown',
+        parkerPhotoUrl: b.parkerPhotoUrl || null,
         phone: b.parker?.phone || '',
         spaceName: b.spaceName || '—',
         durationHours: b.duration || 1,
         etaText: formatEta(b.eta),
+        etaUpdatedAt: b.etaUpdatedAt || null,
         vehicle: b.vehicle
           ? `${b.vehicle.brandModel || b.vehicle.vehicleType || 'Vehicle'} (${b.vehicle.licensePlate || '—'})`
           : '—',
@@ -87,26 +105,37 @@ export default function VerifyScreen() {
       }));
 
       setPending(mapped.filter((m) => m.status === 'PENDING_APPROVAL'));
-      setApproved(mapped.filter((m) => m.status === 'APPROVED'));
+      // APPROVED but parker hasn't tapped "I Have Arrived" yet → en-route info card
+      setEnRoute(mapped.filter((m) => m.status === 'APPROVED' && !m.arrivedAt && !m.sessionOtp));
+      // APPROVED + arrived or OTP ready → needs verification action
+      setApproved(mapped.filter((m) => m.status === 'APPROVED' && (!!m.arrivedAt || !!m.sessionOtp)));
     } catch (e) {
       if (__DEV__) console.log('[VERIFY] error', e);
     } finally {
-      isRefresh ? setRefreshing(false) : setLoading(false);
+      if (mode === 'initial') setLoading(false);
+      else if (mode === 'refresh') setRefreshing(false);
+      // 'silent' touches neither flag → no re-render that could close the modal.
     }
   }, []);
 
   // Fetch on focus + poll every 8s while focused — self-healing fallback for
   // missed socket events (the owner must not miss an arrival or cancellation).
   useFocusEffect(useCallback(() => {
-    fetchRequests();
-    const poll = setInterval(() => fetchRequests(), 8000);
-    return () => clearInterval(poll);
+    fetchRequests('initial');
+    const poll = setInterval(() => fetchRequests('silent'), 8000);
+    // This screen IS the verification UI — hide the floating session bar while
+    // it's focused (it would cover the action buttons / duplicate the status).
+    DeviceEventEmitter.emit('sessionbar:suppress', true);
+    return () => {
+      clearInterval(poll);
+      DeviceEventEmitter.emit('sessionbar:suppress', false);
+    };
   }, [fetchRequests]));
 
   // Live refresh on new booking / arrival / when the parker generates their OTP
   useEffect(() => {
     const events = ['booking:new', 'parker:arrived', 'parker:eta-update', 'verification:ready', 'session:started', 'booking:cancelled', 'booking:expired', 'notification:new'];
-    const subs = events.map((evt) => DeviceEventEmitter.addListener(evt, () => fetchRequests(true)));
+    const subs = events.map((evt) => DeviceEventEmitter.addListener(evt, () => fetchRequests('silent')));
     return () => subs.forEach((s) => s.remove());
   }, [fetchRequests]);
 
@@ -153,7 +182,7 @@ export default function VerifyScreen() {
     try {
       setAcceptingId(booking.id);
       await api.put(`/bookings/${booking.id}/accept`);
-      fetchRequests(true);
+      fetchRequests('silent');
     } catch (e) {
       Alert.alert('Error', (e as Error).message);
     } finally {
@@ -173,7 +202,7 @@ export default function VerifyScreen() {
       await api.put(`/bookings/${rejectTarget.id}/decline`, { reason: rejectReason.trim() });
       setRejectTarget(null);
       setRejectReason('');
-      fetchRequests(true);
+      fetchRequests('silent');
     } catch (e) {
       Alert.alert('Error', (e as Error).message);
     } finally {
@@ -195,7 +224,7 @@ export default function VerifyScreen() {
           onPress: async () => {
             try {
               await api.put(`/bookings/${booking.id}/cancel`, { reason: 'Cancelled by space owner' });
-              fetchRequests(true);
+              fetchRequests('silent');
             } catch (e) {
               Alert.alert('Error', (e as Error).message);
             }
@@ -238,13 +267,10 @@ export default function VerifyScreen() {
 
   const pickDamagePhoto = async () => {
     try {
-      const perm = await ImagePicker.requestCameraPermissionsAsync();
-      // Prefer the camera (snap the damage on the spot); fall back to library.
-      const result = perm.granted
-        ? await ImagePicker.launchCameraAsync({ quality: 0.6 })
-        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.6 });
-      if (result.canceled || !result.assets?.[0]) return;
-      setDamagePhotos((prev) => [...prev, result.assets[0].uri].slice(0, 6));
+      // Let the owner snap the damage on the spot OR pick an existing photo.
+      const asset = await pickMedia({ allowsEditing: false, quality: 0.6 });
+      if (!asset) return;
+      setDamagePhotos((prev) => [...prev, asset.uri].slice(0, 6));
     } catch {
       Alert.alert('Error', 'Could not capture photo.');
     }
@@ -295,9 +321,18 @@ export default function VerifyScreen() {
     try {
       setVerifyingOtp(true);
       await api.post(`/bookings/${verifyTarget.id}/verify-otp`, { otp: enteredOtp });
-      Alert.alert('Session Started', 'OTP verified. The parking session is now active.');
       closeVerify();
-      fetchRequests();
+      fetchRequests('silent');
+      // Ask the owner what to do next instead of silently moving them. They can
+      // jump to the live session, or stay on this screen to verify another parker.
+      Alert.alert(
+        'Session Started ✅',
+        'OTP verified — the parking session is now active.',
+        [
+          { text: 'Stay Here', style: 'cancel' },
+          { text: 'View Live Session', onPress: () => router.push('/(my-spaces)/active') },
+        ],
+      );
     } catch (e) {
       Alert.alert('Verification Failed', (e as Error).message);
     } finally {
@@ -307,7 +342,11 @@ export default function VerifyScreen() {
 
   const callParker = (phone: string) => {
     if (!phone) return Alert.alert('No phone number', 'This parker has no phone number on file.');
-    Linking.openURL(`tel:${phone}`);
+    // Normalise: if stored without country code (10 digits), prepend +91
+    const normalised = /^\+/.test(phone) ? phone : `+91${phone}`;
+    Linking.openURL(`tel:${normalised}`).catch(() =>
+      Alert.alert('Error', 'Could not open the dialler. Please call manually: ' + phone)
+    );
   };
 
   if (loading) {
@@ -322,7 +361,7 @@ export default function VerifyScreen() {
     );
   }
 
-  const isEmpty = pending.length === 0 && approved.length === 0;
+  const isEmpty = pending.length === 0 && enRoute.length === 0 && approved.length === 0;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -331,14 +370,16 @@ export default function VerifyScreen() {
 
       <ScrollView
         style={styles.container}
-        contentContainerStyle={{ flexGrow: 1, paddingBottom: 120 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchRequests(true)} tintColor={Colors.primary} colors={[Colors.primary]} />}
+        contentContainerStyle={{ flexGrow: 1, paddingBottom: 120, paddingTop: Spacing['3xl'] }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchRequests('refresh')} tintColor={Colors.primary} colors={[Colors.primary]} />}
       >
         {isEmpty && (
           <View style={styles.emptyState}>
             <ShieldCheck size={64} color={Colors.borderMuted} strokeWidth={1} style={{ marginBottom: 16 }} />
-            <Text style={styles.emptyTitle}>No Pending Requests</Text>
-            <Text style={styles.emptySubtitle}>You'll be notified here when someone wants to book your space.</Text>
+            <Text style={styles.emptyTitle}>Nothing to Verify</Text>
+            <Text style={styles.emptySubtitle}>
+              If you have an approved booking, this screen will update automatically when the parker taps "I Have Arrived".
+            </Text>
           </View>
         )}
 
@@ -410,6 +451,71 @@ export default function VerifyScreen() {
           </>
         )}
 
+        {/* En-route — approved but parker hasn't arrived yet */}
+        {enRoute.length > 0 && (
+          <>
+            <Text style={[styles.sectionHeader, { marginTop: pending.length > 0 ? 24 : 0 }]}>
+              Parker on the Way ({enRoute.length})
+            </Text>
+            {enRoute.map((req) => (
+              <View key={req.id} style={styles.enRouteCard}>
+                <View style={styles.enRouteBanner}>
+                  <View style={styles.enRouteBannerIcon}>
+                    <Navigation size={20} color={Colors.info} strokeWidth={2.4} fill={Colors.info} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.enRouteBannerTitle}>Parker is on the way</Text>
+                    <Text style={styles.enRouteBannerSub}>This card will update automatically when they arrive.</Text>
+                  </View>
+                </View>
+                <View style={styles.enRouteDetails}>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Parker</Text>
+                    <Text style={styles.detailValue}>{req.parkerName}</Text>
+                  </View>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Vehicle</Text>
+                    <Text style={styles.detailValue}>{req.vehicle}</Text>
+                  </View>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Space</Text>
+                    <Text style={styles.detailValue}>{req.spaceName}</Text>
+                  </View>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Expected Arrival</Text>
+                    <View style={styles.etaValueWrap}>
+                      <Text style={styles.detailValue}>{req.etaText}</Text>
+                      {req.etaUpdatedAt && (
+                        <View style={styles.etaUpdatedBadge}>
+                          <Clock size={10} color={Colors.warningAlt} strokeWidth={2.5} />
+                          <Text style={styles.etaUpdatedBadgeText}>Updated</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                  {/* When the parker changed their ETA, call it out clearly so the
+                      owner notices the parker is running late / earlier. */}
+                  {req.etaUpdatedAt && (
+                    <View style={styles.etaUpdatedNote}>
+                      <Text style={styles.etaUpdatedNoteText}>
+                        The parker updated their arrival time to {req.etaText}.
+                      </Text>
+                    </View>
+                  )}
+                  <View style={[styles.detailRow, { borderBottomWidth: 0 }]}>
+                    <Text style={styles.detailLabel}>Amount</Text>
+                    <Text style={[styles.detailValue, { color: Colors.primary, fontWeight: FontWeight.extrabold }]}>₹{req.amount}</Text>
+                  </View>
+                </View>
+                <TouchableOpacity style={styles.enRouteContactBtn} onPress={() => callParker(req.phone)}>
+                  <Phone size={16} color={Colors.primary} />
+                  <Text style={styles.enRouteContactText}>Contact Parker</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </>
+        )}
+
         {/* Approved — awaiting arrival verification */}
         {approved.length > 0 && (
           <>
@@ -420,7 +526,11 @@ export default function VerifyScreen() {
               <View key={req.id} style={styles.card}>
                 <View style={styles.approvedRow}>
                   <View style={styles.approvedIcon}>
-                    <CheckCircle size={18} color={Colors.success} />
+                    {req.parkerPhotoUrl ? (
+                      <Image source={{ uri: req.parkerPhotoUrl }} style={styles.approvedAvatarImg} resizeMode="cover" />
+                    ) : (
+                      <CheckCircle size={18} color={Colors.success} />
+                    )}
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.boldText}>{req.parkerName}</Text>
@@ -609,15 +719,17 @@ export default function VerifyScreen() {
 }
 
 const styles = StyleSheet.create({
+  // White SafeAreaView so the header + top inset match every other screen; the
+  // scroll content below stays grey so the white cards stand out.
   safeArea: { flex: 1, backgroundColor: Colors.white },
-  container: { flex: 1, backgroundColor: Colors.white, paddingHorizontal: Spacing['3xl'], paddingVertical: Spacing['3xl'] },
+  container: { flex: 1, backgroundColor: Colors.screenBg },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.screenBg },
-  sectionHeader: { fontSize: FontSize.md, fontWeight: FontWeight.extrabold, color: Colors.textPrimary, marginBottom: Spacing.xl },  // 14 = md ✓
+  sectionHeader: { fontSize: FontSize.md, fontWeight: FontWeight.extrabold, color: Colors.textPrimary, marginBottom: Spacing.xl, paddingHorizontal: Spacing.screenH, paddingTop: Spacing['3xl'] },  // 14 = md ✓
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: Spacing['7xl'], paddingTop: 80 },
   emptyTitle: { fontSize: FontSize['3xl'], fontWeight: FontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.md },  // 20 = 3xl ✓
   emptySubtitle: { fontSize: FontSize.md, color: Colors.textSecondary, textAlign: 'center', paddingHorizontal: Spacing.screenH, lineHeight: 20 },  // 14 = md ✓
   card: {
-    backgroundColor: Colors.white, borderRadius: BorderRadius.lg, padding: Spacing.screenH, marginBottom: Spacing['3xl'],  // 16 = lg ✓
+    backgroundColor: Colors.white, borderRadius: BorderRadius.lg, padding: Spacing.screenH, marginBottom: Spacing['3xl'], marginHorizontal: Spacing.screenH,  // 16 = lg ✓
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 12, elevation: 3,
   },
   alertHeader: {
@@ -630,9 +742,29 @@ const styles = StyleSheet.create({
   boldText: { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.micro },  // 16 = xl ✓
   subText: { fontSize: FontSize.base, color: Colors.textSecondary },  // 13 = base ✓
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.micro },
-  detailRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: Spacing.md },
+  detailRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: Spacing.md, alignItems: 'center' },
   detailLabel: { fontSize: FontSize.md, color: Colors.textSecondary },  // 14 = md ✓
   detailValue: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.textPrimary },  // 14 = md ✓
+  // "Updated ETA" — value + amber badge on the right, and a callout note below.
+  etaValueWrap: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  etaUpdatedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: Colors.warningBgAlt,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.badge,
+  },
+  etaUpdatedBadgeText: { fontSize: FontSize.micro, fontWeight: FontWeight.extrabold, color: Colors.warningAlt },
+  etaUpdatedNote: {
+    backgroundColor: Colors.warningBgAlt,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  etaUpdatedNoteText: { fontSize: FontSize.sm, color: ExtendedColors.warningMid, fontWeight: FontWeight.medium },
   actionRow: { flexDirection: 'row', gap: Spacing.xl, marginTop: Spacing.md },
   declineBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing['2xl'],
@@ -647,8 +779,9 @@ const styles = StyleSheet.create({
   approvedRow: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing['3xl'] },
   approvedIcon: {
     width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.successBg,
-    alignItems: 'center', justifyContent: 'center', marginRight: Spacing.xl,
+    alignItems: 'center', justifyContent: 'center', marginRight: Spacing.xl, overflow: 'hidden',
   },
+  approvedAvatarImg: { width: '100%', height: '100%', borderRadius: 20 },
   callIconBtn: {
     width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.surfaceBg,
     alignItems: 'center', justifyContent: 'center', marginLeft: Spacing.md,
@@ -705,4 +838,35 @@ const styles = StyleSheet.create({
     fontSize: FontSize['11xl'], fontWeight: FontWeight.extrabold, color: Colors.primary, letterSpacing: 16,  // 40 = 11xl ✓
     textAlign: 'center', minWidth: 200, paddingLeft: Spacing['3xl'],
   },
+
+  // ── En-route card (parker approved, not yet arrived) ──────────────────
+  enRouteCard: {
+    backgroundColor: Colors.white, borderRadius: BorderRadius.lg,
+    borderWidth: 1, borderColor: Colors.border, marginHorizontal: Spacing.screenH,
+    marginBottom: Spacing['2xl'], overflow: 'hidden',
+  },
+  enRouteBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.lg,
+    backgroundColor: Colors.infoBg, padding: Spacing['3xl'],
+  },
+  // Clean circular icon badge (replaces the out-of-place 🚗 emoji) — matches the
+  // app's icon-in-circle pattern used across cards.
+  enRouteBannerIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  enRouteBannerTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  enRouteBannerSub: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 2 },
+  enRouteDetails: { paddingHorizontal: Spacing['3xl'], paddingTop: Spacing.xl },
+  enRouteContactBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: Spacing.md, margin: Spacing['3xl'], marginTop: Spacing.xl,
+    paddingVertical: Spacing.xl, borderRadius: BorderRadius.md,
+    borderWidth: 1.5, borderColor: Colors.primary,
+  },
+  enRouteContactText: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.primary },
 });

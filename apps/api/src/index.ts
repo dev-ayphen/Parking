@@ -4,6 +4,7 @@ import app from './app';
 import { setupSocketIO } from './app';
 import { env } from './config/env';
 import { bookingExpiryService } from './services/bookingExpiry.service';
+import { subscriptionExpiryService } from './services/subscriptionExpiry.service';
 
 const server = http.createServer(app);
 
@@ -15,6 +16,8 @@ server.listen(env.PORT, () => {
   console.log(`Environment: ${env.NODE_ENV}`);
   // Start the 30-second booking expiry background loop
   bookingExpiryService.startExpiryLoop();
+  // Start the daily subscription lifecycle loop (expire / downgrade / renew)
+  subscriptionExpiryService.startExpiryLoop();
 });
 
 /**

@@ -40,9 +40,12 @@ router.delete('/users/:id', validate(deleteUserSchema), adminController.deleteUs
 
 // ─── Spaces ──────────────────────────────────────────────────────────
 router.get('/spaces', adminController.listSpaces);
+router.get('/spaces/:id', adminController.getSpaceForAdmin);
 router.put('/spaces/:id/approve', adminController.approveSpace);
 router.put('/spaces/:id/reject', validate(rejectSpaceSchema), adminController.rejectSpace);
+router.put('/spaces/:id/request-document', adminController.requestSpaceDocument);
 router.put('/spaces/:id/block', validate(blockSpaceSchema), adminController.blockSpace);
+router.put('/spaces/:id/unblock', adminController.unblockSpace);
 router.get('/spaces/:id/documents', documentController.adminListForSpace);
 router.put('/spaces/:id/documents/:docId/verify', validate(verifyDocumentSchema), documentController.adminVerify);
 
@@ -52,10 +55,17 @@ router.get('/bookings/export', adminController.exportBookings); // before :id
 router.get('/bookings/:id', adminController.getBookingDetails);
 
 // ─── Subscriptions (ParkSwift's only revenue source) ────────────────
+router.get('/subscriptions/analytics', adminController.getSubscriptionAnalytics);
 router.get('/subscriptions', adminController.listSubscriptions);
 router.get('/subscription-plans', adminController.listSubscriptionPlans);
 router.post('/subscription-plans', validate(createSubscriptionPlanSchema), adminController.createSubscriptionPlan);
 router.put('/subscription-plans/:id', validate(updateSubscriptionPlanSchema), adminController.updateSubscriptionPlan);
+// Per-subscription admin actions
+router.get('/subscriptions/:id', adminController.getSubscriptionDetail);
+router.put('/subscriptions/:id/suspend', adminController.suspendSubscription);
+router.put('/subscriptions/:id/reactivate', adminController.reactivateSubscription);
+router.put('/subscriptions/:id/extend', adminController.extendSubscription);
+router.put('/subscriptions/:id/force-cancel', adminController.forceCancelSubscription);
 
 // ─── Payments & transactions ─────────────────────────────────────────
 router.get('/transactions', adminController.listTransactions);
@@ -86,6 +96,7 @@ router.get('/support', adminController.listSupportTickets);
 router.get('/support/:id', adminController.getSupportTicket);
 router.put('/support/:id', validate(updateSupportTicketSchema), adminController.updateSupportTicket);
 router.post('/support/:id/reply', validate(replyTicketSchema), adminController.addSupportTicketReply);
+router.put('/support/:id/assign', adminController.assignSupportTicket);
 
 // ─── Analytics & settings ────────────────────────────────────────────
 router.get('/analytics/overview', adminController.getAnalyticsOverview);

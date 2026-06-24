@@ -79,24 +79,3 @@ export const StatCardSkeleton: React.FC = () => (
   </div>
 );
 
-export const CardSkeleton: React.FC<{ lines?: number }> = ({ lines = 3 }) => (
-  <div className="bg-white border border-neutral-200 rounded-xl p-6">
-    <div className="flex items-center gap-3 mb-4">
-      <SkeletonCircle size={48} />
-      <div className="flex-1">
-        <Skeleton width={160} height={16} className="mb-2" />
-        <Skeleton width={100} height={12} />
-      </div>
-    </div>
-    {Array.from({ length: lines }).map((_, i) => (
-      <Skeleton
-        key={i}
-        width={i === lines - 1 ? '60%' : '100%'}
-        height={12}
-        className="mb-2"
-      />
-    ))}
-  </div>
-);
-
-export default Skeleton;

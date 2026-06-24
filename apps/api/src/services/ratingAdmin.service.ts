@@ -39,7 +39,8 @@ export const ratingAdminService = {
         where,
         include: {
           rater: { select: { id: true, firstName: true, lastName: true } },
-          booking: { select: { space: { select: { id: true, name: true } } } },
+          ratee: { select: { id: true, firstName: true, lastName: true } },
+          booking: { select: { parkerId: true, space: { select: { id: true, name: true, ownerId: true } } } },
         },
         orderBy: { createdAt: 'desc' },
         skip,
@@ -58,7 +59,12 @@ export const ratingAdminService = {
       isHidden: r.isHidden,
       hiddenBy: r.hiddenBy,
       hiddenAt: r.hiddenAt,
-      reviewerName: [r.rater?.firstName, r.rater?.lastName].filter(Boolean).join(' ') || 'Parker',
+      reviewerName: [r.rater?.firstName, (r.rater as any)?.lastName].filter(Boolean).join(' ') || 'User',
+      // Who was rated + which way the review goes (mutual ratings).
+      rateeName: [(r as any).ratee?.firstName, (r as any).ratee?.lastName].filter(Boolean).join(' ') || 'User',
+      direction: (r as any).rateeId === (r as any).booking?.space?.ownerId
+        ? 'PARKER_RATED_OWNER'
+        : 'OWNER_RATED_PARKER',
       space: r.booking?.space
         ? { id: r.booking.space.id, name: r.booking.space.name }
         : null,

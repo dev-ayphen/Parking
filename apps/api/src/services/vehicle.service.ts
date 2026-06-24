@@ -68,9 +68,10 @@ export const vehicleService = {
         frontPhotoUrl: true,
         sidePhotoUrl: true,
         rcBookUrl: true,
+        isDefault: true,
         createdAt: true,
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
     });
 
     // Resolve storage keys → full URLs so the mobile client can display images directly.
@@ -112,6 +113,10 @@ export const vehicleService = {
       throw new Error('Vehicle with this license plate already exists');
     }
 
+    // A user's very first vehicle becomes their default automatically, so checkout
+    // always has something pre-selected without the user having to choose.
+    const vehicleCount = await db.vehicle.count({ where: { userId } });
+
     const newVehicle = await db.vehicle.create({
       data: {
         userId,
@@ -123,6 +128,7 @@ export const vehicleService = {
         frontPhotoUrl: data.frontPhotoUrl || null,
         sidePhotoUrl: data.sidePhotoUrl || null,
         rcBookUrl: data.rcBookUrl || null,
+        isDefault: vehicleCount === 0,
       },
       select: {
         id: true,
@@ -134,6 +140,7 @@ export const vehicleService = {
         frontPhotoUrl: true,
         sidePhotoUrl: true,
         rcBookUrl: true,
+        isDefault: true,
         createdAt: true,
       },
     });
@@ -225,10 +232,42 @@ export const vehicleService = {
       where: { id: vehicleId },
     });
 
+    // If we just removed the default, promote the user's next-newest vehicle so
+    // checkout always has a default to pre-select.
+    if (vehicle.isDefault) {
+      const next = await db.vehicle.findFirst({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true },
+      });
+      if (next) {
+        await db.vehicle.update({ where: { id: next.id }, data: { isDefault: true } });
+      }
+    }
+
     return {
       success: true,
       message: 'Vehicle deleted successfully',
       data: { id: vehicleId },
     };
+  },
+
+  /**
+   * Set a vehicle as the user's default (pre-selected at checkout). At most one
+   * default per user, so we clear the rest in the same transaction. Scoped by
+   * userId to prevent IDOR.
+   */
+  setDefaultVehicle: async (vehicleId: number, userId: number) => {
+    if (!vehicleId) throw new Error('Vehicle ID is required');
+
+    const vehicle = await db.vehicle.findFirst({ where: { id: vehicleId, userId } });
+    if (!vehicle) throw new Error('Vehicle not found');
+
+    await db.$transaction([
+      db.vehicle.updateMany({ where: { userId, isDefault: true }, data: { isDefault: false } }),
+      db.vehicle.update({ where: { id: vehicleId }, data: { isDefault: true } }),
+    ]);
+
+    return { success: true, message: 'Default vehicle updated', data: { id: vehicleId, isDefault: true } };
   },
 };

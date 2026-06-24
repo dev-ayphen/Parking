@@ -13,7 +13,7 @@ import {View,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { CheckCircle2, Star, AlertTriangle, X, Camera } from 'lucide-react-native';
-import * as ImagePicker from 'expo-image-picker';
+import { pickMedia } from '../../utils/pickMedia';
 import { api } from '../../services/api';
 import { useNetworkStore } from '../../store/networkStore';
 import { toast } from '../../utils/toast';
@@ -48,6 +48,7 @@ export default function SessionCompleteScreen() {
   const [incidentSubmitting, setIncidentSubmitting] = useState(false);
   const [incidentSubmitted, setIncidentSubmitted] = useState(false);
   const [incidentRef, setIncidentRef] = useState<string | null>(null);
+  const [incidentId, setIncidentId] = useState<number | null>(null);
   const [incidentSubmittedAt, setIncidentSubmittedAt] = useState<string | null>(null);
 
   const fetchBooking = useCallback(async () => {
@@ -66,6 +67,7 @@ export default function SessionCompleteScreen() {
       const existingIncident = booking?.incidents?.[0];
       if (existingIncident) {
         setIncidentRef(`INC-${String(existingIncident.id).padStart(5, '0')}`);
+        setIncidentId(existingIncident.id ?? null);
         setIncidentSubmittedAt(existingIncident.createdAt || null);
         setIncidentSubmitted(true);
       }
@@ -142,17 +144,9 @@ export default function SessionCompleteScreen() {
 
   const handlePickIncidentPhoto = async () => {
     try {
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) {
-        toast.info('Allow photo access to attach evidence.');
-        return;
-      }
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality: 0.8,
-      });
-      if (result.canceled || !result.assets?.[0]) return;
-      setIncidentPhotos((prev) => [...prev, result.assets[0].uri].slice(0, 5));
+      const asset = await pickMedia({ allowsEditing: false });
+      if (!asset) return;
+      setIncidentPhotos((prev) => [...prev, asset.uri].slice(0, 5));
     } catch {
       toast.error('Failed to pick photo');
     }
@@ -191,6 +185,7 @@ export default function SessionCompleteScreen() {
       });
       const reportId = res?.report?.id;
       setIncidentRef(reportId ? `INC-${String(reportId).padStart(5, '0')}` : 'INC-PENDING');
+      setIncidentId(reportId ?? null);
       setIncidentSubmittedAt(res?.report?.createdAt || new Date().toISOString());
       setIncidentModalVisible(false);
       setIncidentDesc('');
@@ -236,7 +231,7 @@ export default function SessionCompleteScreen() {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false} contentContainerStyle={styles.contentInner}>
         {/* Success Header */}
         <View style={styles.successHeader}>
-          <CheckCircle2 size={64} color={Colors.success} strokeWidth={1.5} />
+          <CheckCircle2 size={44} color={Colors.success} strokeWidth={2} />
           <Text style={styles.successTitle}>Session Completed</Text>
           <Text style={styles.successSub}>Thanks for parking with ParkSwift.</Text>
         </View>
@@ -264,20 +259,33 @@ export default function SessionCompleteScreen() {
           </View>
 
           <View style={styles.receiptTotalRow}>
-            <Text style={styles.receiptTotalLabel}>Total Amount</Text>
+            <Text style={styles.receiptTotalLabel}>Parking Fee</Text>
             <Text style={styles.receiptTotalVal}>₹{booking.totalAmount}</Text>
           </View>
+          <Text style={styles.paymentNote}>Paid directly to the space owner (cash / UPI). ParkSwift does not process this payment.</Text>
         </View>
 
-        {/* Incident Report Card */}
+        {/* Incident Report Card — tappable to view its status once filed */}
         {incidentSubmitted ? (
-          <View style={{ marginBottom: Spacing.screenH }}>
+          <TouchableOpacity
+            style={{ marginBottom: Spacing.screenH }}
+            activeOpacity={incidentId ? 0.7 : 1}
+            disabled={!incidentId}
+            onPress={() => {
+              if (incidentId) {
+                router.push({ pathname: '/(find-space)/incident-detail', params: { incidentId: String(incidentId) } });
+              }
+            }}
+          >
             <ReportSubmitted
               title="Incident Reported"
               reference={incidentRef || 'INC-PENDING'}
               submittedAt={incidentSubmittedAt || undefined}
             />
-          </View>
+            {incidentId ? (
+              <Text style={styles.viewStatusHint}>Tap to view status ›</Text>
+            ) : null}
+          </TouchableOpacity>
         ) : (
           <View style={styles.incidentCard}>
             <TouchableOpacity style={styles.incidentTrigger} onPress={() => setIncidentModalVisible(true)} activeOpacity={0.7}>
@@ -477,12 +485,16 @@ const styles = StyleSheet.create({
   errorText: { color: Colors.error, marginBottom: Spacing.lg },
   retryBtn: { padding: Spacing.lg, backgroundColor: Colors.errorLight, borderRadius: BorderRadius.sm },
   retryBtnText: { color: Colors.error, fontWeight: FontWeight.semibold },
-  content: { flex: 1 },
+  // Grey scroll area so the white cards (receipt, incident) stand out instead of
+  // blending into a white background. SafeAreaView/header stays white like other
+  // screens.
+  content: { flex: 1, backgroundColor: Colors.screenBg },
   contentInner: { padding: Spacing.screenH, paddingBottom: Spacing.lg },
 
-  successHeader: { alignItems: 'center', marginTop: Spacing.screenH, marginBottom: Spacing['5xl'] },
-  successTitle: { fontSize: FontSize['4xl'], fontWeight: FontWeight.black, color: Colors.textPrimary, marginTop: Spacing['3xl'], marginBottom: Spacing.md },
-  successSub: { fontSize: FontSize.base, color: Colors.textSecondary },
+  // Compact success header — smaller icon, tighter spacing (was a tall block).
+  successHeader: { alignItems: 'center', marginTop: Spacing.lg, marginBottom: Spacing['3xl'] },
+  successTitle: { fontSize: FontSize['3xl'], fontWeight: FontWeight.black, color: Colors.textPrimary, marginTop: Spacing.lg, marginBottom: Spacing.xs },
+  successSub: { fontSize: FontSize.sm, color: Colors.textSecondary },
 
   receiptCard: {
     backgroundColor: Colors.white,
@@ -509,6 +521,7 @@ const styles = StyleSheet.create({
   },
   receiptTotalLabel: { fontSize: FontSize.lg, color: Colors.textPrimary, fontWeight: FontWeight.bold },
   receiptTotalVal: { fontSize: FontSize['4xl'], color: Colors.primary, fontWeight: FontWeight.black },
+  paymentNote: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: Spacing.md, lineHeight: 16 },
 
   ratingCard: {
     backgroundColor: Colors.white,
@@ -541,10 +554,13 @@ const styles = StyleSheet.create({
   footer: { padding: Spacing.screenH, backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: Colors.borderLight },
   btnPrimary: { backgroundColor: Colors.primary, borderRadius: BorderRadius.xl, paddingVertical: Spacing['3xl'], alignItems: 'center' },
   btnPrimaryText: { color: Colors.white, fontSize: FontSize.lg, fontWeight: FontWeight.bold },
-  btnGhost: { backgroundColor: Colors.white, borderRadius: BorderRadius.xl, paddingVertical: Spacing['3xl'], alignItems: 'center', borderWidth: 1, borderColor: Colors.borderLight },
-  btnGhostText: { color: Colors.textSecondary, fontSize: FontSize.lg, fontWeight: FontWeight.semibold },
+  // Secondary "Skip for now" button — light grey fill + clear border so it reads
+  // as a tappable button on the white footer, not plain text.
+  btnGhost: { backgroundColor: Colors.screenBg, borderRadius: BorderRadius.xl, paddingVertical: Spacing['3xl'], alignItems: 'center', borderWidth: 1.5, borderColor: Colors.border },
+  btnGhostText: { color: Colors.textPrimary, fontSize: FontSize.lg, fontWeight: FontWeight.bold },
 
   // Incident card
+  viewStatusHint: { fontSize: FontSize.sm, color: Colors.primary, fontWeight: FontWeight.semibold, textAlign: 'center', marginTop: Spacing.md },
   incidentCard: { backgroundColor: Colors.white, borderRadius: BorderRadius.xl, borderWidth: 1, borderColor: Colors.borderLight, marginBottom: Spacing.screenH, overflow: 'hidden' },
   incidentTrigger: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.screenH },
   incidentTriggerLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },

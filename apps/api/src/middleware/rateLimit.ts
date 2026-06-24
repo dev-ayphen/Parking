@@ -38,6 +38,20 @@ export const bookingLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Booking creation — PER USER: 5 per 5 min keyed on the authenticated user id.
+// The IP-based limiter above can't stop one logged-in account spamming bookings
+// from a dedicated IP, and unfairly groups many users behind one shared/NAT IP.
+// This sits alongside it (must run AFTER `authenticate` so req.user is set).
+export const bookingPerUserLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 5,
+  message: { error: 'You are booking too frequently. Please wait a few minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Key on user id when authenticated; fall back to IP otherwise.
+  keyGenerator: (req) => (req.user?.id ? `user:${req.user.id}` : (req.ip || 'unknown')),
+});
+
 // Space creation: 5 per hour per IP (prevents fake listing spam)
 export const spaceCreationLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
@@ -59,7 +73,10 @@ export const abuseReportLimiter = rateLimit({
 // General API rate limit: 100 req/min per IP (DDoS protection)
 export const generalApiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 100,
+  // Production stays tight (DDoS protection). Dev is polling-heavy (Expo Go runs
+  // multiple screens that each poll every ~8-10s + event-driven refetches), so a
+  // 100/min cap was tripping the 429 during normal testing — raise it for dev.
+  max: isDev ? 600 : 100,
   message: { error: 'Too many requests. Please slow down.' },
   standardHeaders: true,
   legacyHeaders: false,

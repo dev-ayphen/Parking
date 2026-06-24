@@ -1,4 +1,20 @@
 import { db } from '../config/database';
+import { storageService } from './storage.service';
+import { BUCKETS } from '../config/supabase';
+
+/**
+ * Evidence files live in the PRIVATE bucket (PII). Stored values are keys;
+ * resolve each to a short-lived signed URL before returning to a client.
+ * Legacy rows holding full public URLs pass through unchanged.
+ */
+const resolveEvidenceUrls = async (urls: unknown): Promise<string[]> => {
+  if (!Array.isArray(urls)) return [];
+  return Promise.all(
+    urls.map((u: string) =>
+      storageService.resolveUrl(u, BUCKETS.PRIVATE).catch(() => u)
+    )
+  );
+};
 
 /**
  * Aggregates ALL evidence connected to a single booking into one bundle.
@@ -181,7 +197,7 @@ export const caseEvidenceService = {
         },
         consent: true, // BookingConsent
         incidents: true,
-        rating: true,
+        ratings: true, // mutual: parker→owner and/or owner→parker
         verification: true, // ConditionVerification — owner's pre-park condition photos
       },
     });
@@ -331,6 +347,22 @@ export const caseEvidenceService = {
 
     timeline.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
+    // Sign private-bucket evidence keys on abuse + incident reports for display.
+    const [signedAbuseReports, signedIncidentReports] = await Promise.all([
+      Promise.all(
+        abuseReports.map(async (r) => ({
+          ...r,
+          evidenceUrls: await resolveEvidenceUrls((r as any).evidenceUrls),
+        }))
+      ),
+      Promise.all(
+        booking.incidents.map(async (inc) => ({
+          ...inc,
+          evidenceUrls: await resolveEvidenceUrls((inc as any).evidenceUrls),
+        }))
+      ),
+    ]);
+
     return {
       success: true,
       caseRef: `CASE-${bookingId}`,
@@ -365,17 +397,35 @@ export const caseEvidenceService = {
           hourlyRate: booking.space.hourlyRate,
           availability: booking.space.availability,
           requiresAdminReview: booking.space.requiresAdminReview,
+          // Space media (public bucket) — signed so the case reviewer can see the
+          // listing's front/area photos and walkthrough video as evidence.
+          frontPhotoUrl: booking.space.frontPhotoUrl
+            ? await storageService.resolveUrl(booking.space.frontPhotoUrl, BUCKETS.PUBLIC).catch(() => booking.space.frontPhotoUrl)
+            : null,
+          areaPhotoUrl: booking.space.areaPhotoUrl
+            ? await storageService.resolveUrl(booking.space.areaPhotoUrl, BUCKETS.PUBLIC).catch(() => booking.space.areaPhotoUrl)
+            : null,
+          videoUrl: booking.space.videoUrl
+            ? await storageService.resolveUrl(booking.space.videoUrl, BUCKETS.PUBLIC).catch(() => booking.space.videoUrl)
+            : null,
           createdAt: booking.space.createdAt,
           deletedAt: booking.space.deletedAt,
         },
         bookingConsent: booking.consent,
         ownerConsent: booking.space.ownerConsent,
         roadsideAcknowledgments: roadsideAcks,
-        documents: booking.space.documents,
+        documents: await Promise.all(
+          booking.space.documents.map(async (doc: any) => ({
+            ...doc,
+            fileUrl: doc.fileUrl
+              ? await storageService.resolveUrl(doc.fileUrl, BUCKETS.PRIVATE).catch(() => doc.fileUrl)
+              : null,
+          }))
+        ),
         bookingAuditLog: bookingAudit,
         adminActionLog: adminActions,
-        abuseReports,
-        incidentReports: booking.incidents,
+        abuseReports: signedAbuseReports,
+        incidentReports: signedIncidentReports,
         // Owner's pre-parking vehicle condition record — compared against the
         // parker's incident photos in the admin case view.
         conditionVerification: booking.verification
@@ -387,7 +437,7 @@ export const caseEvidenceService = {
               recordedAt: (booking.verification as any).createdAt, // when owner recorded it
             }
           : null,
-        rating: booking.rating,
+        rating: (booking as any).ratings ?? [],
         notifications: relatedNotifications,
       },
       timeline,

@@ -46,6 +46,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [reporting, setReporting] = useState(false);
+  const [range, setRange] = useState('7d');
 
   // "Generate Report" → download the full platform bookings CSV.
   const handleGenerateReport = async () => {
@@ -58,7 +59,7 @@ export default function DashboardPage() {
     (async () => {
       try {
         setLoading(true);
-        const res = await adminApi.getOverview();
+        const res = await adminApi.getOverview(range);
         setData(res);
       } catch (e: any) {
         setError(e?.response?.data?.error || e?.message || 'Failed to load dashboard');
@@ -66,7 +67,7 @@ export default function DashboardPage() {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [range]);
 
   const statCards = data ? [
     { label: 'Total Users', stat: data.stats.totalUsers, icon: Users, color: 'text-indigo-500', bg: 'bg-indigo-500/10' },
@@ -147,8 +148,15 @@ export default function DashboardPage() {
             >
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-lg font-bold text-gray-900">Revenue Overview</h2>
-                <select className="bg-gray-50 border border-gray-200 text-gray-700 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-2 outline-none">
-                  <option>Last 7 Days</option>
+                <select
+                  value={range}
+                  onChange={(e) => setRange(e.target.value)}
+                  className="bg-gray-50 border border-gray-200 text-gray-700 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-2 outline-none"
+                >
+                  <option value="7d">Last 7 Days</option>
+                  <option value="30d">Last 30 Days</option>
+                  <option value="90d">Last 90 Days</option>
+                  <option value="1y">Last Year</option>
                 </select>
               </div>
 

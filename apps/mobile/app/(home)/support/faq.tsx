@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {View,
   Text,
   StyleSheet,
@@ -6,10 +6,12 @@ import {View,
   TouchableOpacity,
   ScrollView,
   Platform,
+  ActivityIndicator,
   LayoutAnimation} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronDown, ChevronUp, Car, Home, CreditCard, User } from 'lucide-react-native';
+import { ChevronDown, ChevronUp, Car, Home, CreditCard, User, HelpCircle } from 'lucide-react-native';
+import { api } from '../../../services/api';
 import PageHeader from '../../../components/PageHeader';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../../theme';
 
@@ -26,109 +28,45 @@ interface FAQCategory {
   items: FAQItem[];
 }
 
-const FAQ_DATA: FAQCategory[] = [
-  {
-    title: 'Booking',
-    icon: <Car size={20} color={Colors.info} />,
-    color: Colors.info,
-    bg: Colors.infoBg,
-    items: [
-      {
-        q: 'How do I book a parking space?',
-        a: 'Open the ParkSwift app, search for a location, browse available spaces, select your preferred one, choose your time slot, and confirm the booking. Payment will be processed via your saved method.',
-      },
-      {
-        q: 'Can I cancel a booking?',
-        a: 'Yes, you can cancel a booking from the "My Bookings" section. Cancellation policies vary by space owner. Please note that booking fees are non-refundable — only subscription-related payments are eligible for refunds.',
-      },
-      {
-        q: 'What happens if I overstay my booked time?',
-        a: 'If you exceed your booked duration, additional charges may apply based on the space owner\'s late fee policy. You\'ll receive a notification before your session ends to extend if needed.',
-      },
-      {
-        q: 'How do I extend my parking session?',
-        a: 'You can extend your active session from the "Active Booking" screen. Tap "Extend Time" and choose the additional duration. The extra amount will be charged immediately.',
-      },
-    ],
-  },
-  {
-    title: 'Space Owner',
-    icon: <Home size={20} color={Colors.successAlt} />,
-    color: Colors.successAlt,
-    bg: Colors.successBg,
-    items: [
-      {
-        q: 'How do I list my parking space?',
-        a: 'Go to "My Spaces" from the sidebar, tap "Add New Space", fill in details like location, type, pricing, and availability, then submit for verification. Your space will be live once approved.',
-      },
-      {
-        q: 'How long does verification take?',
-        a: 'Space verification typically takes 24-48 hours. You\'ll receive a notification once your space is approved or if additional documents are needed.',
-      },
-      {
-        q: 'How do I manage bookings for my space?',
-        a: 'All incoming bookings appear in the "My Spaces" dashboard under the Active tab. You can accept, reject, or manage sessions with OTP verification for check-in.',
-      },
-      {
-        q: 'How do I set pricing for my space?',
-        a: 'When creating or editing a listing, you can set hourly, daily, and monthly rates. Pricing must fall within the platform\'s minimum and maximum rate boundaries.',
-      },
-    ],
-  },
-  {
-    title: 'Subscription',
-    icon: <CreditCard size={20} color={Colors.warningAlt} />,
-    color: Colors.warningAlt,
-    bg: Colors.warningBg,
-    items: [
-      {
-        q: 'What subscription plans are available?',
-        a: 'ParkSwift offers multiple plans for space owners — Basic (Free), Pro, and Premium. Each tier unlocks additional features like priority listing, analytics, and higher booking limits. Check the "Payments" section for current pricing.',
-      },
-      {
-        q: 'Can I get a refund on my subscription?',
-        a: 'Yes, subscription payments are eligible for refunds within 7 days of purchase if you haven\'t used any premium features. Contact support with your invoice details to initiate a refund.',
-      },
-      {
-        q: 'How do I upgrade or downgrade my plan?',
-        a: 'Go to Payments from the sidebar. Under "Choose Your Plan", select the tier you want. Upgrades take effect immediately, while downgrades apply at the end of your current billing cycle.',
-      },
-      {
-        q: 'What payment methods are supported?',
-        a: 'We support UPI, Credit/Debit Cards, Net Banking, and wallets via Razorpay. All transactions are secured with industry-standard encryption.',
-      },
-    ],
-  },
-  {
-    title: 'Account',
-    icon: <User size={20} color={Colors.errorAlt} />,
-    color: Colors.errorAlt,
-    bg: Colors.errorBg,
-    items: [
-      {
-        q: 'How do I reset my password?',
-        a: 'ParkSwift uses OTP-based login. Simply enter your registered mobile number, request a new OTP, and you\'ll be logged in securely without needing a password.',
-      },
-      {
-        q: 'How do I update my profile information?',
-        a: 'Go to your Profile from the sidebar and tap the edit icon on any field (name, email, phone). Changes are saved instantly after editing.',
-      },
-      {
-        q: 'Can I delete my account?',
-        a: 'Yes, you can request account deletion from Settings > Account > Delete Account. All your data will be permanently removed within 30 days. Active subscriptions must be cancelled first.',
-      },
-      {
-        q: 'How do I manage my vehicles?',
-        a: 'Go to "My Vehicles" from the sidebar. You can add, edit, or remove vehicles. Each vehicle requires the registration number, type, and optionally a photo.',
-      },
-    ],
-  },
-];
+// Per-category presentation (icon/colour) — UI metadata the API doesn't carry.
+// Keyed by the server's category `title`; falls back to a neutral default.
+const CATEGORY_STYLE: Record<string, { icon: React.ReactNode; color: string; bg: string }> = {
+  Booking: { icon: <Car size={20} color={Colors.info} />, color: Colors.info, bg: Colors.infoBg },
+  'Space Owner': { icon: <Home size={20} color={Colors.successAlt} />, color: Colors.successAlt, bg: Colors.successBg },
+  Subscription: { icon: <CreditCard size={20} color={Colors.warningAlt} />, color: Colors.warningAlt, bg: Colors.warningBg },
+  Account: { icon: <User size={20} color={Colors.errorAlt} />, color: Colors.errorAlt, bg: Colors.errorBg },
+};
+const styleFor = (title: string) =>
+  CATEGORY_STYLE[title] ?? { icon: <HelpCircle size={20} color={Colors.textSecondary} />, color: Colors.textSecondary, bg: Colors.surfaceBg };
 
 export default function FAQScreen() {
   const router = useRouter();
+  const [categories, setCategories] = useState<FAQCategory[]>([]);
+  const [loading, setLoading] = useState(true);
   const [expandedCategory, setExpandedCategory] = useState<number | null>(0);
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
+
+  const fetchFaq = useCallback(async () => {
+    try {
+      const res = await api.get('/help/faq');
+      const raw: Array<{ title: string; items: FAQItem[] }> = res?.faq ?? [];
+      // Attach UI metadata (icon/colour) by category title.
+      const mapped: FAQCategory[] = raw.map((c) => ({
+        title: c.title,
+        items: c.items ?? [],
+        ...styleFor(c.title),
+      }));
+      setCategories(mapped);
+    } catch {
+      // Leave empty → empty state shown; FAQ is non-critical.
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchFaq();
+  }, [fetchFaq]);
 
   const toggleCategory = (index: number) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -146,10 +84,18 @@ export default function FAQScreen() {
       <StatusBar barStyle="dark-content" />
       <PageHeader title="FAQ" onBack={() => router.back()} />
 
+      {loading ? (
+        <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>
+      ) : categories.length === 0 ? (
+        <View style={styles.center}>
+          <HelpCircle size={40} color={Colors.textMuted} strokeWidth={1.5} />
+          <Text style={styles.emptyText}>FAQs are unavailable right now. Please try again later.</Text>
+        </View>
+      ) : (
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.subtitle}>Find quick answers grouped by topic</Text>
 
-        {FAQ_DATA.map((cat, catIdx) => {
+        {categories.map((cat, catIdx) => {
           const isCatOpen = expandedCategory === catIdx;
           return (
             <View key={cat.title} style={styles.categoryCard}>
@@ -211,6 +157,7 @@ export default function FAQScreen() {
 
         <View style={styles.bottomPad} />
       </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
@@ -218,11 +165,13 @@ export default function FAQScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.screenBg,
+    backgroundColor: Colors.white,
   },
   content: {
     padding: Spacing.screenH,
   },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.lg, padding: Spacing['4xl'] },
+  emptyText: { fontSize: FontSize.base, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
   subtitle: {
     fontSize: FontSize.lg,                          // 15 = lg ✓
     color: Colors.textSecondary,

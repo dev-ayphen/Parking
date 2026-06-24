@@ -2,15 +2,16 @@
  * OTP Utility Functions
  *
  * In development: Logs OTP to console
- * In production: Would call MSG91 API
+ * In production: Calls MSG91 API (fails loudly if not configured)
  */
+import crypto from 'crypto';
 
 /**
- * Generate a random 6-digit OTP
+ * Generate a cryptographically-secure random 6-digit OTP.
+ * (Math.random is not a CSPRNG and is predictable — never use it for OTPs.)
  */
 export const generateOTP = (): string => {
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  return otp;
+  return crypto.randomInt(100000, 1000000).toString();
 };
 
 /**
@@ -25,27 +26,45 @@ export const sendOTPViaSMS = async (
   env: 'development' | 'production' = 'development'
 ): Promise<{ success: boolean; message: string }> => {
   if (env === 'development') {
-    // Development: Log to console
-    console.log('\n' + '='.repeat(60));
-    console.log('📱 OTP SENT (DEVELOPMENT MODE - NOT ACTUAL SMS)');
-    console.log('='.repeat(60));
-    console.log(`📞 Phone: ${phone}`);
-    console.log(`🔐 OTP: ${otp}`);
-    console.log(`⏱️  Valid for: 10 minutes`);
-    console.log('='.repeat(60) + '\n');
-
-    return {
-      success: true,
-      message: `OTP logged to console for phone: ${phone}`,
-    };
+    // Development only: print the OTP so a developer can log in without SMS.
+    // (Never reaches production — gated on env.)
+    console.log(`[OTP][dev] ${phone.slice(-4).padStart(phone.length, '*')} -> ${otp}`);
+    return { success: true, message: 'OTP logged to console (development)' };
   }
 
-  // Production: Call MSG91 API (implement later)
-  console.warn('MSG91 API not implemented yet');
-  return {
-    success: false,
-    message: 'MSG91 API not configured',
-  };
+  // Production: send via MSG91. Fails LOUDLY if not configured or the call
+  // fails, so we never tell the user "OTP sent" when no SMS went out.
+  const authKey = process.env.MSG91_API_KEY;
+  const templateId = process.env.MSG91_TEMPLATE_ID;
+  const senderId = process.env.MSG91_SENDER_ID;
+  if (!authKey || !templateId) {
+    throw new Error('SMS service is not configured (MSG91 credentials missing).');
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    const res = await fetch('https://control.msg91.com/api/v5/otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', authkey: authKey },
+      body: JSON.stringify({
+        template_id: templateId,
+        mobile: `91${phone}`,
+        otp,
+        ...(senderId ? { sender: senderId } : {}),
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    const data: any = await res.json().catch(() => ({}));
+    if (!res.ok || data?.type === 'error') {
+      throw new Error(data?.message || `MSG91 responded ${res.status}`);
+    }
+    return { success: true, message: 'OTP sent' };
+  } catch (err) {
+    // Surface the failure to the caller — do NOT report success.
+    throw new Error('Failed to send OTP. Please try again in a moment.');
+  }
 };
 
 /**
@@ -57,24 +76,17 @@ export const formatPhoneNumber = (phone: string): string => {
   // Trim and remove all non-digits
   const cleaned = phone.trim().replace(/\D/g, '');
 
-  console.log(`[FORMAT_PHONE] Input: "${phone}", Cleaned: "${cleaned}", Length: ${cleaned.length}`);
-
   // If it's 91 followed by 10 digits, remove the country code
   if (cleaned.startsWith('91') && cleaned.length === 12) {
-    const result = cleaned.substring(2);
-    console.log(`[FORMAT_PHONE] Removing country code: "${result}"`);
-    return result;
+    return cleaned.substring(2);
   }
 
   // If it's 10 digits, return as-is
   if (cleaned.length === 10) {
-    console.log(`[FORMAT_PHONE] Valid 10-digit number: "${cleaned}"`);
     return cleaned;
   }
 
-  const error = `Invalid phone number format. Got "${cleaned}" (length: ${cleaned.length}). Expected 10-digit Indian number.`;
-  console.log(`[FORMAT_PHONE] Error:`, error);
-  throw new Error(error);
+  throw new Error('Invalid phone number format. Expected a 10-digit Indian number.');
 };
 
 /**

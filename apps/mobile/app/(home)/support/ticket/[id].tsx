@@ -9,14 +9,18 @@ import {View,
   TextInput,
   KeyboardAvoidingView,
   ActivityIndicator,
+  Image,
+  Modal,
+  Linking,
   Alert} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ChevronLeft, Send, Clock, Info, Star, RotateCcw, CheckCircle2, XCircle, Pause, Ticket as TicketIcon } from 'lucide-react-native';
+import { Send, Clock, Info, Star, RotateCcw, CheckCircle2, XCircle, Pause, FileText, X, Ticket as TicketIcon } from 'lucide-react-native';
 import { io as createSocket, Socket } from 'socket.io-client';
 import { API_BASE } from '../../../../config/api.config';
 import { api } from '../../../../services/api';
 import { getAuthToken } from '../../../../utils/secureStorage';
+import PageHeader from '../../../../components/PageHeader';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../../../theme';
 
 const SOCKET_URL = (API_BASE || '').replace(/\/api\/?$/, '');
@@ -54,8 +58,25 @@ interface TicketData {
   ratingComment: string | null;
   createdAt: string;
   closedAt: string | null;
+  attachmentUrls?: string[];
   replies: Reply[];
 }
+
+const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic'];
+
+// Signed URLs carry a `?token=...` query — strip it before testing the extension.
+const isImageUrl = (url: string): boolean => {
+  const path = url.split('?')[0].toLowerCase();
+  const ext = path.split('.').pop() || '';
+  return IMAGE_EXTS.includes(ext);
+};
+
+// Short, human-friendly filename for a (non-image) attachment tile.
+const fileNameFromUrl = (url: string): string => {
+  const path = url.split('?')[0];
+  const name = decodeURIComponent(path.split('/').pop() || 'file');
+  return name.length > 22 ? `${name.slice(0, 19)}…` : name;
+};
 
 export default function TicketDetailScreen() {
   const router = useRouter();
@@ -72,6 +93,7 @@ export default function TicketDetailScreen() {
   const [ratingStars, setRatingStars] = useState(0);
   const [ratingComment, setRatingComment] = useState('');
   const [submittingRating, setSubmittingRating] = useState(false);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   const scrollRef = useRef<ScrollView>(null);
   const socketRef = useRef<Socket | null>(null);
@@ -205,17 +227,25 @@ export default function TicketDetailScreen() {
     }
   };
 
+  // Tap an attachment: images open the in-app fullscreen preview; everything
+  // else (PDFs, etc.) opens externally via the OS.
+  const handleOpenAttachment = async (url: string) => {
+    if (isImageUrl(url)) {
+      setPreviewImage(url);
+      return;
+    }
+    try {
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert('Unable to open', 'This attachment could not be opened.');
+    }
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" />
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <ChevronLeft size={18} color={Colors.textDark} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Ticket Details</Text>
-          <View style={{ width: 40 }} />
-        </View>
+        <PageHeader title="Ticket Details" onBack={() => router.back()} />
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator size="large" color={Colors.primary} />
         </View>
@@ -227,13 +257,7 @@ export default function TicketDetailScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" />
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <ChevronLeft size={18} color={Colors.textDark} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Ticket Details</Text>
-          <View style={{ width: 40 }} />
-        </View>
+        <PageHeader title="Ticket Details" onBack={() => router.back()} />
         <View style={{ flex: 1, padding: Spacing['4xl'], alignItems: 'center', justifyContent: 'center' }}>
           <Text style={{ color: Colors.textSecondary, fontSize: FontSize.md, textAlign: 'center' }}>
             {error || 'Ticket not found.'}
@@ -257,13 +281,7 @@ export default function TicketDetailScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()} activeOpacity={0.7}>
-          <ChevronLeft size={18} color={Colors.textDark} strokeWidth={2.5} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>{ticket.ticketNumber}</Text>
-        <View style={{ width: 40 }} />
-      </View>
+      <PageHeader title={ticket.ticketNumber} onBack={() => router.back()} />
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView ref={scrollRef} contentContainerStyle={styles.content}>
@@ -293,6 +311,38 @@ export default function TicketDetailScreen() {
               </View>
             </View>
           </View>
+
+          {/* Attachments */}
+          {ticket.attachmentUrls?.length ? (
+            <View style={styles.attachmentsSection}>
+              <Text style={styles.attachmentsTitle}>Attachments</Text>
+              <View style={styles.attachmentsGrid}>
+                {ticket.attachmentUrls.map((url, i) =>
+                  isImageUrl(url) ? (
+                    <TouchableOpacity
+                      key={`${i}-${url}`}
+                      activeOpacity={0.85}
+                      onPress={() => handleOpenAttachment(url)}
+                    >
+                      <Image source={{ uri: url }} style={styles.attachmentThumb} resizeMode="cover" />
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity
+                      key={`${i}-${url}`}
+                      style={styles.attachmentFileCard}
+                      activeOpacity={0.7}
+                      onPress={() => handleOpenAttachment(url)}
+                    >
+                      <FileText size={22} color={Colors.textSecondary} />
+                      <Text style={styles.attachmentFileName} numberOfLines={1}>
+                        {fileNameFromUrl(url)}
+                      </Text>
+                    </TouchableOpacity>
+                  )
+                )}
+              </View>
+            </View>
+          ) : null}
 
           {/* Resolution note banner */}
           {ticket.resolutionNote && (
@@ -379,7 +429,7 @@ export default function TicketDetailScreen() {
             </View>
           )}
 
-          {/* Live chat escalation banner */}
+          {/* Response-time notice */}
           {!isResolvedOrClosed && (
             <View style={styles.escalationBanner}>
               <Info size={18} color={Colors.textPrimary} />
@@ -443,6 +493,27 @@ export default function TicketDetailScreen() {
           </View>
         )}
       </KeyboardAvoidingView>
+
+      {/* Fullscreen image preview */}
+      <Modal
+        visible={!!previewImage}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPreviewImage(null)}
+      >
+        <View style={styles.previewBackdrop}>
+          <TouchableOpacity
+            style={styles.previewClose}
+            onPress={() => setPreviewImage(null)}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <X size={24} color={Colors.white} />
+          </TouchableOpacity>
+          {previewImage && (
+            <Image source={{ uri: previewImage }} style={styles.previewImage} resizeMode="contain" />
+          )}
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -450,34 +521,7 @@ export default function TicketDetailScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.screenBg,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.screenH,
-    paddingVertical: Spacing['3xl'],
     backgroundColor: Colors.white,
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4 },
-      android: { elevation: 4 },
-    }),
-  },
-  backButton: {
-    width: 38,
-    height: 38,
-    borderRadius: BorderRadius.circle,              // 19 = circle ✓
-    backgroundColor: Colors.screenBg,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBg,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    fontSize: FontSize['3xl'],                      // 20 = 3xl ✓
-    fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
   },
   content: {
     padding: Spacing['3xl'],
@@ -566,6 +610,67 @@ const styles = StyleSheet.create({
     fontSize: FontSize.base,                        // 13 = base ✓
     color: Colors.textDark,
     lineHeight: 18,
+  },
+  attachmentsSection: {
+    marginBottom: Spacing['3xl'],
+  },
+  attachmentsTitle: {
+    fontSize: FontSize.lg,                           // 15 = lg ✓
+    fontWeight: FontWeight.bold,
+    color: Colors.textPrimary,
+    marginBottom: Spacing.xl,
+  },
+  attachmentsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.lg,
+  },
+  attachmentThumb: {
+    width: 72,
+    height: 72,
+    borderRadius: BorderRadius.md,                   // 12 = md ✓
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceBg,
+  },
+  attachmentFileCard: {
+    width: 110,
+    height: 72,
+    borderRadius: BorderRadius.md,                   // 12 = md ✓
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.screenBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.md,
+    gap: Spacing.sm,
+  },
+  attachmentFileName: {
+    fontSize: FontSize.xs,                           // 11 = xs ✓
+    color: Colors.textSecondary,
+    textAlign: 'center',
+  },
+  previewBackdrop: {
+    flex: 1,
+    backgroundColor: ExtendedColors.overlayHeavy,    // 'rgba(0,0,0,0.55)' ✓
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewClose: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 54 : Spacing['4xl'],
+    right: Spacing['3xl'],
+    zIndex: 2,
+    width: 40,
+    height: 40,
+    borderRadius: BorderRadius.circleXl,             // 20 = circleXl ✓
+    backgroundColor: ExtendedColors.whiteAlpha20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewImage: {
+    width: '100%',
+    height: '80%',
   },
   conversationArea: {
     paddingBottom: Spacing.screenH,

@@ -184,7 +184,7 @@ export const billingAdminService = {
       data: {
         txnNumber,
         type: 'OWNER_PAYOUT',
-        amount: -Math.abs(Number(data.amount)),
+        amount: -Math.round(Math.abs(Number(data.amount))),
         status: 'PENDING',
         paymentMethod: 'Bank Transfer',
         description: data.description || 'Owner Payout',
@@ -247,29 +247,37 @@ export const billingAdminService = {
     if (original.status !== 'SUCCESS') {
       throw new Error('Only successful transactions can be refunded');
     }
-    const existing = await db.transaction.findFirst({
-      where: { type: 'REFUND', description: { contains: original.txnNumber } },
+    // Exact id match — no more fragile substring matching on the description.
+    const existing = await db.transaction.findUnique({
+      where: { refundedTxnId: original.id },
     });
     if (existing) throw new Error('This transaction is already refunded');
 
-    const refundAmount = payload.amount && payload.amount > 0
-      ? Math.min(Math.abs(payload.amount), Math.abs(original.amount))
-      : Math.abs(original.amount);
+    const refundAmount = Math.round(
+      payload.amount && payload.amount > 0
+        ? Math.min(Math.abs(payload.amount), Math.abs(original.amount))
+        : Math.abs(original.amount)
+    );
 
-    const last = await db.transaction.findFirst({ orderBy: { id: 'desc' }, select: { id: true } });
-    const txnNumber = `TXN-${String((last?.id ?? 0) + 1).padStart(4, '0')}`;
-
-    const refund = await db.transaction.create({
-      data: {
-        txnNumber,
-        type: 'REFUND',
-        amount: -refundAmount,
-        status: 'SUCCESS',
-        paymentMethod: original.paymentMethod,
-        description: `Refund for ${original.txnNumber}${payload.reason ? ` — ${payload.reason}` : ''}`,
-        userId: (original as any).userId ?? null,
-        entityLabel: (original as any).entityLabel ?? null,
-      },
+    // Race-free txnNumber (derived from the row's own id) + atomic create.
+    const refund = await db.$transaction(async (tx) => {
+      const created = await tx.transaction.create({
+        data: {
+          txnNumber: `PENDING-${Date.now()}-${Math.round(Math.random() * 1e9)}`,
+          type: 'REFUND',
+          amount: -refundAmount,
+          status: 'SUCCESS',
+          paymentMethod: original.paymentMethod,
+          description: `Refund for ${original.txnNumber}${payload.reason ? ` — ${payload.reason}` : ''}`,
+          userId: (original as any).userId ?? null,
+          entityLabel: (original as any).entityLabel ?? null,
+          refundedTxnId: original.id,
+        },
+      });
+      return tx.transaction.update({
+        where: { id: created.id },
+        data: { txnNumber: `TXN-${String(created.id).padStart(4, '0')}` },
+      });
     });
 
     return { success: true, refund };
@@ -312,6 +320,75 @@ export const billingAdminService = {
   },
 
   // ─── Subscriptions ─────────────────────────────────────────────────
+  // ── Subscription analytics (admin dashboard) ────────────────────────────
+  getSubscriptionAnalytics: async () => {
+    const now = new Date();
+
+    const [statusGroups, activeSubs, allPlans, subRevenueAgg, monthSubs] = await Promise.all([
+      // Counts by status.
+      db.subscription.groupBy({ by: ['status'], _count: { _all: true } }),
+      // Active subscriptions with their plan (for MRR/ARR + distribution).
+      db.subscription.findMany({
+        where: { status: 'ACTIVE' },
+        select: { id: true, price: true, plan: true, planId: true, planName: true, planRef: { select: { name: true, colorKey: true } } },
+      }),
+      db.subscriptionPlan.findMany({ orderBy: { sortOrder: 'asc' }, select: { id: true, name: true, colorKey: true } }),
+      // Lifetime subscription revenue (all SUCCESS subscription transactions).
+      db.transaction.aggregate({ where: { type: 'SUBSCRIPTION', status: 'SUCCESS' }, _sum: { amount: true } }),
+      // New subscriptions per month for the last 6 months (growth chart).
+      db.subscription.findMany({
+        where: { createdAt: { gte: new Date(now.getFullYear(), now.getMonth() - 5, 1) } },
+        select: { createdAt: true },
+      }),
+    ]);
+
+    const countBy = (s: string) => (statusGroups.find((g) => g.status === s)?._count._all ?? 0);
+    const totalSubscribers = statusGroups.reduce((sum, g) => sum + g._count._all, 0);
+    const active = countBy('ACTIVE');
+    const expired = countBy('EXPIRED');
+    const cancelled = countBy('CANCELLED');
+    const suspended = countBy('SUSPENDED');
+
+    // MRR — normalise each active sub to a monthly figure (yearly ÷ 12).
+    const mrr = (activeSubs as any[]).reduce((sum, s) => sum + (s.plan === 'YEARLY' ? s.price / 12 : s.price), 0);
+    const arr = mrr * 12;
+    const arpu = active > 0 ? mrr / active : 0;
+    const lifetimeRevenue = subRevenueAgg._sum.amount ?? 0;
+
+    // Plan distribution (active subscribers per plan).
+    const distMap = new Map<string, { name: string; colorKey: string; count: number }>();
+    (allPlans as any[]).forEach((p) => distMap.set(p.name, { name: p.name, colorKey: p.colorKey, count: 0 }));
+    (activeSubs as any[]).forEach((s) => {
+      const name = s.planRef?.name || s.planName || 'Unknown';
+      const entry = distMap.get(name) || { name, colorKey: 'blue', count: 0 };
+      entry.count += 1;
+      distMap.set(name, entry);
+    });
+    const planDistribution = Array.from(distMap.values());
+
+    // Growth — new subs per month, last 6 months.
+    const months: { label: string; key: string; count: number }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push({ label: d.toLocaleDateString('en-IN', { month: 'short' }), key: `${d.getFullYear()}-${d.getMonth()}`, count: 0 });
+    }
+    (monthSubs as any[]).forEach((s) => {
+      const d = new Date(s.createdAt);
+      const bucket = months.find((m) => m.key === `${d.getFullYear()}-${d.getMonth()}`);
+      if (bucket) bucket.count += 1;
+    });
+    const growth = months.map(({ label, count }) => ({ name: label, value: count }));
+
+    const fmt = (n: number) => Math.round(n);
+    return {
+      success: true,
+      counts: { totalSubscribers, active, expired, cancelled, suspended },
+      revenue: { mrr: fmt(mrr), arr: fmt(arr), arpu: fmt(arpu), lifetimeRevenue: fmt(lifetimeRevenue) },
+      planDistribution,
+      growth,
+    };
+  },
+
   listSubscriptions: async (query: any) => {
     const { status, search, page = 1, limit = 20 } = query;
     const skip = (Number(page) - 1) * Number(limit);
@@ -398,6 +475,126 @@ export const billingAdminService = {
     return { success: true, subscriptions: mapped, plans: planSummaries, total };
   },
 
+  // ── Admin actions on an individual subscription ──────────────────────────
+  getSubscriptionDetail: async (subscriptionId: number) => {
+    const s: any = await db.subscription.findUnique({
+      where: { id: subscriptionId },
+      include: {
+        user: { select: { id: true, firstName: true, lastName: true, phone: true, email: true } },
+        planRef: { select: { id: true, name: true, colorKey: true } },
+      },
+    });
+    if (!s) throw Object.assign(new Error('Subscription not found'), { statusCode: 404 });
+
+    // Owner's spaces count + lifetime revenue (subscription txns for this owner).
+    let spacesCount = 0;
+    let ownerRevenue = 0;
+    if (s.user?.id) {
+      const [sc, rev] = await Promise.all([
+        db.space.count({ where: { ownerId: s.user.id, status: { notIn: ['REJECTED', 'BLOCKED'] } } }),
+        db.transaction.aggregate({ where: { userId: s.user.id, type: 'SUBSCRIPTION', status: 'SUCCESS' }, _sum: { amount: true } }),
+      ]);
+      spacesCount = sc;
+      ownerRevenue = rev._sum.amount ?? 0;
+    }
+
+    return {
+      success: true,
+      subscription: {
+        id: `SUB-${String(s.id).padStart(4, '0')}`,
+        rawId: s.id,
+        owner: s.user ? {
+          id: s.user.id,
+          name: [s.user.firstName, s.user.lastName].filter(Boolean).join(' ') || s.user.phone,
+          phone: s.user.phone,
+          email: s.user.email,
+          spacesCount,
+          revenue: Math.round(ownerRevenue),
+        } : null,
+        plan: s.planRef?.name || s.planName || 'Basic',
+        planColor: s.planRef?.colorKey ?? 'blue',
+        billingCycle: s.plan,
+        amount: s.price,
+        status: s.status,
+        startDate: s.startDate?.toISOString() ?? null,
+        renewalDate: s.renewalDate?.toISOString() ?? null,
+        autoRenewal: s.autoRenewal,
+      },
+    };
+  },
+
+  // Suspend an ACTIVE subscription (misuse) → premium features lock immediately.
+  // `reason` (Fraud / Policy Violation / Fake Listings / Other) is recorded.
+  suspendSubscription: async (subscriptionId: number, reason?: string) => {
+    const result = await db.subscription.updateMany({
+      where: { id: subscriptionId, status: 'ACTIVE' },
+      data: { status: 'SUSPENDED', autoRenewal: false },
+    });
+    if (result.count === 0) throw Object.assign(new Error('Active subscription not found'), { statusCode: 404 });
+    const sub = await db.subscription.findUnique({ where: { id: subscriptionId } });
+    if (sub) {
+      const reasonText = reason ? ` Reason: ${reason}.` : '';
+      await db.notification.create({
+        data: { userId: sub.userId, title: 'Subscription Suspended', message: `Your subscription has been suspended.${reasonText} Please contact support.`, category: 'SUBSCRIPTION' },
+      }).catch(() => {});
+    }
+    return { success: true, subscription: sub, reason: reason ?? null };
+  },
+
+  // Lift a suspension → back to ACTIVE.
+  reactivateSubscription: async (subscriptionId: number) => {
+    const result = await db.subscription.updateMany({
+      where: { id: subscriptionId, status: 'SUSPENDED' },
+      data: { status: 'ACTIVE' },
+    });
+    if (result.count === 0) throw Object.assign(new Error('Suspended subscription not found'), { statusCode: 404 });
+    const sub = await db.subscription.findUnique({ where: { id: subscriptionId } });
+    if (sub) {
+      await db.notification.create({
+        data: { userId: sub.userId, title: 'Subscription Reactivated', message: 'Your subscription has been reactivated.', category: 'SUBSCRIPTION' },
+      }).catch(() => {});
+    }
+    return { success: true, subscription: sub };
+  },
+
+  // Extend the renewal date by N days (support goodwill). Works on ACTIVE/SUSPENDED.
+  extendSubscription: async (subscriptionId: number, days: number) => {
+    const allowed = [7, 30, 60, 90];
+    if (!allowed.includes(days)) throw Object.assign(new Error('Extension must be 7, 30, 60, or 90 days'), { statusCode: 400 });
+    const sub = await db.subscription.findUnique({ where: { id: subscriptionId } });
+    if (!sub) throw Object.assign(new Error('Subscription not found'), { statusCode: 404 });
+    const base = sub.renewalDate > new Date() ? sub.renewalDate : new Date();
+    const newRenewal = new Date(base.getTime() + days * 86400000);
+    const updated = await db.subscription.update({
+      where: { id: subscriptionId },
+      data: { renewalDate: newRenewal },
+    });
+    await db.notification.create({
+      data: { userId: sub.userId, title: 'Subscription Extended', message: `Your subscription has been extended by ${days} days.`, category: 'SUBSCRIPTION' },
+    }).catch(() => {});
+    return { success: true, subscription: updated };
+  },
+
+  // Force-cancel — admin override. Sets CANCELLED immediately (no refund: refunds
+  // are a separate, explicit action on the Payments screen). `reason`
+  // (Chargeback / Fraud / Legal Request / Other) is recorded.
+  forceCancelSubscription: async (subscriptionId: number, reason?: string) => {
+    const sub = await db.subscription.findUnique({ where: { id: subscriptionId } });
+    if (!sub) throw Object.assign(new Error('Subscription not found'), { statusCode: 404 });
+    if (sub.status === 'CANCELLED' || sub.status === 'EXPIRED') {
+      throw Object.assign(new Error('Subscription is already inactive'), { statusCode: 400 });
+    }
+    const updated = await db.subscription.update({
+      where: { id: subscriptionId },
+      data: { status: 'CANCELLED', autoRenewal: false, scheduledDowngradePlanId: null },
+    });
+    const reasonText = reason ? ` Reason: ${reason}.` : '';
+    await db.notification.create({
+      data: { userId: sub.userId, title: 'Subscription Cancelled', message: `Your subscription has been cancelled by an administrator.${reasonText} Contact support for details.`, category: 'SUBSCRIPTION' },
+    }).catch(() => {});
+    return { success: true, subscription: updated, reason: reason ?? null };
+  },
+
   listSubscriptionPlans: async () => {
     const plans = await db.subscriptionPlan.findMany({
       orderBy: { sortOrder: 'asc' },
@@ -417,16 +614,20 @@ export const billingAdminService = {
         colorKey: p.colorKey,
         isActive: p.isActive,
         sortOrder: p.sortOrder,
+        maxSpaces: p.maxSpaces,
+        hasAnalytics: p.hasAnalytics,
+        hasFeaturedListing: p.hasFeaturedListing,
+        hasCsvExport: p.hasCsvExport,
+        hasPrioritySupport: p.hasPrioritySupport,
         activeSubscribers: p._count.subscriptions,
       })),
     };
   },
 
   updateSubscriptionPlan: async (planId: number, data: any) => {
-    const existing = await db.subscriptionPlan.findUnique({
-      where: { id: planId },
-      select: { price: true, name: true },
-    });
+    // Full snapshot of the OLD plan so the controller can audit old→new diffs.
+    const existing = await db.subscriptionPlan.findUnique({ where: { id: planId } });
+    if (!existing) throw Object.assign(new Error('Plan not found'), { statusCode: 404 });
 
     const allowed: any = {};
     if (data.name !== undefined) allowed.name = String(data.name);
@@ -437,8 +638,24 @@ export const billingAdminService = {
     if (data.iconKey !== undefined) allowed.iconKey = String(data.iconKey);
     if (data.colorKey !== undefined) allowed.colorKey = String(data.colorKey);
     if (data.isActive !== undefined) allowed.isActive = Boolean(data.isActive);
+    // Capability limits (the real, enforced fields).
+    if (data.maxSpaces !== undefined) allowed.maxSpaces = Number(data.maxSpaces);
+    if (data.hasAnalytics !== undefined) allowed.hasAnalytics = Boolean(data.hasAnalytics);
+    if (data.hasFeaturedListing !== undefined) allowed.hasFeaturedListing = Boolean(data.hasFeaturedListing);
+    if (data.hasCsvExport !== undefined) allowed.hasCsvExport = Boolean(data.hasCsvExport);
+    if (data.hasPrioritySupport !== undefined) allowed.hasPrioritySupport = Boolean(data.hasPrioritySupport);
 
     const plan = await db.subscriptionPlan.update({ where: { id: planId }, data: allowed });
+
+    // Build an old→new diff of just the changed fields, for the audit log.
+    const changes: Record<string, { from: any; to: any }> = {};
+    for (const key of Object.keys(allowed)) {
+      const before = (existing as any)[key];
+      const after = (allowed as any)[key];
+      if (JSON.stringify(before) !== JSON.stringify(after)) {
+        changes[key] = { from: before, to: after };
+      }
+    }
 
     // Notify ONLY this plan's active subscribers, and ONLY when the price actually changed.
     let notifiedUserIds: number[] = [];
@@ -462,7 +679,7 @@ export const billingAdminService = {
       }
     }
 
-    return { success: true, plan, priceChanged, notifiedUserIds };
+    return { success: true, plan, priceChanged, notifiedUserIds, changes };
   },
 
   createSubscriptionPlan: async (data: any) => {
@@ -482,6 +699,11 @@ export const billingAdminService = {
         colorKey: data.colorKey || 'blue',
         isActive: data.isActive ?? true,
         sortOrder: (maxOrder._max.sortOrder ?? 0) + 1,
+        maxSpaces: data.maxSpaces !== undefined ? Number(data.maxSpaces) : 2,
+        hasAnalytics: Boolean(data.hasAnalytics),
+        hasFeaturedListing: Boolean(data.hasFeaturedListing),
+        hasCsvExport: Boolean(data.hasCsvExport),
+        hasPrioritySupport: Boolean(data.hasPrioritySupport),
       },
     });
 

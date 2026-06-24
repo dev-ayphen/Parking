@@ -71,8 +71,12 @@ const VehicleSelectScreen = () => {
       const vehicleList = Array.isArray(data) ? data : (data.data || data.vehicles || []);
 
       setVehicles(vehicleList);
+      // Pre-select the user's default vehicle (the list is already ordered
+      // default-first, but pick explicitly so intent is clear); fall back to the
+      // first vehicle if none is flagged.
       if (vehicleList.length > 0) {
-        setSelectedVehicleId(vehicleList[0].id);
+        const preferred = vehicleList.find((v: any) => v.isDefault) || vehicleList[0];
+        setSelectedVehicleId(preferred.id);
       }
     } catch (error) {
       console.error('[VEHICLE_SELECT] Error loading vehicles:', error);

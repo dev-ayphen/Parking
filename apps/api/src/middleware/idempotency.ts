@@ -1,52 +1,69 @@
 import { Request, Response, NextFunction } from 'express';
+import { redis } from '../config/redis';
 
-interface CachedResponse {
-  statusCode: number;
-  body: any;
-  expiresAt: number;
-}
+const TTL_SECONDS = 5 * 60; // 5 min
+const KEY_PREFIX = 'idem:';
 
-// In-memory store. For multi-instance prod, swap with Redis.
-const store = new Map<string, CachedResponse>();
-const TTL_MS = 5 * 60 * 1000; // 5 min
-
-// Periodic cleanup
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, val] of store.entries()) {
-    if (val.expiresAt <= now) store.delete(key);
-  }
-}, 60 * 1000);
+// Marker stored while a request with a given key is still in flight, so a
+// concurrent duplicate is rejected rather than executed a second time.
+const IN_FLIGHT = '__in_flight__';
 
 /**
- * Idempotency middleware.
- * Clients send `Idempotency-Key: <uuid>` header. If the same key has been
- * processed in the last 5 minutes, the cached response is returned instead
- * of executing the handler again. Use on POST endpoints like booking creation.
+ * Idempotency middleware (Redis-backed, atomic, multi-instance safe).
+ *
+ * Clients send `Idempotency-Key: <uuid>`. We atomically RESERVE the key with
+ * SET NX *before* running the handler — so two concurrent requests with the
+ * same key can't both execute (the second sees the reservation). On success we
+ * overwrite the reservation with the cached response; a later retry replays it.
+ * Use on POST endpoints like booking creation.
  */
-export const idempotency = (req: Request, res: Response, next: NextFunction): void => {
+export const idempotency = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const rawKey = req.headers['idempotency-key'];
   if (!rawKey || typeof rawKey !== 'string') {
     next();
     return;
   }
   const userId = req.user?.id ?? 'anon';
-  const key = `${userId}:${req.method}:${req.path}:${rawKey}`;
+  const key = `${KEY_PREFIX}${userId}:${req.method}:${req.path}:${rawKey}`;
 
-  const cached = store.get(key);
-  if (cached && cached.expiresAt > Date.now()) {
-    res.status(cached.statusCode).json(cached.body);
+  // Atomic reserve: only the FIRST request for this key wins the SET NX.
+  let reserved: string | null = null;
+  try {
+    reserved = await redis.set(key, IN_FLIGHT, 'EX', TTL_SECONDS, 'NX');
+  } catch {
+    // Redis unavailable — don't block the request; just run without dedup.
+    next();
     return;
   }
 
+  if (reserved === null) {
+    // Key already exists: either a completed response is cached, or one is
+    // still in flight.
+    const existing = await redis.get(key).catch(() => null);
+    if (existing && existing !== IN_FLIGHT) {
+      try {
+        const cached = JSON.parse(existing);
+        res.status(cached.statusCode).json(cached.body);
+        return;
+      } catch {
+        /* fall through to 409 */
+      }
+    }
+    // Still processing the original — tell the client to retry shortly.
+    res.status(409).json({ error: 'A request with this idempotency key is already being processed.' });
+    return;
+  }
+
+  // We own the reservation — capture the response and store it on 2xx.
   const originalJson = res.json.bind(res);
   res.json = ((body: any) => {
     if (res.statusCode >= 200 && res.statusCode < 300) {
-      store.set(key, {
-        statusCode: res.statusCode,
-        body,
-        expiresAt: Date.now() + TTL_MS,
-      });
+      redis
+        .set(key, JSON.stringify({ statusCode: res.statusCode, body }), 'EX', TTL_SECONDS)
+        .catch(() => {});
+    } else {
+      // Non-2xx → release the reservation so the client can legitimately retry.
+      redis.del(key).catch(() => {});
     }
     return originalJson(body);
   }) as any;

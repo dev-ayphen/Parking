@@ -40,8 +40,14 @@ export const requireRole = (...roles: string[]) =>
   };
 
 export const authenticate = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  // Also accept ?token= query param (used for PDF invoice direct browser downloads)
-  const token = req.headers.authorization?.split(' ')[1] || (req.query.token as string | undefined);
+  // The Authorization header is the only token source for normal requests.
+  // A ?token= query param is accepted ONLY for direct browser PDF downloads
+  // (the invoice route), because <a href>/window.open can't set headers. Query
+  // tokens leak into access logs / Referer, so we never honor them elsewhere.
+  const headerToken = req.headers.authorization?.split(' ')[1];
+  const isInvoiceDownload = req.path.endsWith('/invoice');
+  const queryToken = isInvoiceDownload ? (req.query.token as string | undefined) : undefined;
+  const token = headerToken || queryToken;
 
   if (!token) {
     res.status(401).json({ error: 'Unauthorized: No token provided' });

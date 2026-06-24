@@ -1,15 +1,67 @@
-import React from 'react';
-import {StyleSheet, ScrollView, Text, View, StatusBar} from 'react-native';
+import React, { useState, useEffect } from 'react';
+import {StyleSheet, ScrollView, Text, View, StatusBar, ActivityIndicator} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PageHeader } from '../../components';
+import { api } from '../../services/api';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
 
 const TermsScreen = () => {
+  // Prefer the server's live terms (so legal copy can be updated without an app
+  // release). Fall back to the bundled copy if the server has no doc yet.
+  const [serverContent, setServerContent] = useState<string | null>(null);
+  const [serverVersion, setServerVersion] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get('/legal/documents/terms');
+        if (!cancelled && res?.document?.content) {
+          setServerContent(res.document.content);
+          setServerVersion(res.document.version ?? null);
+        }
+      } catch {
+        // no server doc → use bundled fallback below
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
+        <PageHeader title="Terms of Service" />
+        <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>
+      </SafeAreaView>
+    );
+  }
+
+  // Server doc available → render it (plain text, preserving line breaks).
+  if (serverContent) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
+        <PageHeader title="Terms of Service" />
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          <View style={styles.textContainer}>
+            {serverVersion ? <Text style={styles.version}>Version {serverVersion}</Text> : null}
+            <Text style={styles.docBody}>{serverContent}</Text>
+            <View style={styles.spacer} />
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
       <PageHeader title="Terms of Service" />
-      
+
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.textContainer}>
           <Text style={styles.heading}>1. Agreement to Terms</Text>
@@ -54,6 +106,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.white,
   },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  version: { fontSize: FontSize.sm, color: Colors.textMuted, fontWeight: FontWeight.semibold, marginBottom: Spacing.xl },
+  docBody: { fontSize: FontSize.base, lineHeight: 24, color: Colors.textDark },
   content: {
     flex: 1,
     backgroundColor: Colors.screenBg,

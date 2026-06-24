@@ -10,19 +10,43 @@ import {View,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { ChevronLeft } from 'lucide-react-native';
+import { Alert } from 'react-native';
 import { api } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 
 const CompleteProfileScreen = () => {
   const router = useRouter();
-  const { token, userId, expiresIn } = useLocalSearchParams();
+  const { token, userId, expiresIn, refreshToken } = useLocalSearchParams();
   const setSession = useAuthStore((s) => s.setSession);
+  const logout = useAuthStore((s) => s.logout);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{ firstName?: string; lastName?: string; email?: string; general?: string }>({});
+
+  // First + last name are mandatory to submit (email validated on submit).
+  const canSubmit = firstName.trim().length > 0 && lastName.trim().length > 0 && !loading;
+
+  // Back here can't skip the profile gate — completing it is mandatory. So "back"
+  // means "cancel sign-up" → log out and return to login, rather than sneaking
+  // into the app with an incomplete profile.
+  const handleBack = () => {
+    Alert.alert(
+      'Cancel profile setup?',
+      'You need to complete your profile to use ParkSwift. Going back will sign you out.',
+      [
+        { text: 'Stay', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => { await logout(); router.replace('/(auth)'); },
+        },
+      ],
+    );
+  };
 
   const handleCompleteProfile = async () => {
     const errs: typeof errors = {};
@@ -43,7 +67,12 @@ const CompleteProfileScreen = () => {
         lastName: lastName.trim(),
         email: email.trim(),
       });
-      await setSession(String(token), { id: Number(userId), isProfileComplete: true }, Number(expiresIn));
+      await setSession(
+        String(token),
+        { id: Number(userId), isProfileComplete: true },
+        Number(expiresIn),
+        typeof refreshToken === 'string' ? refreshToken : undefined,
+      );
       setLoading(false);
       router.replace('/(home)');
     } catch (err) {
@@ -55,6 +84,10 @@ const CompleteProfileScreen = () => {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+
+      <TouchableOpacity style={styles.backButton} onPress={handleBack} activeOpacity={0.7}>
+        <ChevronLeft size={20} color={Colors.textDark} strokeWidth={2.5} />
+      </TouchableOpacity>
 
       <ScrollView style={styles.scrollView}>
         <View style={styles.content}>
@@ -109,14 +142,14 @@ const CompleteProfileScreen = () => {
 
           {!!errors.general && <Text style={[styles.errorText, { marginBottom: Spacing['3xl'] }]}>{errors.general}</Text>}
 
-          {/* Submit Button */}
+          {/* Submit Button — disabled until first + last name are filled */}
           <TouchableOpacity
             activeOpacity={0.85}
             onPress={handleCompleteProfile}
-            disabled={loading}
+            disabled={!canSubmit}
           >
             <LinearGradient
-              colors={[Colors.primaryLight, Colors.primary]}
+              colors={canSubmit ? [Colors.primaryLight, Colors.primary] : [Colors.borderMuted, Colors.borderMuted]}
               style={styles.button}
             >
               {loading ? (
@@ -142,6 +175,24 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.white,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: BorderRadius.circle,
+    backgroundColor: Colors.white,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: Spacing.md,
+    marginLeft: Spacing.screenH,
+    // Match the canonical PageHeader.backButton shadow.
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
   },
 
   scrollView: {

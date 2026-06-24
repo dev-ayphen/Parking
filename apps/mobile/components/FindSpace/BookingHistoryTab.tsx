@@ -3,6 +3,8 @@ import {
   View,
   Text,
   ScrollView,
+  ActivityIndicator,
+  TouchableOpacity,
 } from 'react-native';
 import { Calendar } from 'lucide-react-native';
 import { Colors } from '../../theme';
@@ -10,11 +12,39 @@ import { styles } from './findSpaceStyles';
 
 interface BookingHistoryTabProps {
   historyBookings: any[];
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
 }
 
 const BookingHistoryTab: React.FC<BookingHistoryTabProps> = ({
   historyBookings,
+  loading,
+  error,
+  onRetry,
 }) => {
+  if (loading) {
+    return (
+      <View style={styles.emptyTabContent}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
+
+  // Failed to load — error + retry, NOT a misleading "No History" empty state.
+  if (error) {
+    return (
+      <View style={styles.emptyTabContent}>
+        <Calendar size={56} color={Colors.error} strokeWidth={1.5} />
+        <Text style={styles.emptyStateHeading}>Couldn't load history</Text>
+        <Text style={styles.emptyStateSubtext}>{error}</Text>
+        <TouchableOpacity style={styles.exploreBtn} onPress={onRetry}>
+          <Text style={styles.exploreBtnText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return (
     <ScrollView style={styles.tabContent} contentContainerStyle={styles.tabContentContainer} showsVerticalScrollIndicator={false}>
       <Text style={styles.sectionHeading}>Past Reservations</Text>
@@ -28,7 +58,7 @@ const BookingHistoryTab: React.FC<BookingHistoryTabProps> = ({
         historyBookings.map((log) => (
           <View key={log.id} style={styles.historyCard}>
             <View style={styles.historyHeader}>
-              <View>
+              <View style={styles.historyHeaderText}>
                 <Text style={styles.historySpaceName}>{log.spaceName}</Text>
                 <Text style={styles.historyAddress}>{log.address}</Text>
               </View>
@@ -53,7 +83,7 @@ const BookingHistoryTab: React.FC<BookingHistoryTabProps> = ({
                 <Text style={styles.historyDetailValue}>{log.date}</Text>
               </View>
               <View style={styles.historyDetailsCol}>
-                <Text style={styles.historyDetailLabel}>Paid Amount</Text>
+                <Text style={styles.historyDetailLabel}>Parking Fee</Text>
                 <Text style={styles.historyDetailValue}>₹{log.price}</Text>
               </View>
               <View style={styles.historyDetailsCol}>

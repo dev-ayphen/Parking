@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { io as createSocket } from 'socket.io-client';
 import { adminApi } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
+import { SOCKET_URL } from '@/lib/config';
 
 export interface SidebarCounts {
   pendingSpaces: number;
@@ -16,8 +17,6 @@ const ZERO: SidebarCounts = {
   expiringSubscriptions: 0,
   openAbuseReports: 0,
 };
-
-const SOCKET_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api').replace(/\/api\/?$/, '');
 
 /**
  * Fetches sidebar "needs action" counts (pending spaces, open tickets,
@@ -43,15 +42,18 @@ export function useSidebarCounts(): SidebarCounts {
     if (!token) return;
     const socket = createSocket(SOCKET_URL, { transports: ['websocket'], auth: { token } });
     socket.on('connect', () => socket.emit('admin:join'));
-    // Any of these events implies a count may have changed — refetch
+    // Only listen for events the server ACTUALLY emits to admin rooms:
+    //   spaces room   -> 'space:new' (pending spaces), 'space:updated'
+    //   support room  -> 'support:new', 'support:updated' (open ticket counts)
+    //   moderation    -> 'abuse:new' (open abuse reports)
+    // NOTE: there is no expiring-subscription socket event server-side, so that
+    // count refreshes via the polling fallback below only.
     const refresh = () => fetchCounts();
     socket.on('space:new', refresh);
     socket.on('space:updated', refresh);
     socket.on('support:new', refresh);
     socket.on('support:updated', refresh);
-    socket.on('subscription:updated', refresh);
     socket.on('abuse:new', refresh);
-    socket.on('abuse:updated', refresh);
 
     // Light polling fallback in case socket misses
     const t = setInterval(fetchCounts, 60_000);

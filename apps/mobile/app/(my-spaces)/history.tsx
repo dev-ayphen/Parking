@@ -20,6 +20,7 @@ import { api } from '../../services/api';
 import { getAuthToken } from '../../utils/secureStorage';
 import { API_BASE } from '../../config/api.config';
 import { getRatingStyle } from '../../utils/ratingUtils';
+import { NETWORK_RECONNECTED } from '../../store/networkStore';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 
 interface HistorySession {
@@ -66,10 +67,17 @@ export default function HistoryScreen() {
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { fetchHistory(); }, [fetchHistory]));
+  useFocusEffect(useCallback(() => {
+    fetchHistory();
+    DeviceEventEmitter.emit('sessionbar:suppress', true);
+    return () => { DeviceEventEmitter.emit('sessionbar:suppress', false); };
+  }, [fetchHistory]));
   useEffect(() => {
-    const sub = DeviceEventEmitter.addListener('session:completed', () => fetchHistory(true));
-    return () => sub.remove();
+    // Refetch on a completed session, and also when connectivity is restored
+    // (offline banner's "Retry" / auto-reconnect) so stale data is replaced.
+    const events = ['session:completed', NETWORK_RECONNECTED];
+    const subs = events.map((evt) => DeviceEventEmitter.addListener(evt, () => fetchHistory(true)));
+    return () => subs.forEach((s) => s.remove());
   }, [fetchHistory]);
 
   const toggleExpand = (id: string) => {
@@ -89,8 +97,14 @@ export default function HistoryScreen() {
   const downloadInvoice = async (bookingId: string) => {
     try {
       const token = await getAuthToken();
-      // Build the PDF URL with the auth token as a query param so the browser
-      // can download it directly (Bearer header not possible in Linking.openURL)
+      // SECURITY (known limitation): the JWT is passed as a `?token=` query param.
+      // Linking.openURL hands the URL to the system browser, which cannot attach an
+      // Authorization header — so the token rides in the URL and may leak into the
+      // browser history / server access logs. The invoice route is intentionally
+      // built to accept ?token= for exactly this reason (see invoice.controller.ts).
+      // Proper fix requires a short-lived, single-use signed download token issued
+      // by a separate endpoint (the long-lived session JWT should never be in a URL).
+      // TODO: replace ?token= with a server-issued signed invoice-download token.
       const url = `${API_BASE}/bookings/${bookingId}/invoice?token=${token}`;
       await Linking.openURL(url);
     } catch {

@@ -50,12 +50,40 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       if (!userId) return;
       userIdRef.current = userId;
 
-      // Send JWT in handshake so the server can authenticate the socket connection
-      const socket = createSocket(SOCKET_URL, { transports: ['websocket'], auth: { token } });
+      // Send JWT in handshake so the server can authenticate the socket connection.
+      // `auth` is a function so socket.io re-evaluates it on every (re)connect —
+      // after a network drop we hand the server a FRESH token rather than the one
+      // captured at first mount (which may have expired while we were offline).
+      const socket = createSocket(SOCKET_URL, {
+        // Let Socket.IO start on HTTP long-polling and UPGRADE to websocket. A raw
+        // websocket-only connection frequently fails to establish (or silently
+        // drops) on flaky / restricted networks — e.g. dev Wi-Fi + Expo Go — which
+        // left real-time updates stuck on the slow polling fallback. Polling-first
+        // connects almost anywhere, then upgrades to websocket when possible.
+        transports: ['polling', 'websocket'],
+        // Recover fast after a drop instead of backing off for long stretches.
+        reconnection: true,
+        reconnectionAttempts: Infinity,
+        reconnectionDelay: 500,        // first retry after 0.5s
+        reconnectionDelayMax: 3000,    // cap backoff at 3s
+        timeout: 8000,                 // give the handshake up to 8s before failing
+        auth: (cb) => {
+          getAuthToken().then((t) => cb({ token: t ?? token }));
+        },
+      });
       socketRef.current = socket;
 
+      let hasConnectedOnce = false;
       socket.on('connect', () => {
         socket.emit('user:join', userId);
+        // On a RECONNECT (not the first connect), events emitted while we were
+        // offline are gone — socket.io has no replay buffer. Tell screens to
+        // re-sync from the API so missed booking/session transitions are caught
+        // immediately instead of waiting up to ~8s for the polling fallback.
+        if (hasConnectedOnce) {
+          DeviceEventEmitter.emit('app:resumed');
+        }
+        hasConnectedOnce = true;
       });
 
       // Force-logout on suspend/ban/delete
@@ -127,7 +155,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     const sub = DeviceEventEmitter.addListener('auth:lost', () => {
       Alert.alert(
         'Session Expired',
-        'Your session has expired. Please log in again.',
+        'Your session has expired. Please log in again — any active parking session is safe and will reopen after you sign back in.',
         [{ text: 'OK', onPress: () => router.replace('/(auth)') }],
       );
     });

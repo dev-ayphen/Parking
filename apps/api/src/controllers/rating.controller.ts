@@ -9,18 +9,17 @@ export const ratingController = {
     try {
       const result = await ratingService.submitRating(req.user?.id || 0, req.body);
 
-      // Notify the space owner that they were rated — live socket event (for an
-      // open screen to refetch its average) + a notification (push + inbox).
-      // Only on a NEW rating, never on an edit, to avoid re-pinging the owner.
-      if (result.ownerId && !result.isUpdate) {
+      // Notify the RATED party (the other person) — live socket + inbox/push.
+      // Only on a NEW rating, never an edit, to avoid re-pinging them.
+      if (result.rateeId && !result.isUpdate) {
         const stars = result.rating.rating;
-        emitToUser(result.ownerId, 'rating:new', {
-          spaceId: result.spaceId,
-          rating: stars,
-        });
-        await adminService.notifyUser(result.ownerId, {
+        const ratedOwner = result.direction === 'PARKER_RATED_OWNER';
+        emitToUser(result.rateeId, 'rating:new', { spaceId: result.spaceId, rating: stars });
+        await adminService.notifyUser(result.rateeId, {
           title: 'New Review',
-          message: `You received a ${stars}★ review on ${result.spaceName || 'your space'}.`,
+          message: ratedOwner
+            ? `You received a ${stars}★ review on ${result.spaceName || 'your space'}.`
+            : `A space owner rated you ${stars}★ after your recent parking session.`,
           category: 'GENERAL',
           metadata: { spaceId: result.spaceId },
         });

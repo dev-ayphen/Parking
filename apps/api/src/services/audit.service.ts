@@ -25,7 +25,9 @@ export type ActorRole = 'PARKER' | 'OWNER' | 'ADMIN' | 'SYSTEM';
 export type AdminAction =
   | 'SPACE_APPROVED'
   | 'SPACE_REJECTED'
+  | 'SPACE_DOC_REQUESTED'
   | 'SPACE_BLOCKED'
+  | 'SPACE_UNBLOCKED'
   | 'SPACE_DELETED'
   | 'USER_SUSPENDED'
   | 'USER_UNSUSPENDED'
@@ -39,7 +41,11 @@ export type AdminAction =
   | 'REVIEW_RESTORED'
   | 'BROADCAST_SENT'
   | 'SUBSCRIPTION_PLAN_CREATED'
-  | 'SUBSCRIPTION_PLAN_UPDATED';
+  | 'SUBSCRIPTION_PLAN_UPDATED'
+  | 'SUBSCRIPTION_SUSPENDED'
+  | 'SUBSCRIPTION_REACTIVATED'
+  | 'SUBSCRIPTION_EXTENDED'
+  | 'SUBSCRIPTION_FORCE_CANCELLED';
 
 export type TargetType =
   | 'USER'
@@ -50,6 +56,7 @@ export type TargetType =
   | 'ABUSE_REPORT'
   | 'RATING'
   | 'SUBSCRIPTION_PLAN'
+  | 'SUBSCRIPTION'
   | 'BROADCAST';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

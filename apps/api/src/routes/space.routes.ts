@@ -3,7 +3,7 @@ import { authenticate, requireRole } from '../middleware/auth';
 import { spaceCreationLimiter } from '../middleware/rateLimit';
 import { validate } from '../middleware/validate';
 import { searchSpacesQuerySchema } from '../validations/space.validation';
-import { uploadDoc, uploadSpaceMedia } from '../middleware/upload';
+import { uploadDoc, uploadSpaceMedia, verifyUploadSignature } from '../middleware/upload';
 import { spaceController } from '../controllers/space.controller';
 import { documentController } from '../controllers/document.controller';
 
@@ -28,7 +28,7 @@ router.get('/', authenticate, requireRole('ADMIN'), spaceController.getAllSpaces
 router.post('/', authenticate, spaceCreationLimiter, spaceController.createSpace);
 
 // Space media (photos + video) — uploaded after creation, owner-only
-router.post('/:id/media', authenticate, uploadSpaceMedia, spaceController.uploadMedia);
+router.post('/:id/media', authenticate, uploadSpaceMedia, verifyUploadSignature, spaceController.uploadMedia);
 
 // Space mutation — authenticated + ownership enforced in service layer
 router.put('/:id', authenticate, spaceController.updateSpace);
@@ -37,6 +37,11 @@ router.delete('/:id', authenticate, spaceController.deleteSpace);
 // Owner-only: bookings and analytics for own spaces
 router.get('/:id/bookings', authenticate, spaceController.getSpaceBookings);
 router.get('/:id/analytics', authenticate, spaceController.getSpaceAnalytics);
+
+// "Notify me when available" — parker subscribes to a full space (authenticated)
+router.get('/:id/availability-alert', authenticate, spaceController.getAvailabilityAlertStatus);
+router.post('/:id/availability-alert', authenticate, spaceController.subscribeAvailabilityAlert);
+router.delete('/:id/availability-alert', authenticate, spaceController.unsubscribeAvailabilityAlert);
 
 // Admin-only: approve/reject
 router.patch('/:id/approve', authenticate, requireRole('ADMIN'), spaceController.approveSpace);
@@ -54,6 +59,7 @@ router.post(
       next();
     });
   },
+  verifyUploadSignature,
   documentController.upload,
 );
 router.delete('/:id/documents/:docId', authenticate, documentController.remove);

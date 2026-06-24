@@ -2,9 +2,15 @@ import { db } from '../config/database';
 import { emitToUser } from '../app';
 import { auditService } from './audit.service';
 import { adminService } from './admin.service';
+import { availabilityAlertService } from './availabilityAlert.service';
 
 const APPROVAL_WINDOW_MS = 2 * 60 * 1000;        // owner must respond to a request within 2 min
 const NO_SHOW_GRACE_MS = 30 * 60 * 1000;          // parker grace period past their ETA before no-show
+// Hard ceiling: an APPROVED booking that never starts a session is force-released
+// this long after creation, REGARDLESS of ETA. Stops a parker from parking a
+// far-future ETA on a slot to camp it indefinitely (the ETA-based no-show sweep
+// alone can't catch an ETA that's hours/days out).
+const APPROVED_MAX_AGE_MS = 6 * 60 * 60 * 1000;   // 6 hours
 
 export const bookingExpiryService = {
   /**
@@ -69,6 +75,9 @@ export const bookingExpiryService = {
         emitToUser(ownerId, 'booking:expired', { bookingId: booking.id });
       }
 
+      // A held slot just freed — alert anyone watching this space.
+      await availabilityAlertService.notifyOnSlotFreed(booking.spaceId);
+
       console.log(`[EXPIRY] Booking ${booking.id} expired (parker ${parkerId})`);
     }
   },
@@ -86,7 +95,9 @@ export const bookingExpiryService = {
    * (they already generated their arrival OTP), so we never cancel under a live code.
    */
   releaseNoShows: async () => {
-    const cutoff = new Date(Date.now() - NO_SHOW_GRACE_MS);
+    const now = Date.now();
+    const cutoff = new Date(now - NO_SHOW_GRACE_MS);
+    const maxAgeCutoff = new Date(now - APPROVED_MAX_AGE_MS);
 
     const noShows = await db.booking.findMany({
       where: {
@@ -95,7 +106,12 @@ export const bookingExpiryService = {
         // A parker who already generated their arrival OTP is physically at the
         // gate mid-verification — do NOT no-show them out from under a live code.
         sessionOtp: null,
-        eta: { lt: cutoff },    // more than the grace period past their promised arrival
+        // Release if EITHER the parker is >30min past their promised ETA, OR the
+        // booking has been sitting APPROVED past the hard ceiling (camped slot).
+        OR: [
+          { eta: { lt: cutoff } },
+          { createdAt: { lt: maxAgeCutoff } },
+        ],
       },
       include: {
         space: { select: { name: true, ownerId: true } },
@@ -146,6 +162,9 @@ export const bookingExpiryService = {
         });
         emitToUser(ownerId, 'booking:cancelled', { bookingId: booking.id });
       }
+
+      // The freed slot may now be bookable — alert anyone watching this space.
+      await availabilityAlertService.notifyOnSlotFreed(booking.spaceId);
 
       console.log(`[NO_SHOW] Booking ${booking.id} cancelled (parker ${parkerId} never arrived)`);
     }

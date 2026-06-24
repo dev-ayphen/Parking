@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 import { Calendar, Clock, ChevronRight } from 'lucide-react-native';
 import PageHeader from '../../components/PageHeader';
 import { api } from '../../services/api';
+import { NETWORK_RECONNECTED } from '../../store/networkStore';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 
 interface Booking {
@@ -59,6 +60,7 @@ export default function MyBookingsScreen() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchBookings = useCallback(async (isRefresh = false) => {
     try {
@@ -77,8 +79,11 @@ export default function MyBookingsScreen() {
         }));
         setBookings(mapped);
       }
+      setError(null);
     } catch (e) {
       if (__DEV__) console.log('[MY_BOOKINGS] error', e);
+      // Distinguish "load failed" from "loaded but empty" — show retry, not "No bookings".
+      setError((e as Error)?.message || 'Could not load your bookings.');
     } finally {
       isRefresh ? setRefreshing(false) : setLoading(false);
     }
@@ -88,7 +93,7 @@ export default function MyBookingsScreen() {
 
   // Live refresh when the owner approves/rejects or a session changes
   useEffect(() => {
-    const events = ['booking:approved', 'booking:rejected', 'session:started', 'session:completed', 'notification:new'];
+    const events = ['booking:approved', 'booking:rejected', 'session:started', 'session:completed', 'notification:new', NETWORK_RECONNECTED];
     const subs = events.map((evt) => DeviceEventEmitter.addListener(evt, () => fetchBookings(true)));
     return () => subs.forEach((s) => s.remove());
   }, [fetchBookings]);
@@ -102,7 +107,9 @@ export default function MyBookingsScreen() {
         style={styles.bookingCard}
         activeOpacity={0.7}
         onPress={() =>
-          router.push({ pathname: '/(find-space)/booking-status', params: { bookingId: item.id } })
+          item.rawStatus === 'COMPLETED'
+            ? router.push({ pathname: '/(find-space)/session-complete', params: { bookingId: item.id } })
+            : router.push({ pathname: '/(find-space)/booking-status', params: { bookingId: item.id } })
         }
       >
         <View style={styles.bookingHeader}>
@@ -154,6 +161,15 @@ export default function MyBookingsScreen() {
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      ) : error ? (
+        <View style={styles.emptyState}>
+          <Calendar size={64} color={Colors.error} />
+          <Text style={styles.emptyStateTitle}>Couldn't load bookings</Text>
+          <Text style={styles.emptyStateDesc}>{error}</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={() => fetchBookings()}>
+            <Text style={styles.retryBtnText}>Retry</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
@@ -209,7 +225,9 @@ const styles = StyleSheet.create({
   bookingDetails: { flexDirection: 'row', justifyContent: 'space-between' },
   detailItem: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   detailText: { fontSize: FontSize.md, color: Colors.textDark, fontWeight: FontWeight.medium },  // 14 = md ✓
-  emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 64 },
+  emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 64, paddingHorizontal: Spacing['4xl'] },
   emptyStateTitle: { fontSize: FontSize['2xl'], fontWeight: FontWeight.bold, color: Colors.textPrimary, marginTop: Spacing['3xl'], marginBottom: Spacing.md },  // 18 = 2xl ✓
   emptyStateDesc: { fontSize: FontSize.md, color: Colors.textSecondary, textAlign: 'center' },  // 14 = md ✓
+  retryBtn: { marginTop: Spacing['3xl'], paddingHorizontal: Spacing['4xl'], paddingVertical: Spacing.lg, backgroundColor: Colors.primaryBg, borderRadius: BorderRadius.lg },
+  retryBtnText: { color: Colors.primary, fontWeight: FontWeight.bold, fontSize: FontSize.md },
 });

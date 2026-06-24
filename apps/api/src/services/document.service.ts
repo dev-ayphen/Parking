@@ -152,6 +152,42 @@ export const getAllDocumentRules = () =>
     spaceType, riskLevel, requiresAdminReview, docs, note,
   }));
 
+/**
+ * Normalise an incoming documentType to the canonical enum `type` the compliance
+ * rule expects (e.g. MAINTENANCE_BILL). The mobile app historically sent the
+ * human LABEL ("Maintenance Bill") or a generic fallback, which never matched the
+ * enum — so the doc was stored but `checkDocumentCompliance` reported it missing.
+ *
+ * Resolution order against the space's rule:
+ *  1. already the exact enum type → keep it
+ *  2. matches a doc LABEL (case-insensitive) → use that doc's enum type
+ *  3. UPPER_SNAKE of the incoming value matches an enum type → use it
+ * Falls back to the rule's first required doc type (best guess) so the upload
+ * still counts toward compliance instead of silently never matching.
+ */
+const normaliseDocumentType = (spaceType: string, incoming: string): string => {
+  const rule = SPACE_TYPE_RULES[spaceType];
+  if (!rule) return incoming;
+  const raw = (incoming ?? '').trim();
+  if (!raw) return incoming;
+
+  const types = rule.docs.map((d) => d.type);
+  // 1. Already a valid enum type for this rule.
+  if (types.includes(raw)) return raw;
+
+  // 2. Matches a human label (case-insensitive).
+  const byLabel = rule.docs.find((d) => d.label.toLowerCase() === raw.toLowerCase());
+  if (byLabel) return byLabel.type;
+
+  // 3. UPPER_SNAKE form of the incoming value is a valid enum type.
+  const snake = raw.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  if (types.includes(snake)) return snake;
+
+  // Fallback: the first required doc type for this space (keeps the upload useful).
+  const firstRequired = rule.docs.find((d) => d.required);
+  return firstRequired?.type ?? raw;
+};
+
 /** Upload a document for a space. Returns the created SpaceDocument record. */
 export const uploadSpaceDocument = async (
   spaceId: number,
@@ -166,8 +202,11 @@ export const uploadSpaceDocument = async (
   const space = await db.space.findFirst({ where: { id: spaceId, ownerId } });
   if (!space) throw { status: 403, message: 'Space not found or access denied' };
 
+  // Map the incoming type/label to the canonical enum so compliance recognises it.
+  const canonicalType = normaliseDocumentType(space.spaceType, documentType);
+
   const doc = await db.spaceDocument.create({
-    data: { spaceId, documentType, documentLabel, fileUrl, fileType, fileSizeBytes: fileSizeBytes ?? null },
+    data: { spaceId, documentType: canonicalType, documentLabel, fileUrl, fileType, fileSizeBytes: fileSizeBytes ?? null },
   });
 
   await invalidateDocCache(spaceId);

@@ -3,14 +3,15 @@
 import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
-  BarChart3, TrendingUp, Users, MapPin,
+  BarChart3, TrendingUp, MapPin,
   Calendar, Download, ArrowUpRight, ArrowDownRight, Loader2, AlertCircle,
 } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
 import { io as createSocket } from 'socket.io-client';
 import { adminApi } from '@/services/api';
-
-const SOCKET_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api').replace(/\/api\/?$/, '');
+import { useAuthStore } from '@/store/authStore';
+import { SOCKET_URL } from '@/lib/config';
+import { exportCsv } from '@/lib/download';
 
 const COLORS = ['#6366F1', '#10B981', '#F59E0B', '#F43F5E', '#8B5CF6', '#06B6D4'];
 
@@ -41,24 +42,33 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  const [exporting, setExporting] = useState(false);
+
   const fetchOverview = useCallback(async () => {
     try {
       setError('');
-      const res = await adminApi.getOverview();
+      const res = await adminApi.getOverview(dateRange);
       setData(res);
     } catch (e: any) {
       setError(e?.response?.data?.error || e?.message || 'Failed to load analytics');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [dateRange]);
 
   useEffect(() => {
     fetchOverview();
   }, [fetchOverview]);
 
+  const handleExport = useCallback(async () => {
+    setExporting(true);
+    const ok = await exportCsv(() => adminApi.exportBookingsCsv(), 'analytics-bookings');
+    if (!ok) setError('Export failed. Please try again.');
+    setExporting(false);
+  }, []);
+
   useEffect(() => {
-    const socket = createSocket(SOCKET_URL, { transports: ['websocket'] });
+    const socket = createSocket(SOCKET_URL, { transports: ['websocket'], auth: { token: useAuthStore.getState().token } });
     socket.on('connect', () => socket.emit('admin:join'));
     socket.on('booking:new', fetchOverview);
     socket.on('booking:update', fetchOverview);
@@ -69,33 +79,27 @@ export default function AnalyticsPage() {
   const spaceTypeData = data?.spaceTypeDistribution || [];
   const hourlyBookings = data?.bookingsByHour || [];
 
+  // KPI cards are backed by the authoritative backend stats (value/change/isPositive)
+  // — the same figures the Dashboard renders — instead of re-deriving from charts.
   const kpis = [
     {
       label: 'Total Users',
-      value: data?.stats?.totalUsers?.value ?? '—',
-      change: data?.stats?.totalUsers?.change ?? '',
-      positive: data?.stats?.totalUsers?.isPositive ?? true,
-      icon: Users, color: 'text-indigo-500', bg: 'bg-indigo-50',
+      stat: data?.stats?.totalUsers,
+      icon: TrendingUp, color: 'text-indigo-500', bg: 'bg-indigo-50',
     },
     {
       label: 'Monthly Revenue',
-      value: data?.stats?.monthlyRevenue?.value ?? '—',
-      change: data?.stats?.monthlyRevenue?.change ?? '',
-      positive: data?.stats?.monthlyRevenue?.isPositive ?? true,
-      icon: TrendingUp, color: 'text-emerald-500', bg: 'bg-emerald-50',
+      stat: data?.stats?.monthlyRevenue,
+      icon: BarChart3, color: 'text-emerald-500', bg: 'bg-emerald-50',
     },
     {
       label: 'Active Spaces',
-      value: data?.stats?.activeSpaces?.value ?? '—',
-      change: data?.stats?.activeSpaces?.change ?? '',
-      positive: data?.stats?.activeSpaces?.isPositive ?? true,
-      icon: MapPin, color: 'text-blue-500', bg: 'bg-blue-50',
+      stat: data?.stats?.activeSpaces,
+      icon: MapPin, color: 'text-amber-500', bg: 'bg-amber-50',
     },
     {
       label: 'Live Sessions',
-      value: data?.stats?.liveSessions?.value ?? '—',
-      change: data?.stats?.liveSessions?.change ?? '',
-      positive: data?.stats?.liveSessions?.isPositive ?? true,
+      stat: data?.stats?.liveSessions,
       icon: Calendar, color: 'text-rose-500', bg: 'bg-rose-50',
     },
   ];
@@ -128,9 +132,13 @@ export default function AnalyticsPage() {
               </button>
             ))}
           </div>
-          <button className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-xl font-medium hover:bg-gray-50 transition-colors shadow-sm">
-            <Download size={18} />
-            Export
+          <button
+            onClick={handleExport}
+            disabled={exporting}
+            className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-xl font-medium hover:bg-gray-50 transition-colors shadow-sm disabled:opacity-60"
+          >
+            {exporting ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
+            {exporting ? 'Exporting…' : 'Export'}
           </button>
         </div>
       </motion.div>
@@ -162,15 +170,15 @@ export default function AnalyticsPage() {
                   <div className={`p-3 rounded-2xl ${stat.bg}`}>
                     <stat.icon size={22} className={stat.color} />
                   </div>
-                  {stat.change && (
-                    <span className={`flex items-center gap-1 text-sm font-semibold ${stat.positive ? 'text-emerald-600' : 'text-rose-600'}`}>
-                      {stat.positive ? <ArrowUpRight size={16} /> : <ArrowDownRight size={16} />}
-                      {stat.change}
+                  {stat.stat?.change && (
+                    <span className={`flex items-center gap-1 text-sm font-semibold ${stat.stat.isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {stat.stat.isPositive ? <ArrowUpRight size={16} /> : <ArrowDownRight size={16} />}
+                      {stat.stat.change}
                     </span>
                   )}
                 </div>
                 <h3 className="text-gray-500 text-sm font-medium mb-1">{stat.label}</h3>
-                <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
+                <p className="text-2xl font-bold text-gray-900">{stat.stat?.value ?? '—'}</p>
               </motion.div>
             ))}
           </div>

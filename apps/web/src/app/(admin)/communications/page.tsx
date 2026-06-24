@@ -8,8 +8,8 @@ import {
 } from 'lucide-react';
 import { io as createSocket } from 'socket.io-client';
 import { adminApi } from '@/services/api';
-
-const SOCKET_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api').replace(/\/api\/?$/, '');
+import { useAuthStore } from '@/store/authStore';
+import { SOCKET_URL } from '@/lib/config';
 
 type Audience = 'ALL' | 'PARKERS' | 'OWNERS';
 type Category = 'GENERAL' | 'BOOKING' | 'PAYMENT' | 'SPACE' | 'SUPPORT' | 'SYSTEM';
@@ -35,6 +35,7 @@ export default function CommunicationsPage() {
   const [history, setHistory] = useState<BroadcastItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   const fetchHistory = useCallback(async () => {
     try {
@@ -53,16 +54,20 @@ export default function CommunicationsPage() {
   }, [fetchHistory]);
 
   useEffect(() => {
-    const socket = createSocket(SOCKET_URL, { transports: ['websocket'] });
+    const socket = createSocket(SOCKET_URL, { transports: ['websocket'], auth: { token: useAuthStore.getState().token } });
     socket.on('connect', () => socket.emit('admin:join'));
+    // 'broadcast:new' is emitted to the admin_users room (admin.controller.ts).
+    // 'notification:new' is only emitted to individual user rooms, never to admins,
+    // so it was removed as a dead listener.
     socket.on('broadcast:new', fetchHistory);
-    socket.on('notification:new', fetchHistory);
     return () => { socket.disconnect(); };
   }, [fetchHistory]);
 
   const handleSend = async () => {
+    setError('');
+    setSuccess('');
     if (!messageTitle.trim() || !messageBody.trim()) {
-      alert('Title and message are required.');
+      setError('Title and message are required.');
       return;
     }
     try {
@@ -73,12 +78,12 @@ export default function CommunicationsPage() {
         audience,
         category,
       });
-      alert(`Broadcast sent to ${res?.sent ?? 0} recipient(s).`);
+      setSuccess(`Broadcast sent to ${res?.sent ?? 0} recipient(s).`);
       setMessageTitle('');
       setMessageBody('');
       fetchHistory();
     } catch (e: any) {
-      alert(e?.response?.data?.error || e?.message || 'Failed to send broadcast');
+      setError(e?.response?.data?.error || e?.message || 'Failed to send broadcast');
     } finally {
       setSending(false);
     }
@@ -113,6 +118,13 @@ export default function CommunicationsPage() {
         </div>
       )}
 
+      {success && (
+        <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-xl">
+          <CheckCircle2 size={18} />
+          <span className="text-sm">{success}</span>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Compose Section */}
         <motion.div
@@ -128,21 +140,30 @@ export default function CommunicationsPage() {
               <label className="block text-sm font-medium text-gray-700 mb-2">Message Type</label>
               <div className="flex flex-wrap gap-3">
                 {[
-                  { id: 'push', label: 'Push Notification', icon: Bell },
-                  { id: 'email', label: 'Email', icon: Mail },
-                  { id: 'sms', label: 'SMS', icon: MessageSquare },
+                  { id: 'push', label: 'Push Notification', icon: Bell, available: true },
+                  { id: 'email', label: 'Email', icon: Mail, available: false },
+                  { id: 'sms', label: 'SMS', icon: MessageSquare, available: false },
                 ].map(type => (
                   <button
                     key={type.id}
-                    onClick={() => setActiveType(type.id)}
-                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-medium transition-all ${
-                      activeType === type.id
-                        ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                        : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                    onClick={() => type.available && setActiveType(type.id)}
+                    disabled={!type.available}
+                    title={type.available ? undefined : `${type.label} delivery is not yet available — coming soon`}
+                    className={`relative flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-medium transition-all ${
+                      !type.available
+                        ? 'border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed'
+                        : activeType === type.id
+                          ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                          : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
                     }`}
                   >
                     <type.icon size={18} />
                     {type.label}
+                    {!type.available && (
+                      <span className="ml-1 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-gray-200 text-gray-500">
+                        Coming soon
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -212,10 +233,14 @@ export default function CommunicationsPage() {
               </button>
               <button
                 disabled
+                title="Scheduled sending is coming soon"
                 className="flex items-center justify-center gap-2 bg-white text-gray-400 border border-gray-200 px-6 py-3 rounded-xl font-semibold cursor-not-allowed"
               >
                 <Clock size={18} />
                 Schedule
+                <span className="ml-1 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-gray-200 text-gray-500">
+                  Soon
+                </span>
               </button>
             </div>
           </div>

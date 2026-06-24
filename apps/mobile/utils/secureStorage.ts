@@ -50,12 +50,14 @@ export async function getRefreshToken(): Promise<string | null> {
 }
 
 /**
- * Check if token is about to expire (within 1 minute)
+ * Check if token is about to expire (within 1 minute).
+ * This is a "refresh me soon" signal — it does NOT mean the token is unusable.
+ * Used by the API layer to proactively refresh before the token actually dies.
  */
 export async function isTokenExpiringSoon(): Promise<boolean> {
   try {
     const expiryTimeStr = await SecureStore.getItemAsync(TOKEN_EXPIRY_KEY);
-    if (!expiryTimeStr) return true; // No expiry time, consider expired
+    if (!expiryTimeStr) return true; // No expiry time, consider expiring (refresh)
 
     const expiryTime = parseInt(expiryTimeStr, 10);
     const now = Date.now();
@@ -65,22 +67,44 @@ export async function isTokenExpiringSoon(): Promise<boolean> {
     return timeUntilExpiry < 60 * 1000;
   } catch (error) {
     console.error('[SecureStorage] Failed to check token expiry:', error);
-    return true; // On error, consider expired
+    return true; // On error, consider expiring (refresh)
   }
 }
 
 /**
- * Retrieve authentication token
- * Automatically clears expired tokens to prevent stale token issues
+ * Check if the token is ACTUALLY expired (past its expiry time).
+ * Unlike isTokenExpiringSoon(), a still-valid token returns false even if it's
+ * within the refresh window — so we never wipe a usable token.
+ */
+async function isTokenExpired(): Promise<boolean> {
+  try {
+    const expiryTimeStr = await SecureStore.getItemAsync(TOKEN_EXPIRY_KEY);
+    // No recorded expiry → we can't prove it's expired; treat as still valid and
+    // let the refresh/401 paths handle recovery instead of deleting blindly.
+    if (!expiryTimeStr) return false;
+
+    const expiryTime = parseInt(expiryTimeStr, 10);
+    return Date.now() >= expiryTime;
+  } catch (error) {
+    console.error('[SecureStorage] Failed to check token expiry:', error);
+    return false; // On error, don't destroy auth — let request-level 401 handle it
+  }
+}
+
+/**
+ * Retrieve authentication token.
+ * Only clears auth when the token is TRULY expired (past expiry), not merely
+ * "expiring soon" — the soon signal drives proactive refresh elsewhere.
  */
 export async function getAuthToken(): Promise<string | null> {
   try {
     const token = await SecureStore.getItemAsync(TOKEN_KEY);
     if (!token) return null;
 
-    // Check if token is expired
-    const isExpired = await isTokenExpiringSoon();
-    if (isExpired) {
+    // Only clear when the token is actually past its expiry. A token that is
+    // merely "expiring soon" is still valid and should be returned so the
+    // refresh path can swap it before it dies.
+    if (await isTokenExpired()) {
       if (__DEV__) console.log('[SecureStorage] Token expired, clearing auth data');
       await clearAuthData();
       return null;

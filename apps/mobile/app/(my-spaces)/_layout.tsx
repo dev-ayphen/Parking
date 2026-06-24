@@ -1,12 +1,13 @@
-import { Tabs } from 'expo-router';
+import { Tabs, Redirect } from 'expo-router';
 import { useTheme } from '../../hooks/useTheme';
-import { Home, MapPin, CheckCircle, Clock, ClipboardList } from 'lucide-react-native';
+import { useAuthStore } from '../../store/authStore';
+import { LayoutDashboard, Building2, CheckCircle, Clock, ClipboardList } from 'lucide-react-native';
 import { Platform, View, TouchableOpacity, StyleSheet } from 'react-native';
 import { Colors, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 
 // Full-screen action pages that should hide the entire tab bar (so their
 // footer buttons aren't covered by the floating nav).
-const FULLSCREEN_ROUTES = ['booking-request', 'exit-verification', 'analytics', 'manage-subscription', 'bookings'];
+const FULLSCREEN_ROUTES = ['booking-request', 'exit-verification', 'analytics', 'manage-subscription', 'billing-history'];
 
 // Floating tab-bar geometry lives in constants/tabBar.ts so the global
 // SessionBar can clear the bar without importing this route module. The styles
@@ -51,8 +52,8 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
           const color = isFocused ? Colors.white : Colors.textMuted;
           const strokeWidth = isFocused ? 2.5 : 2;
 
-          if (route.name === 'index') icon = <Home size={22} color={color} strokeWidth={strokeWidth} />;
-          if (route.name === 'spaces') icon = <MapPin size={22} color={color} strokeWidth={strokeWidth} />;
+          if (route.name === 'index') icon = <LayoutDashboard size={22} color={color} strokeWidth={strokeWidth} />;
+          if (route.name === 'spaces') icon = <Building2 size={22} color={color} strokeWidth={strokeWidth} />;
           if (route.name === 'active') icon = <Clock size={22} color={color} strokeWidth={strokeWidth} />;
           if (route.name === 'history') icon = <ClipboardList size={22} color={color} strokeWidth={strokeWidth} />;
 
@@ -64,8 +65,8 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
                 activeOpacity={0.8}
                 style={styles.verifyButtonWrapper}
               >
-                <View style={styles.verifyButton}>
-                  <CheckCircle size={28} color={Colors.white} strokeWidth={2.5} />
+                <View style={[styles.verifyButton, !isFocused && styles.verifyButtonInactive]}>
+                  <CheckCircle size={28} color={isFocused ? Colors.white : Colors.primary} strokeWidth={isFocused ? 2.5 : 2} />
                 </View>
               </TouchableOpacity>
             );
@@ -88,6 +89,13 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
 
 export default function MySpacesLayout() {
   const theme = useTheme();
+  const isHydrated = useAuthStore((s) => s.isHydrated);
+  const token = useAuthStore((s) => s.token);
+  const user = useAuthStore((s) => s.user);
+
+  // Wait for hydration before deciding (no flicker), then guard on missing auth.
+  if (!isHydrated) return null;
+  if (!token || !user) return <Redirect href="/(auth)/login" />;
 
   return (
     <Tabs
@@ -103,11 +111,10 @@ export default function MySpacesLayout() {
       <Tabs.Screen name="history" options={{ title: 'History' }} />
 
       {/* Hide other screens from the tab bar */}
-      <Tabs.Screen name="bookings" options={{ href: null }} />
       <Tabs.Screen name="analytics" options={{ href: null }} />
       <Tabs.Screen name="manage-subscription" options={{ href: null }} />
       <Tabs.Screen name="subscription-plans" options={{ href: null }} />
-      <Tabs.Screen name="live-sessions" options={{ href: null }} />
+      <Tabs.Screen name="billing-history" options={{ href: null }} />
       <Tabs.Screen name="exit-verification" options={{ href: null }} />
       <Tabs.Screen name="booking-request" options={{ href: null }} />
       <Tabs.Screen name="recent-requests" options={{ href: null }} />
@@ -164,13 +171,19 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: -32, // Pop out above the tab bar
+    marginTop: -32,
     borderWidth: 4,
-    borderColor: Colors.screenBg, // Pseudo-cutout blending with the main background
+    borderColor: Colors.screenBg,
     shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
     shadowRadius: 8,
     elevation: 8,
-  }
+  },
+  verifyButtonInactive: {
+    backgroundColor: '#2D3748',
+    borderColor: Colors.primary,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
 });

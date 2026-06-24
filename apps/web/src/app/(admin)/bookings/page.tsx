@@ -3,18 +3,18 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Calendar, Search, Filter, Eye, Download,
+  Calendar, Search, Eye, Download,
   Clock, CheckCircle2, XCircle, ChevronLeft, ChevronRight,
-  Car, Loader2, X, MapPin, Phone, Mail, User, CreditCard, Bell, Shield, AlertCircle,
+  Car, Loader2, X, MapPin, Phone, Mail, User, Bell, Shield, AlertCircle,
 } from 'lucide-react';
 import { io as createSocket } from 'socket.io-client';
 import { adminApi } from '@/services/api';
+import { useAuthStore } from '@/store/authStore';
+import { SOCKET_URL } from '@/lib/config';
 import { exportCsv } from '@/lib/download';
 import { TableSkeleton } from '@/components/Skeleton';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import Link from 'next/link';
-
-const SOCKET_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api').replace(/\/api\/?$/, '');
 
 interface AdminBooking {
   id: string;
@@ -43,7 +43,7 @@ interface BookingConsent {
 }
 
 interface BookingDetails {
-  id: number;
+  id: string; // booking cuid (Booking.id)
   displayId: string;
   status: string;
   rawStatus: string;
@@ -104,6 +104,7 @@ export default function BookingsPage() {
   const debouncedSearch = useDebouncedValue(search, 400);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [actionError, setActionError] = useState('');
   const [viewingBooking, setViewingBooking] = useState<BookingDetails | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -133,7 +134,7 @@ export default function BookingsPage() {
 
   // Real-time booking updates via socket.io
   useEffect(() => {
-    const socket = createSocket(SOCKET_URL, { transports: ['websocket'] });
+    const socket = createSocket(SOCKET_URL, { transports: ['websocket'], auth: { token: useAuthStore.getState().token } });
     socket.on('connect', () => socket.emit('admin:join'));
 
     socket.on('booking:new', (payload: any) => {
@@ -159,11 +160,12 @@ export default function BookingsPage() {
 
   const handleViewBooking = async (rawId: string) => {
     setLoadingDetails(true);
+    setActionError('');
     try {
       const res = await adminApi.getBookingDetails(rawId);
       setViewingBooking(res.booking);
     } catch (e: any) {
-      alert(e?.response?.data?.error || e?.message || 'Failed to load booking details');
+      setActionError(e?.response?.data?.error || e?.message || 'Failed to load booking details');
     } finally {
       setLoadingDetails(false);
     }
@@ -199,6 +201,13 @@ export default function BookingsPage() {
         </div>
       </div>
 
+      {actionError && (
+        <div className="flex items-center justify-between gap-3 bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl">
+          <span className="text-sm">{actionError}</span>
+          <button onClick={() => setActionError('')} className="text-rose-400 hover:text-rose-600"><X size={16} /></button>
+        </div>
+      )}
+
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -233,9 +242,6 @@ export default function BookingsPage() {
                 className="pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all w-64"
               />
             </div>
-            <button className="p-2 border border-gray-200 text-gray-600 rounded-xl hover:bg-gray-50 transition-colors">
-              <Filter size={18} />
-            </button>
           </div>
         </div>
 
@@ -317,7 +323,7 @@ export default function BookingsPage() {
                           <Eye size={14} /> View
                         </button>
                         <Link
-                          href={`/cases/${booking.id}`}
+                          href={`/cases/${booking.rawId}`}
                           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors"
                           title="Open full case evidence bundle"
                         >
@@ -435,11 +441,11 @@ function BookingDetailsModal({ booking, onClose }: { booking: BookingDetails; on
 
   useEffect(() => {
     if (!booking.consent && loadingConsent) {
-      // Try to fetch from API, but fail gracefully if endpoint doesn't exist yet
-      fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api'}/bookings/${booking.displayId}/consent`)
-        .then(r => r.json())
-        .then(d => {
-          if (d.success && d.consent) setConsent(d.consent);
+      // Fetch via the authenticated client, keyed on the booking's cuid (booking.id),
+      // not the human display id. Fail gracefully if there's no consent record.
+      adminApi.getBookingConsent(String(booking.id))
+        .then((d) => {
+          if (d?.success && d.consent) setConsent(d.consent);
           setLoadingConsent(false);
         })
         .catch(() => setLoadingConsent(false));

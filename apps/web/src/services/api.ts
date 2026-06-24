@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { useAuthStore } from '@/store/authStore';
+import { API_BASE } from '@/lib/config';
 import type {
   AdminUserListResponse,
   AdminUserDetails,
@@ -10,10 +11,8 @@ import type {
   SidebarCountsResponse,
 } from '@/types/api';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api';
-
 const apiClient = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: API_BASE,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -53,88 +52,9 @@ apiClient.interceptors.response.use(
   }
 );
 
-export const spaceApi = {
-  // Get all spaces with filters
-  getAllSpaces: async (filters?: { status?: string; search?: string }) => {
-    const response = await apiClient.get('/spaces', {
-      params: filters,
-    });
-    // Return formatted spaces with all required fields
-    const spaces = response.data.data || [];
-    return spaces.map((space: any) => ({
-      id: space.id,
-      name: space.name,
-      spaceType: space.spaceType,
-      parkingFor: space.parkingFor,
-      capacity: space.capacity,
-      address: space.address,
-      landmark: space.landmark,
-      latitude: space.lat,
-      longitude: space.lng,
-      hourlyRate: space.hourlyRate,
-      availability: space.availability,
-      amenities: space.amenities || [],
-      visibility: space.visibility,
-      docType: space.docType,
-      frontPhoto: !!space.frontPhotoUrl,
-      areaPhoto: !!space.areaPhotoUrl,
-      frontPhotoUrl: space.frontPhotoUrl || null,
-      areaPhotoUrl: space.areaPhotoUrl || null,
-      status: space.status,
-      rejectionReason: space.rejectionReason,
-      owner: space.owner || {},
-      createdAt: space.createdAt,
-      updatedAt: space.updatedAt,
-    }));
-  },
-
-  // Approve a space
-  approveSpace: async (spaceId: number) => {
-    const response = await apiClient.patch(`/spaces/${spaceId}/approve`);
-    return response.data;
-  },
-
-  // Reject a space
-  rejectSpace: async (spaceId: number, reason: string) => {
-    const response = await apiClient.patch(`/spaces/${spaceId}/reject`, { reason });
-    return response.data;
-  },
-
-  // Get single space with full details
-  getSpace: async (spaceId: number) => {
-    const response = await apiClient.get(`/spaces/${spaceId}`);
-    const space = response.data;
-    return {
-      id: space.id,
-      name: space.name,
-      spaceType: space.spaceType,
-      parkingFor: space.parkingFor,
-      capacity: space.capacity,
-      address: space.address,
-      landmark: space.landmark,
-      latitude: space.lat,
-      longitude: space.lng,
-      hourlyRate: space.hourlyRate,
-      availability: space.availability,
-      amenities: space.amenities || [],
-      visibility: space.visibility,
-      docType: space.docType,
-      frontPhoto: !!space.frontPhotoUrl,
-      areaPhoto: !!space.areaPhotoUrl,
-      frontPhotoUrl: space.frontPhotoUrl || null,
-      areaPhotoUrl: space.areaPhotoUrl || null,
-      status: space.status,
-      rejectionReason: space.rejectionReason,
-      owner: space.owner || {},
-      createdAt: space.createdAt,
-      updatedAt: space.updatedAt,
-    };
-  },
-};
-
 export const adminApi = {
-  getOverview: async () => {
-    const res = await apiClient.get('/admin/analytics/overview');
+  getOverview: async (range?: string) => {
+    const res = await apiClient.get('/admin/analytics/overview', { params: range ? { range } : undefined });
     return res.data;
   },
 
@@ -183,8 +103,24 @@ export const adminApi = {
     return res.data;
   },
 
+  // Soft request: ask the owner to upload a specific document (no status change).
+  requestSpaceDocument: async (spaceId: number, documentLabel: string, message?: string) => {
+    const res = await apiClient.put(`/admin/spaces/${spaceId}/request-document`, { documentLabel, message });
+    return res.data;
+  },
+
+  getSpaceForAdmin: async (spaceId: number) => {
+    const res = await apiClient.get(`/admin/spaces/${spaceId}`);
+    return res.data;
+  },
+
   blockSpace: async (spaceId: number) => {
     const res = await apiClient.put(`/admin/spaces/${spaceId}/block`);
+    return res.data;
+  },
+
+  unblockSpace: async (spaceId: number) => {
+    const res = await apiClient.put(`/admin/spaces/${spaceId}/unblock`);
     return res.data;
   },
 
@@ -195,6 +131,13 @@ export const adminApi = {
 
   getBookingDetails: async (bookingId: string) => {
     const res = await apiClient.get(`/admin/bookings/${bookingId}`);
+    return res.data;
+  },
+
+  // Booking consent snapshot — keyed on the booking's cuid (Booking.id), via the
+  // authenticated client so the request carries the admin token.
+  getBookingConsent: async (bookingId: string) => {
+    const res = await apiClient.get(`/bookings/${bookingId}/consent`);
     return res.data;
   },
 
@@ -296,6 +239,13 @@ export const adminApi = {
     return res.data;
   },
 
+  getSubscriptionAnalytics: async () => (await apiClient.get('/admin/subscriptions/analytics')).data,
+  getSubscriptionDetail: async (id: number) => (await apiClient.get(`/admin/subscriptions/${id}`)).data,
+  suspendSubscription: async (id: number, reason?: string) => (await apiClient.put(`/admin/subscriptions/${id}/suspend`, { reason })).data,
+  reactivateSubscription: async (id: number) => (await apiClient.put(`/admin/subscriptions/${id}/reactivate`)).data,
+  extendSubscription: async (id: number, days: number) => (await apiClient.put(`/admin/subscriptions/${id}/extend`, { days })).data,
+  forceCancelSubscription: async (id: number, reason?: string) => (await apiClient.put(`/admin/subscriptions/${id}/force-cancel`, { reason })).data,
+
   listSubscriptionPlans: async () => {
     const res = await apiClient.get('/admin/subscription-plans');
     return res.data;
@@ -310,6 +260,11 @@ export const adminApi = {
     iconKey?: string;
     colorKey?: string;
     isActive?: boolean;
+    maxSpaces?: number;
+    hasAnalytics?: boolean;
+    hasFeaturedListing?: boolean;
+    hasCsvExport?: boolean;
+    hasPrioritySupport?: boolean;
   }) => {
     const res = await apiClient.put(`/admin/subscription-plans/${planId}`, data);
     return res.data;
@@ -320,7 +275,7 @@ export const adminApi = {
     return res.data;
   },
 
-  listSupportTickets: async (params?: { status?: string; priority?: string; category?: string; search?: string; page?: number; limit?: number }) => {
+  listSupportTickets: async (params?: { status?: string; priority?: string; category?: string; search?: string; page?: number; limit?: number; assigned?: 'mine' | 'unassigned' }) => {
     const res = await apiClient.get('/admin/support', { params });
     return res.data;
   },
@@ -340,6 +295,11 @@ export const adminApi = {
     return res.data;
   },
 
+  assignSupportTicket: async (ticketId: number, adminId: 'me' | number | null) => {
+    const res = await apiClient.put(`/admin/support/${ticketId}/assign`, { adminId });
+    return res.data;
+  },
+
   // Sidebar badge counts — fetched on mount + refreshed via socket events
   getSidebarCounts: async (): Promise<SidebarCountsResponse> => {
     const res = await apiClient.get('/admin/sidebar-counts');
@@ -347,7 +307,7 @@ export const adminApi = {
   },
 
   // Abuse reports — moderation / disputes
-  listAbuseReports: async (params?: { status?: string; page?: number }) => {
+  listAbuseReports: async (params?: { status?: string; page?: number; search?: string }) => {
     const res = await apiClient.get('/admin/abuse-reports', { params });
     return res.data;
   },
@@ -397,13 +357,19 @@ export const adminApi = {
   },
 
   // Incident reports — parker-reported parking incidents
-  listIncidents: async (params?: { status?: string; search?: string; page?: number }) => {
+  listIncidents: async (params?: { status?: string; search?: string; page?: number; reportType?: string }) => {
     const res = await apiClient.get('/incidents', { params });
     return res.data;
   },
 
   updateIncidentStatus: async (id: number, data: { status: string; adminNotes?: string }) => {
     const res = await apiClient.put(`/incidents/${id}/status`, data);
+    return res.data;
+  },
+
+  // Signed URL for a vehicle's RC-book document (admin user detail view).
+  getVehicleRcBookUrl: async (vehicleId: number) => {
+    const res = await apiClient.get(`/admin/vehicles/${vehicleId}/rcbook-url`);
     return res.data;
   },
 };

@@ -51,7 +51,6 @@ export const vehicleController = {
   listVehicles: async (req: Request, res: Response) => {
     try {
       const userId = req.user?.id;
-      console.log('🔍 [VEHICLE_LIST] Request received - userId:', userId, 'headers:', req.headers);
 
       if (!userId) {
         return res.status(401).json({
@@ -61,7 +60,6 @@ export const vehicleController = {
       }
 
       const result = await vehicleService.listVehicles(userId);
-      console.log('✅ [VEHICLE_LIST] Returning:', result);
       return res.status(200).json(result);
     } catch (error) {
       console.error('[VEHICLE] List error:', error);
@@ -178,6 +176,29 @@ export const vehicleController = {
       return res.status(400).json({
         success: false,
         error: (error as Error).message || 'Failed to delete vehicle',
+      });
+    }
+  },
+
+  setDefaultVehicle: async (req: Request, res: Response) => {
+    try {
+      const userId = req.user?.id;
+      const vehicleId = parseInt(req.params.id);
+
+      if (!userId) {
+        return res.status(401).json({ success: false, error: 'User not authenticated' });
+      }
+      if (!vehicleId || isNaN(vehicleId)) {
+        return res.status(400).json({ success: false, error: 'Invalid vehicle ID' });
+      }
+
+      const result = await vehicleService.setDefaultVehicle(vehicleId, userId);
+      return res.status(200).json(result);
+    } catch (error) {
+      console.error('[VEHICLE] Set default error:', error);
+      return res.status(400).json({
+        success: false,
+        error: (error as Error).message || 'Failed to set default vehicle',
       });
     }
   },

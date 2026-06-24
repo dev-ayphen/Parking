@@ -13,7 +13,7 @@ import {View,
 import { toast } from '../../../utils/toast';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
+import { pickMedia } from '../../../utils/pickMedia';
 import { Paperclip, ChevronDown, CheckCircle2, X } from 'lucide-react-native';
 import PageHeader from '../../../components/PageHeader';
 import ReportSubmitted from '../../../components/ReportSubmitted';
@@ -77,17 +77,9 @@ export default function CreateTicketScreen() {
 
   const handlePickAttachment = async () => {
     try {
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) {
-        toast.info('Allow photo access to attach a screenshot.');
-        return;
-      }
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality: 0.8,
-      });
-      if (result.canceled || !result.assets?.[0]) return;
-      setAttachments((prev) => [...prev, result.assets[0].uri].slice(0, 5));
+      const asset = await pickMedia({ allowsEditing: false });
+      if (!asset) return;
+      setAttachments((prev) => [...prev, asset.uri].slice(0, 5));
     } catch {
       toast.error('Failed to pick file');
     }
@@ -124,6 +116,9 @@ export default function CreateTicketScreen() {
         description: description.trim(),
         category: category.value,
         priority: priority.value,
+        contactName: name.trim() || undefined,
+        contactEmail: email.trim() || undefined,
+        contactPhone: mobile.trim() || undefined,
         attachmentUrls,
       });
       if (!json.success) {
@@ -133,7 +128,18 @@ export default function CreateTicketScreen() {
       setSubmittedRef(json.ticket.ticketNumber || 'SUP-PENDING');
       setSubmittedAt(json.ticket.createdAt || new Date().toISOString());
     } catch (e: any) {
-      toast.error(e?.message || 'Network error');
+      // api.post throws an ApiError on non-2xx. For rate limits (429) and
+      // validation errors (400) the server's message is carried on e.message
+      // (set to the response body's `error`), so prefer that. Only fall back to
+      // a generic message for genuine network/timeout failures.
+      const status: number | undefined = e?.status;
+      const isClientError = typeof status === 'number' && status >= 400 && status < 500;
+      const serverMessage: string | undefined = e?.message;
+      if (isClientError && serverMessage) {
+        toast.error(serverMessage);
+      } else {
+        toast.error(serverMessage || 'Network error');
+      }
     } finally {
       setSubmitting(false);
     }

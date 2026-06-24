@@ -5,8 +5,9 @@ import { motion } from 'framer-motion';
 import { io as createSocket } from 'socket.io-client';
 import { Flag, Loader2, Calendar, AlertCircle, ChevronLeft, ChevronRight, X, Check } from 'lucide-react';
 import { adminApi } from '@/services/api';
-
-const SOCKET_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api').replace(/\/api\/?$/, '');
+import { useAuthStore } from '@/store/authStore';
+import { SOCKET_URL } from '@/lib/config';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 
 interface AbuseReport {
   id: number;
@@ -56,6 +57,7 @@ export default function AbuseReportsPage() {
   const [reports, setReports] = useState<AbuseReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 400);
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -66,12 +68,14 @@ export default function AbuseReportsPage() {
   const [actionValue, setActionValue] = useState('WARNING_ISSUED');
   const [adminNote, setAdminNote] = useState('');
   const [suspendUntil, setSuspendUntil] = useState('');
+  const [banConfirm, setBanConfirm] = useState('');
   const [actioning, setActioning] = useState(false);
+  const [actionError, setActionError] = useState('');
 
   const fetchReports = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await adminApi.listAbuseReports({ status: statusFilter || undefined, page });
+      const data = await adminApi.listAbuseReports({ status: statusFilter || undefined, search: debouncedSearch || undefined, page });
       if (data.success) {
         setReports(data.reports || []);
         setTotal(data.total || 0);
@@ -82,13 +86,13 @@ export default function AbuseReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, page]);
+  }, [statusFilter, debouncedSearch, page]);
 
   useEffect(() => { fetchReports(); }, [fetchReports]);
 
   // Live-refresh when a new abuse report comes in.
   useEffect(() => {
-    const socket = createSocket(SOCKET_URL, { transports: ['websocket'] });
+    const socket = createSocket(SOCKET_URL, { transports: ['websocket'], auth: { token: useAuthStore.getState().token } });
     socket.on('connect', () => socket.emit('admin:join'));
     socket.on('abuse:new', () => fetchReports());
     return () => { socket.disconnect(); };
@@ -96,8 +100,14 @@ export default function AbuseReportsPage() {
 
   const handleAction = async () => {
     if (!actionReport) return;
+    // Permanent ban needs an explicit typed confirmation (mirrors the Users-page Ban modal).
+    if (actionValue === 'BANNED' && banConfirm !== 'BAN') {
+      setActionError('Type BAN to confirm the permanent ban.');
+      return;
+    }
     try {
       setActioning(true);
+      setActionError('');
       await adminApi.actionAbuseReport(actionReport.id, {
         action: actionValue,
         adminAction: adminNote,
@@ -106,19 +116,14 @@ export default function AbuseReportsPage() {
       setActionReport(null);
       setAdminNote('');
       setSuspendUntil('');
+      setBanConfirm('');
       fetchReports();
     } catch (e: any) {
-      if (process.env.NODE_ENV === 'development') console.error('Action failed:', e);
+      setActionError(e?.response?.data?.error || e?.message || 'Failed to apply action');
     } finally {
       setActioning(false);
     }
   };
-
-  const filtered = reports.filter(r => {
-    if (!search) return true;
-    const name = `${r.reportedUser.firstName} ${r.reportedUser.lastName}`.toLowerCase();
-    return name.includes(search.toLowerCase()) || r.reportedUser.phone.includes(search);
-  });
 
   const bannedCount = reports.filter(r => r.permanentlyBanned).length;
   const suspendedCount = reports.filter(r => r.suspendedUntil && new Date(r.suspendedUntil) > new Date()).length;
@@ -146,7 +151,7 @@ export default function AbuseReportsPage() {
       {/* Filters */}
       <div className="bg-white rounded-2xl border border-gray-100 p-4 flex flex-wrap gap-3">
         <input type="text" placeholder="Search by name or phone..."
-          value={search} onChange={e => setSearch(e.target.value)}
+          value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
           className="flex-1 min-w-[220px] px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20" />
         <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
           className="px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none">
@@ -161,7 +166,7 @@ export default function AbuseReportsPage() {
           <div className="flex items-center justify-center py-16">
             <Loader2 className="animate-spin text-red-600" size={32} />
           </div>
-        ) : filtered.length === 0 ? (
+        ) : reports.length === 0 ? (
           <div className="p-12 text-center">
             <Flag className="mx-auto text-gray-400 mb-3" size={32} />
             <p className="text-gray-500 text-sm">No abuse reports found.</p>
@@ -180,7 +185,7 @@ export default function AbuseReportsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filtered.map(r => (
+                {reports.map(r => (
                   <tr key={r.id} className="hover:bg-gray-50/50 transition-colors">
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
@@ -221,7 +226,7 @@ export default function AbuseReportsPage() {
                     <td className="px-5 py-4 text-sm text-gray-600">{fmt(r.createdAt)}</td>
                     <td className="px-5 py-4">
                       {!['RESOLVED', 'DISMISSED', 'BANNED'].includes(r.status) && (
-                        <button onClick={() => { setActionReport(r); setActionValue('WARNING_ISSUED'); setAdminNote(''); setSuspendUntil(''); }}
+                        <button onClick={() => { setActionReport(r); setActionValue('WARNING_ISSUED'); setAdminNote(''); setSuspendUntil(''); setBanConfirm(''); setActionError(''); }}
                           className="text-indigo-600 hover:text-indigo-700 font-semibold text-sm">
                           Take Action
                         </button>
@@ -256,7 +261,7 @@ export default function AbuseReportsPage() {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-gray-900">Take Action</h2>
-              <button onClick={() => setActionReport(null)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => { setActionReport(null); setBanConfirm(''); }} className="text-gray-400 hover:text-gray-600">
                 <X size={20} />
               </button>
             </div>
@@ -266,11 +271,28 @@ export default function AbuseReportsPage() {
             </div>
             <div>
               <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5 block">Action</label>
-              <select value={actionValue} onChange={e => setActionValue(e.target.value)}
+              <select value={actionValue} onChange={e => { setActionValue(e.target.value); setBanConfirm(''); setActionError(''); }}
                 className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
                 {ACTIONS.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
               </select>
             </div>
+            {actionValue === 'BANNED' && (
+              <>
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2">
+                  <AlertCircle size={16} className="text-rose-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-rose-700">
+                    <span className="font-bold">Permanent action.</span> {actionReport.reportedUser.firstName} {actionReport.reportedUser.lastName} will be locked out of the platform indefinitely.
+                  </p>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5 block">
+                    Type <span className="text-rose-600 font-mono">BAN</span> to confirm
+                  </label>
+                  <input type="text" value={banConfirm} onChange={e => setBanConfirm(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500" />
+                </div>
+              </>
+            )}
             {actionValue === 'SUSPENDED_TEMP' && (
               <div>
                 <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5 block">Suspend Until</label>
@@ -284,10 +306,16 @@ export default function AbuseReportsPage() {
                 placeholder="Describe the action taken..."
                 className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none resize-none" />
             </div>
-            <button onClick={handleAction} disabled={actioning || !adminNote.trim()}
-              className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-semibold rounded-xl text-sm flex items-center justify-center gap-2">
+            {actionError && (
+              <div className="bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2 rounded-xl text-sm">{actionError}</div>
+            )}
+            <button onClick={handleAction}
+              disabled={actioning || !adminNote.trim() || (actionValue === 'BANNED' && banConfirm !== 'BAN')}
+              className={`w-full py-2.5 disabled:opacity-50 text-white font-semibold rounded-xl text-sm flex items-center justify-center gap-2 ${
+                actionValue === 'BANNED' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-indigo-600 hover:bg-indigo-700'
+              }`}>
               {actioning ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
-              Confirm Action
+              {actionValue === 'BANNED' ? 'Ban Permanently' : 'Confirm Action'}
             </button>
           </div>
         </div>

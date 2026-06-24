@@ -216,6 +216,32 @@ export const bookingController = {
     }
   },
 
+  selfCompleteBooking: async (req: Request, res: Response) => {
+    try {
+      assertAuth(req);
+      const result = await bookingService.selfCompleteBooking(req.params.id, req.user.id, req);
+      const bookingId = req.params.id;
+      const totalAmount = (result as any)?.booking?.totalAmount;
+      // The parker force-completed the session. Tell the OWNER in realtime so their
+      // open Exit Verification screen can close — the session is already finalized,
+      // so the owner no longer needs to enter an exit time. Also refresh admin.
+      const ownerId = (result as any)?.booking?.ownerId ?? (result as any)?.ownerId;
+      emitToAdmin('bookings', 'booking:update', { bookingId, status: 'COMPLETED' });
+      if (ownerId) {
+        emitToUser(ownerId, 'session:completed', { bookingId, status: 'COMPLETED', totalAmount, byParker: true });
+        await adminService.notifyUser(ownerId, {
+          title: 'Session completed by parker',
+          message: 'The parker completed the parking session because the exit wasn\'t confirmed in time. No action is needed.',
+          category: 'BOOKING',
+          metadata: { bookingId },
+        });
+      }
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
   releaseSpace: async (req: Request, res: Response) => {
     try {
       assertAuth(req);
@@ -372,7 +398,9 @@ export const bookingController = {
 
   recordBookingConsent: async (req: Request, res: Response) => {
     try {
+      assertAuth(req);
       const { id } = req.params;
+      await bookingService.assertConsentAccess(id, { id: req.user.id, role: req.user.role });
       const { verifiedSurroundings, acceptLocalParkingRules, acceptFineResponsibility, acceptPlatformDisclaimer, acceptParkingTerms } = req.body;
       const identity = getRequestIdentity(req);
       const result = await bookingService.recordBookingConsent(id, {
@@ -396,10 +424,12 @@ export const bookingController = {
 
   getBookingConsent: async (req: Request, res: Response) => {
     try {
+      assertAuth(req);
+      await bookingService.assertConsentAccess(req.params.id, { id: req.user.id, role: req.user.role });
       const result = await bookingService.getBookingConsent(req.params.id);
       res.json(result);
     } catch (error) {
-      res.status(404).json({ error: (error as Error).message });
+      sendError(res, error);
     }
   },
 };

@@ -6,6 +6,8 @@ import { logEvent } from '../services/log.service';
 import { sendError, Unauthorized, assertAuth } from '../utils/errors';
 import { getRequestIdentity } from '../utils/requestIdentity';
 import { auditService } from '../services/audit.service';
+import { entitlementService } from '../services/entitlement.service';
+import { availabilityAlertService } from '../services/availabilityAlert.service';
 import { db } from '../config/database';
 
 export const spaceController = {
@@ -186,7 +188,9 @@ export const spaceController = {
       assertAuth(req);
       const spaceId = parseInt(req.params.id);
       const ownerId = req.user.id;
-      const bookings = await spaceService.getSpaceBookings(spaceId, ownerId);
+      const page = req.query.page ? parseInt(req.query.page as string) : 1;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+      const bookings = await spaceService.getSpaceBookings(spaceId, ownerId, { page, limit });
       res.status(200).json({ success: true, bookings });
     } catch (error) {
       sendError(res, error);
@@ -212,6 +216,8 @@ export const spaceController = {
       assertAuth(req);
       const spaceId = parseInt(req.params.id);
       const ownerId = req.user.id;
+      // Analytics is a premium capability — gated on the owner's plan.
+      await entitlementService.assertCapability(ownerId, 'hasAnalytics', 'Analytics');
       const analytics = await spaceService.getSpaceAnalytics(spaceId, ownerId);
       res.status(200).json({ success: true, analytics });
     } catch (error) {
@@ -221,13 +227,24 @@ export const spaceController = {
 
   recordOwnerConsent: async (req: Request, res: Response) => {
     try {
+      assertAuth(req);
       const spaceId = parseInt(req.params.id);
+      if (Number.isNaN(spaceId)) return res.status(400).json({ error: 'Invalid space id' });
+      await spaceService.assertSpaceOwnerAccess(spaceId, { id: req.user.id, role: req.user.role });
       const identity = getRequestIdentity(req);
+      // Whitelist only the consent fields — never spread req.body into the model.
       const result = await spaceService.recordOwnerConsent(spaceId, {
-        ...req.body,
-        userId: req.user?.id ?? null,
+        userId: req.user.id,
         ipAddress: identity.ipAddress,
         userAgent: identity.userAgent,
+        tcVersion: req.body.tcVersion ?? null,
+        acceptOwnerResponsibility: !!req.body.acceptOwnerResponsibility,
+        acceptLegalCompliance: !!req.body.acceptLegalCompliance,
+        acceptPublicObstructionRules: !!req.body.acceptPublicObstructionRules,
+        acceptNonViolationDeclaration: !!req.body.acceptNonViolationDeclaration,
+        nonViolationDeclarationText: req.body.nonViolationDeclarationText ?? null,
+        platform: req.body.platform,
+        appVersion: req.body.appVersion,
       });
       res.json(result);
     } catch (error) {
@@ -257,8 +274,48 @@ export const spaceController = {
 
   getOwnerConsent: async (req: Request, res: Response) => {
     try {
+      assertAuth(req);
       const spaceId = parseInt(req.params.id);
+      if (Number.isNaN(spaceId)) return res.status(400).json({ error: 'Invalid space id' });
+      await spaceService.assertSpaceOwnerAccess(spaceId, { id: req.user.id, role: req.user.role });
       const result = await spaceService.getOwnerConsent(spaceId);
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
+  // ─── "Notify me when available" availability alerts ──────────────────────
+  subscribeAvailabilityAlert: async (req: Request, res: Response) => {
+    try {
+      assertAuth(req);
+      const spaceId = parseInt(req.params.id);
+      if (Number.isNaN(spaceId)) return res.status(400).json({ error: 'Invalid space id' });
+      const result = await availabilityAlertService.subscribe(req.user.id, spaceId);
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
+  unsubscribeAvailabilityAlert: async (req: Request, res: Response) => {
+    try {
+      assertAuth(req);
+      const spaceId = parseInt(req.params.id);
+      if (Number.isNaN(spaceId)) return res.status(400).json({ error: 'Invalid space id' });
+      const result = await availabilityAlertService.unsubscribe(req.user.id, spaceId);
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
+  getAvailabilityAlertStatus: async (req: Request, res: Response) => {
+    try {
+      assertAuth(req);
+      const spaceId = parseInt(req.params.id);
+      if (Number.isNaN(spaceId)) return res.status(400).json({ error: 'Invalid space id' });
+      const result = await availabilityAlertService.getStatus(req.user.id, spaceId);
       res.json(result);
     } catch (error) {
       sendError(res, error);

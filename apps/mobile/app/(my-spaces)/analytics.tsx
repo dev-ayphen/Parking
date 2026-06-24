@@ -6,13 +6,15 @@ import {View,
   ScrollView,
   ActivityIndicator,
   TouchableOpacity,
-  RefreshControl} from 'react-native';
+  RefreshControl,
+  DeviceEventEmitter} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { TrendingUp, TrendingDown, Calendar, Car, Star, CheckCircle2, Clock } from 'lucide-react-native';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { TrendingDown, Calendar, Car, Star, CheckCircle2, Clock } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import PageHeader from '../../components/PageHeader';
 import { api } from '../../services/api';
+import { NETWORK_RECONNECTED } from '../../store/networkStore';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 
 interface Analytics {
@@ -63,6 +65,18 @@ const AnalyticsScreen = () => {
   }, [spaceId]);
 
   useEffect(() => { fetchAnalytics(); }, [fetchAnalytics]);
+
+  useFocusEffect(useCallback(() => {
+    DeviceEventEmitter.emit('sessionbar:suppress', true);
+    return () => { DeviceEventEmitter.emit('sessionbar:suppress', false); };
+  }, []));
+
+  // Re-fetch when connectivity is restored (offline banner's "Retry" / auto-
+  // reconnect) so the analytics aren't left showing stale data.
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(NETWORK_RECONNECTED, () => fetchAnalytics(true));
+    return () => sub.remove();
+  }, [fetchAnalytics]);
 
   if (loading) {
     return (
@@ -212,7 +226,7 @@ const BreakdownRow = ({ icon, bg, label, value }: { icon: React.ReactNode; bg: s
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.screenBg,
+    backgroundColor: Colors.white,
   },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing['3xl'] },
   errorText: { fontSize: FontSize.md, color: Colors.textSecondary, marginBottom: Spacing.xl },

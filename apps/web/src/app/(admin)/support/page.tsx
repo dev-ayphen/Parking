@@ -3,16 +3,21 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Search, Filter, MoreVertical, MessageSquare, X,
+  Search, MoreVertical, MessageSquare, X,
   Loader2, ChevronLeft, ChevronRight, AlertCircle,
   Clock, CheckCircle2, Pause, XCircle, Send,
-  AlertTriangle, Flame, ArrowUpRight,
+  AlertTriangle, Flame, ArrowUpRight, UserPlus, UserMinus,
+  Hourglass, Timer, Save, User as UserIcon, Mail, Phone,
 } from 'lucide-react';
 import { io as createSocket, Socket } from 'socket.io-client';
 import { adminApi } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
+import { SOCKET_URL } from '@/lib/config';
 
-const SOCKET_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api').replace(/\/api\/?$/, '');
+interface Assignee {
+  id: number;
+  name: string;
+}
 
 interface SupportTicket {
   id: number;
@@ -26,6 +31,8 @@ interface SupportTicket {
   replyCount: number;
   createdAt: string;
   updatedAt: string;
+  assignedTo: Assignee | null;
+  slaDueAt: string | null;
 }
 
 interface TicketDetails extends SupportTicket {
@@ -33,7 +40,8 @@ interface TicketDetails extends SupportTicket {
   closedAt: string | null;
   attachmentUrls: string[];
   user: { id: number; name: string; phone: string; email: string | null; role: string } | null;
-  replies: { id: number; message: string; isAdmin: boolean; authorId: number | null; createdAt: string }[];
+  contact: { name: string | null; email: string | null; phone: string | null } | null;
+  replies: { id: number; message: string; isAdmin: boolean; authorId: number | null; authorName: string | null; createdAt: string }[];
 }
 
 interface Stats {
@@ -48,6 +56,7 @@ const tabs = [
   { key: 'All', status: undefined },
   { key: 'Open', status: 'OPEN' },
   { key: 'In Progress', status: 'IN_PROGRESS' },
+  { key: 'Waiting for User', status: 'WAITING_FOR_USER' },
   { key: 'Resolved', status: 'RESOLVED' },
   { key: 'Closed', status: 'CLOSED' },
 ] as const;
@@ -55,9 +64,13 @@ const tabs = [
 const STATUS_STYLES: Record<string, { bg: string; text: string; icon: any; label: string }> = {
   OPEN: { bg: 'bg-amber-50', text: 'text-amber-700', icon: AlertCircle, label: 'Open' },
   IN_PROGRESS: { bg: 'bg-indigo-50', text: 'text-indigo-700', icon: Clock, label: 'In Progress' },
+  WAITING_FOR_USER: { bg: 'bg-orange-50', text: 'text-orange-700', icon: Hourglass, label: 'Waiting for User' },
   RESOLVED: { bg: 'bg-emerald-50', text: 'text-emerald-700', icon: CheckCircle2, label: 'Resolved' },
   CLOSED: { bg: 'bg-gray-100', text: 'text-gray-700', icon: XCircle, label: 'Closed' },
 };
+
+// Safe lookup so a status style is never undefined.
+const getStatusStyle = (status: string) => STATUS_STYLES[status] || STATUS_STYLES.OPEN;
 
 const PRIORITY_STYLES: Record<string, { bg: string; text: string; icon: any; label: string }> = {
   LOW: { bg: 'bg-gray-100', text: 'text-gray-600', icon: ArrowUpRight, label: 'Low' },
@@ -67,14 +80,71 @@ const PRIORITY_STYLES: Record<string, { bg: string; text: string; icon: any; lab
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
-  TECHNICAL: 'Technical',
-  PAYMENT: 'Payment',
+  BOOKING: 'Booking',
+  SPACE_OWNER: 'Space Owner',
+  SUBSCRIPTION: 'Subscription',
   ACCOUNT: 'Account',
+  TECHNICAL: 'Technical',
+  OTHER: 'Other',
+  // Legacy categories (kept so older tickets still render a friendly label)
+  PAYMENT: 'Payment',
   SPACE: 'Space',
   COMPLAINT: 'Complaint',
   FEEDBACK: 'Feedback',
-  OTHER: 'Other',
 };
+
+// Categories offered in the toolbar filter dropdown.
+const CATEGORY_OPTIONS = ['BOOKING', 'SPACE_OWNER', 'SUBSCRIPTION', 'ACCOUNT', 'TECHNICAL', 'OTHER'] as const;
+
+// Assignment filter options → map UI label to the `assigned` query param.
+const ASSIGNED_FILTERS = [
+  { key: 'All Tickets', value: undefined },
+  { key: 'My Tickets', value: 'mine' },
+  { key: 'Unassigned', value: 'unassigned' },
+] as const;
+
+// ──────────────────── SLA helper + badge ────────────────────
+type SlaTone = 'green' | 'amber' | 'red';
+
+// Returns a human-readable SLA label + tone, or null when there is nothing to show
+// (no due date, or the ticket is already resolved/closed).
+function formatSla(slaDueAt: string | null, status: string): { label: string; tone: SlaTone } | null {
+  if (status === 'RESOLVED' || status === 'CLOSED') return null;
+  if (!slaDueAt) return null;
+
+  const diffMs = new Date(slaDueAt).getTime() - Date.now();
+  // Round to whole minutes so we never show seconds or jittery values.
+  const totalMins = Math.round(Math.abs(diffMs) / 60000);
+  const hrs = Math.floor(totalMins / 60);
+  const mins = totalMins % 60;
+
+  // Compose "Xh Ym" (or just "Ym" when under an hour) — never negative.
+  const dur = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+
+  if (diffMs < 0) {
+    return { label: `Overdue by ${dur}`, tone: 'red' };
+  }
+  // Amber once we're inside the last 2 hours, green otherwise.
+  const tone: SlaTone = totalMins <= 120 ? 'amber' : 'green';
+  return { label: `Due in ${dur}`, tone };
+}
+
+const SLA_TONE_STYLES: Record<SlaTone, string> = {
+  green: 'bg-emerald-50 text-emerald-700',
+  amber: 'bg-amber-50 text-amber-700',
+  red: 'bg-rose-50 text-rose-700',
+};
+
+function SlaBadge({ slaDueAt, status, size = 'sm' }: { slaDueAt: string | null; status: string; size?: 'sm' | 'md' }) {
+  const sla = formatSla(slaDueAt, status);
+  if (!sla) return null;
+  const pad = size === 'md' ? 'px-2.5 py-1 text-xs' : 'px-2 py-0.5 text-[11px]';
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full font-bold ${SLA_TONE_STYLES[sla.tone]} ${pad}`}>
+      <Timer size={11} /> {sla.label}
+    </span>
+  );
+}
 
 export default function SupportPage() {
   const [activeTab, setActiveTab] = useState<typeof tabs[number]>(tabs[0]);
@@ -84,6 +154,8 @@ export default function SupportPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [assignedFilter, setAssignedFilter] = useState<typeof ASSIGNED_FILTERS[number]>(ASSIGNED_FILTERS[0]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [menuOpenFor, setMenuOpenFor] = useState<number | null>(null);
@@ -98,6 +170,8 @@ export default function SupportPage() {
       const res = await adminApi.listSupportTickets({
         status: activeTab.status,
         priority: priorityFilter || undefined,
+        category: categoryFilter || undefined,
+        assigned: assignedFilter.value,
         search: search || undefined,
         page,
         limit,
@@ -110,7 +184,7 @@ export default function SupportPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, priorityFilter, search, page]);
+  }, [activeTab, priorityFilter, categoryFilter, assignedFilter, search, page]);
 
   useEffect(() => {
     const t = setTimeout(() => fetchTickets(), 250);
@@ -126,9 +200,14 @@ export default function SupportPage() {
     const socket = createSocket(SOCKET_URL, { transports: ['websocket'], auth: { token } });
     socket.on('connect', () => socket.emit('admin:join'));
     const refresh = () => fetchTickets();
+    // Events the server actually emits to the 'admin_support' room:
+    //  - support.controller.ts: 'support:new' (ticket created),
+    //    'support:new-reply' (user replied), 'support:reopened' (user reopened)
+    //  - admin.controller.ts: 'support:updated' (admin changed status/priority)
     socket.on('support:new', refresh);
     socket.on('support:new-reply', refresh);
     socket.on('support:reopened', refresh);
+    socket.on('support:updated', refresh);
     return () => { socket.disconnect(); };
   }, [fetchTickets]);
 
@@ -143,11 +222,12 @@ export default function SupportPage() {
   const handleView = async (ticket: SupportTicket) => {
     setMenuOpenFor(null);
     setLoadingDetails(true);
+    setError('');
     try {
       const res = await adminApi.getSupportTicket(ticket.id);
       setViewingTicket(res.ticket);
     } catch (e: any) {
-      alert(e?.response?.data?.error || e?.message || 'Failed to load ticket');
+      setError(e?.response?.data?.error || e?.message || 'Failed to load ticket');
     } finally {
       setLoadingDetails(false);
     }
@@ -155,11 +235,12 @@ export default function SupportPage() {
 
   const handleQuickStatus = async (ticket: SupportTicket, newStatus: string) => {
     setMenuOpenFor(null);
+    setError('');
     try {
       await adminApi.updateSupportTicket(ticket.id, { status: newStatus });
       await fetchTickets();
     } catch (e: any) {
-      alert(e?.response?.data?.error || e?.message || 'Failed to update');
+      setError(e?.response?.data?.error || e?.message || 'Failed to update');
     }
   };
 
@@ -207,7 +288,17 @@ export default function SupportPage() {
             ))}
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <select
+              value={categoryFilter}
+              onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
+              className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+            >
+              <option value="">All Categories</option>
+              {CATEGORY_OPTIONS.map((c) => (
+                <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>
+              ))}
+            </select>
             <select
               value={priorityFilter}
               onChange={(e) => { setPriorityFilter(e.target.value); setPage(1); }}
@@ -232,6 +323,24 @@ export default function SupportPage() {
           </div>
         </div>
 
+        {/* Assignment filter */}
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
+          <span className="text-xs font-bold uppercase tracking-wider text-gray-400 mr-1">Assignment:</span>
+          {ASSIGNED_FILTERS.map((f) => (
+            <button
+              key={f.key}
+              onClick={() => { setAssignedFilter(f); setPage(1); }}
+              className={`px-3 py-1.5 text-sm font-semibold rounded-lg transition-all ${
+                assignedFilter.key === f.key
+                  ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50 border border-transparent'
+              }`}
+            >
+              {f.key}
+            </button>
+          ))}
+        </div>
+
         {error && (
           <div className="m-4 p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-sm">{error}</div>
         )}
@@ -250,6 +359,7 @@ export default function SupportPage() {
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 border-b border-gray-100">Category</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 border-b border-gray-100">Priority</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 border-b border-gray-100">Status</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 border-b border-gray-100">Assignee</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 border-b border-gray-100">Replies</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 border-b border-gray-100">Created</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 border-b border-gray-100">Actions</th>
@@ -257,9 +367,9 @@ export default function SupportPage() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {tickets.length === 0 ? (
-                  <tr><td colSpan={8} className="px-6 py-16 text-center text-sm text-gray-400">No tickets found</td></tr>
+                  <tr><td colSpan={9} className="px-6 py-16 text-center text-sm text-gray-400">No tickets found</td></tr>
                 ) : tickets.map((ticket) => {
-                  const status = STATUS_STYLES[ticket.status] || STATUS_STYLES.OPEN;
+                  const status = getStatusStyle(ticket.status);
                   const priority = PRIORITY_STYLES[ticket.priority] || PRIORITY_STYLES.NORMAL;
                   return (
                     <tr key={ticket.id} className="hover:bg-gray-50/50 transition-colors group cursor-pointer" onClick={() => handleView(ticket)}>
@@ -287,10 +397,24 @@ export default function SupportPage() {
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${status.bg} ${status.text}`}>
-                          <status.icon size={12} />
-                          {status.label}
+                        <div className="flex flex-col items-start gap-1.5">
+                          <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${status.bg} ${status.text}`}>
+                            <status.icon size={12} />
+                            {status.label}
+                          </div>
+                          <SlaBadge slaDueAt={ticket.slaDueAt} status={ticket.status} />
                         </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        {ticket.assignedTo ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700">
+                            <UserIcon size={12} /> {ticket.assignedTo.name}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-500">
+                            Unassigned
+                          </span>
+                        )}
                       </td>
                       <td className="px-6 py-4">
                         <div className="inline-flex items-center gap-1 text-sm text-gray-600">
@@ -323,6 +447,11 @@ export default function SupportPage() {
                             {ticket.status !== 'IN_PROGRESS' && (
                               <button onClick={() => handleQuickStatus(ticket, 'IN_PROGRESS')} className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-indigo-700 hover:bg-indigo-50">
                                 <Pause size={14} /> Mark In Progress
+                              </button>
+                            )}
+                            {ticket.status !== 'WAITING_FOR_USER' && (
+                              <button onClick={() => handleQuickStatus(ticket, 'WAITING_FOR_USER')} className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-orange-700 hover:bg-orange-50">
+                                <Hourglass size={14} /> Waiting for User
                               </button>
                             )}
                             {ticket.status !== 'RESOLVED' && (
@@ -416,7 +545,17 @@ function TicketDetailsModal({ ticket, onClose, onChanged, onTicketUpdate }: {
   const [sending, setSending] = useState(false);
   const [updatingPriority, setUpdatingPriority] = useState(false);
   const [error, setError] = useState('');
+  const [resolutionNote, setResolutionNote] = useState(ticket.resolutionNote || '');
+  const [savingNote, setSavingNote] = useState(false);
+  const [noteSaved, setNoteSaved] = useState(false);
+  const [assigning, setAssigning] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Keep the resolution-note draft in sync when the ticket changes (e.g. refetch).
+  useEffect(() => {
+    setResolutionNote(ticket.resolutionNote || '');
+    setNoteSaved(false);
+  }, [ticket.id, ticket.resolutionNote]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -489,8 +628,41 @@ function TicketDetailsModal({ ticket, onClose, onChanged, onTicketUpdate }: {
     }
   };
 
-  const status = STATUS_STYLES[ticket.status];
-  const priority = PRIORITY_STYLES[ticket.priority];
+  const handleSaveNote = async () => {
+    try {
+      setSavingNote(true);
+      setNoteSaved(false);
+      setError('');
+      await adminApi.updateSupportTicket(ticket.id, { resolutionNote });
+      const res = await adminApi.getSupportTicket(ticket.id);
+      onTicketUpdate(res.ticket);
+      onChanged();
+      setNoteSaved(true);
+      setTimeout(() => setNoteSaved(false), 2500);
+    } catch (e: any) {
+      setError(e?.response?.data?.error || e?.message || 'Failed to save note');
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
+  const handleAssign = async (adminId: 'me' | null) => {
+    try {
+      setAssigning(true);
+      setError('');
+      await adminApi.assignSupportTicket(ticket.id, adminId);
+      const res = await adminApi.getSupportTicket(ticket.id);
+      onTicketUpdate(res.ticket);
+      onChanged();
+    } catch (e: any) {
+      setError(e?.response?.data?.error || e?.message || 'Failed to assign');
+    } finally {
+      setAssigning(false);
+    }
+  };
+
+  const status = getStatusStyle(ticket.status);
+  const priority = PRIORITY_STYLES[ticket.priority] || PRIORITY_STYLES.NORMAL;
 
   const formatDate = (d: string) =>
     new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -519,6 +691,9 @@ function TicketDetailsModal({ ticket, onClose, onChanged, onTicketUpdate }: {
             <p className="text-xs text-gray-500 mt-1">
               Opened by {ticket.user?.name || 'Unknown'} · {formatDate(ticket.createdAt)}
             </p>
+            <div className="mt-2">
+              <SlaBadge slaDueAt={ticket.slaDueAt} status={ticket.status} size="md" />
+            </div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg"><X size={18} /></button>
         </div>
@@ -527,7 +702,7 @@ function TicketDetailsModal({ ticket, onClose, onChanged, onTicketUpdate }: {
         <div className="px-6 py-3 border-b border-gray-100 bg-gray-50/50 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-bold uppercase text-gray-500">Status:</span>
-            {(['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'] as const).map((s) => {
+            {(['OPEN', 'IN_PROGRESS', 'WAITING_FOR_USER', 'RESOLVED', 'CLOSED'] as const).map((s) => {
               const active = ticket.status === s;
               const st = STATUS_STYLES[s];
               return (
@@ -560,6 +735,66 @@ function TicketDetailsModal({ ticket, onClose, onChanged, onTicketUpdate }: {
           </div>
         </div>
 
+        {/* Assignment controls */}
+        <div className="px-6 py-3 border-b border-gray-100 flex flex-wrap items-center gap-3">
+          <span className="text-xs font-bold uppercase text-gray-500">Assignee:</span>
+          {ticket.assignedTo ? (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700">
+              <UserIcon size={12} /> {ticket.assignedTo.name}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-500">
+              Unassigned
+            </span>
+          )}
+          <div className="flex items-center gap-2 ml-auto">
+            <button
+              onClick={() => handleAssign('me')}
+              disabled={assigning}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-primaryDark text-white disabled:opacity-50 transition"
+            >
+              {assigning ? <Loader2 size={12} className="animate-spin" /> : <UserPlus size={12} />} Assign to me
+            </button>
+            {ticket.assignedTo && (
+              <button
+                onClick={() => handleAssign(null)}
+                disabled={assigning}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition"
+              >
+                <UserMinus size={12} /> Unassign
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Resolution note */}
+        <div className="px-6 py-3 border-b border-gray-100 bg-gray-50/50">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs font-bold uppercase text-gray-500">Resolution Note</span>
+            {noteSaved && (
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600">
+                <CheckCircle2 size={12} /> Saved
+              </span>
+            )}
+          </div>
+          <textarea
+            value={resolutionNote}
+            onChange={(e) => { setResolutionNote(e.target.value); setNoteSaved(false); }}
+            placeholder="Add an internal resolution note for this ticket…"
+            rows={2}
+            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 resize-none"
+          />
+          <div className="flex justify-end mt-2">
+            <button
+              onClick={handleSaveNote}
+              disabled={savingNote || resolutionNote === (ticket.resolutionNote || '')}
+              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50 transition"
+            >
+              {savingNote ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Save Note
+            </button>
+          </div>
+        </div>
+
         {/* Conversation */}
         <div className="flex-1 overflow-y-auto px-6 py-5 bg-gray-50/40">
           {/* Original message bubble */}
@@ -570,6 +805,28 @@ function TicketDetailsModal({ ticket, onClose, onChanged, onTicketUpdate }: {
             message={ticket.description}
             opening
           />
+
+          {/* Alternate contact info supplied on the ticket */}
+          {ticket.contact && (ticket.contact.name || ticket.contact.email || ticket.contact.phone) && (
+            <div className="mb-4 bg-white border border-gray-200 rounded-2xl p-4">
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Alternate Contact</p>
+              <div className="flex flex-col gap-2 text-sm text-gray-700">
+                {ticket.contact.name && (
+                  <span className="inline-flex items-center gap-2"><UserIcon size={14} className="text-gray-400" /> {ticket.contact.name}</span>
+                )}
+                {ticket.contact.email && (
+                  <a href={`mailto:${ticket.contact.email}`} className="inline-flex items-center gap-2 hover:text-indigo-600">
+                    <Mail size={14} className="text-gray-400" /> {ticket.contact.email}
+                  </a>
+                )}
+                {ticket.contact.phone && (
+                  <a href={`tel:${ticket.contact.phone}`} className="inline-flex items-center gap-2 hover:text-indigo-600">
+                    <Phone size={14} className="text-gray-400" /> {ticket.contact.phone}
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Attachments (photos uploaded with the ticket) */}
           {ticket.attachmentUrls && ticket.attachmentUrls.length > 0 && (
@@ -595,7 +852,7 @@ function TicketDetailsModal({ ticket, onClose, onChanged, onTicketUpdate }: {
             <MessageBubble
               key={r.id}
               isAdmin={r.isAdmin}
-              name={r.isAdmin ? 'Support Team' : ticket.user?.name || 'User'}
+              name={r.isAdmin ? (r.authorName || 'Support Team') : ticket.user?.name || 'User'}
               time={formatDate(r.createdAt)}
               message={r.message}
             />
@@ -653,6 +910,19 @@ function TicketDetailsModal({ ticket, onClose, onChanged, onTicketUpdate }: {
 function MessageBubble({ isAdmin, name, time, message, opening }: { isAdmin: boolean; name: string; time: string; message: string; opening?: boolean }) {
   const initials = name.split(' ').map((n) => n[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
 
+  // Admin replies show the replying admin's initials. Prefer the author's own
+  // name; fall back to the logged-in admin when it's the generic "Support Team".
+  const adminUser = useAuthStore((s) => s.user);
+  const adminNameSource = isAdmin && name && name !== 'Support Team' ? name : (adminUser?.name || '');
+  const adminInitials =
+    adminNameSource
+      .split(' ')
+      .map((n) => n[0])
+      .filter(Boolean)
+      .slice(0, 2)
+      .join('')
+      .toUpperCase() || 'A';
+
   if (opening) {
     return (
       <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-4 shadow-sm">
@@ -678,11 +948,11 @@ function MessageBubble({ isAdmin, name, time, message, opening }: { isAdmin: boo
           <p className="text-sm whitespace-pre-line">{message}</p>
         </div>
         <p className={`text-xs text-gray-400 mt-1 ${isAdmin ? 'text-right' : ''}`}>
-          {isAdmin ? 'Support Team' : name} · {time}
+          {name} · {time}
         </p>
       </div>
       {isAdmin && (
-        <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xs flex-shrink-0">SK</div>
+        <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xs flex-shrink-0">{adminInitials}</div>
       )}
     </div>
   );

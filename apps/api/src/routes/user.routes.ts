@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { userController } from '../controllers/user.controller';
 import { authenticate } from '../middleware/auth';
-import { uploadImage } from '../middleware/upload';
+import { uploadImage, verifyUploadSignature } from '../middleware/upload';
 
 const router = Router();
 
@@ -9,7 +9,7 @@ const router = Router();
 router.get('/me', authenticate, userController.getProfile);
 router.put('/me', authenticate, userController.updateProfile);
 router.put('/me/complete-profile', authenticate, userController.completeProfile);
-router.post('/me/photo', authenticate, uploadImage, userController.uploadPhoto);
+router.post('/me/photo', authenticate, uploadImage, verifyUploadSignature, userController.uploadPhoto);
 router.post('/me/push-token', authenticate, userController.registerPushToken);
 router.get('/me/billing', authenticate, userController.getBilling);
 router.put('/me/billing', authenticate, userController.updateBilling);

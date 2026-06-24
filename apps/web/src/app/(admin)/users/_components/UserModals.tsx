@@ -10,8 +10,6 @@ import {
 import { adminApi } from '@/services/api';
 import type { AdminUser, UserDetails } from './types';
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
-
 // ───────────────────────────────────────────────────────────────────────
 // Shared shells
 // ───────────────────────────────────────────────────────────────────────
@@ -289,14 +287,11 @@ function RcBookButton({ vehicleId }: { vehicleId: number }) {
     setLoading(true);
     setErr('');
     try {
-      const res = await fetch(`${SOCKET_URL}/api/admin/vehicles/${vehicleId}/rcbook-url`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('parkswift_token') || ''}` },
-      });
-      const data = await res.json();
-      if (!res.ok) { setErr(data.error || 'Not available'); return; }
+      const data = await adminApi.getVehicleRcBookUrl(vehicleId);
+      if (!data?.url) { setErr(data?.error || 'Not available'); return; }
       window.open(data.url, '_blank', 'noopener,noreferrer');
-    } catch {
-      setErr('Failed to load');
+    } catch (e: any) {
+      setErr(e?.response?.data?.error || 'Failed to load');
     } finally {
       setLoading(false);
     }

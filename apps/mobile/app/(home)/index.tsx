@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {View,
   ScrollView,
   StyleSheet,
@@ -13,11 +13,11 @@ import {View,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useTheme } from "../../hooks/useTheme";
-import { clearAuthData } from '../../utils/secureStorage';
 import { api } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 import { useSessionBarStore, computeEndsAtISO, computeExpiresAt, minsUntil } from '../../store/sessionBarStore';
-import ProHeader from '../../components/Header/ProHeader';
+import PageHeader from '../../components/PageHeader';
+import { Bell } from 'lucide-react-native';
 import PersonalizedGreeting from '../../components/Home/PersonalizedGreeting';
 import HomeCard from '../../components/Cards/HomeCard';
 import ActivityFeed, { Activity } from '../../components/Activity/ActivityFeed';
@@ -25,6 +25,7 @@ import NavigationDrawer from '../../components/Navigation/NavigationDrawer';
 import MagnifyingGlassSvg from '../../components/Illustrations/MagnifyingGlassSvg';
 import { MapPin, CarFront } from 'lucide-react-native';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import { NETWORK_RECONNECTED } from '../../store/networkStore';
 
 
 const HomeScreen = () => {
@@ -32,6 +33,9 @@ const HomeScreen = () => {
   const theme = useTheme();
   const { colors, isDark } = theme;
   const currentUser = useAuthStore((s) => s.user);
+  // Owners can also park, so they get the richer "both" menu; everyone else is a parker.
+  const drawerRole: 'parker' | 'owner' | 'both' =
+    currentUser?.role === 'OWNER' ? 'both' : 'parker';
   const setBarForSource = useSessionBarStore((s) => s.setBarForSource);
   const clearSource = useSessionBarStore((s) => s.clearSource);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -117,7 +121,16 @@ const HomeScreen = () => {
     }
   }, []);
 
-  const loadUnreadCount = useCallback(async () => {
+  // Throttle the unread-count fetch: ~12 socket events can each trigger it within
+  // a couple seconds (a booking lifecycle burst), which spammed /home/notifications
+  // and tripped the server's rate limiter (429). Coalesce bursts to one fetch per
+  // 5s. `force` (focus / mount / pull-to-refresh) bypasses the throttle for an
+  // immediate, fresh read.
+  const lastUnreadFetch = useRef(0);
+  const loadUnreadCount = useCallback(async (force = false) => {
+    const now = Date.now();
+    if (!force && now - lastUnreadFetch.current < 5000) return;
+    lastUnreadFetch.current = now;
     try {
       const json = await api.get('/home/notifications');
       if (json.success) {
@@ -147,8 +160,12 @@ const HomeScreen = () => {
       if (active) {
         const endsAtISO = computeEndsAtISO(active.sessionStartedAt, active.eta, active.createdAt, active.duration ?? 1);
         const mins = minsUntil(endsAtISO);
+        // The parker tapped "I'm leaving" → sessionEndedAt is set, but status is
+        // still ACTIVE until the owner confirms exit. Show a distinct "leaving"
+        // bar instead of the stale "Currently parked … min remaining".
+        const isLeaving = !!active.sessionEndedAt || !!active.isLeaving;
         setBarForSource('parker', {
-          variant: mins !== null && mins < 15 ? 'session_ending' : 'session_active',
+          variant: isLeaving ? 'session_leaving' : mins !== null && mins < 15 ? 'session_ending' : 'session_active',
           bookingId: String(active.id),
           spaceName: active.space?.name ?? '',
           parkerName: '',
@@ -236,8 +253,9 @@ const HomeScreen = () => {
   const syncOwnerBar = useCallback(async () => {
     try {
       const ownerData = await api.get('/home/owner-dashboard');
-      const pending: any[] = ownerData.pendingRequests ?? [];
-      const live: any[]    = ownerData.liveSessions ?? [];
+      const pending: any[]  = ownerData.pendingRequests ?? [];
+      const live: any[]     = ownerData.liveSessions ?? [];
+      const awaiting: any[] = ownerData.awaitingArrival ?? [];
 
       if (pending.length > 0) {
         const req = pending[0];
@@ -278,6 +296,27 @@ const HomeScreen = () => {
         return;
       }
 
+      // Accepted but not yet started: "Parker at gate — verify OTP" if they've
+      // arrived, otherwise "Parker is on the way". Prefer an at-gate booking so
+      // the owner is nudged to the action (verify) when one is ready.
+      if (awaiting.length > 0) {
+        const target = awaiting.find((a: any) => a.atGate) ?? awaiting[0];
+        setBarForSource('owner', {
+          variant: target.atGate ? 'parker_at_gate' : 'parker_en_route',
+          bookingId: String(target.id),
+          spaceName: target.spaceName ?? '',
+          parkerName: target.parkerName ?? '',
+          vehiclePlate: target.licensePlate ?? '',
+          amount: null,
+          durationHours: null,
+          expiresAt: null,
+          endsAtISO: null,
+          otp: null,
+          etaText: target.etaText ?? null,
+        });
+        return;
+      }
+
       clearSource('owner');
     } catch (e) {
       // A pure parker has no spaces; owner-dashboard may 403/empty — that's fine,
@@ -293,11 +332,13 @@ const HomeScreen = () => {
     await Promise.all([syncParkerBar(), syncOwnerBar()]);
   }, [currentUser?.id, syncParkerBar, syncOwnerBar]);
 
-  // Sync bar on every focus + 30s background poll (self-healing fallback)
+  // Sync bar on every focus + 10s background poll (self-healing fallback). Sockets
+  // deliver updates instantly; this poll only catches anything missed during a
+  // socket drop, so a tighter interval keeps the worst-case delay small.
   useFocusEffect(
     useCallback(() => {
       syncSessionBar();
-      const t = setInterval(syncSessionBar, 30_000);
+      const t = setInterval(syncSessionBar, 10_000);
       return () => clearInterval(t);
     }, [syncSessionBar])
   );
@@ -314,8 +355,11 @@ const HomeScreen = () => {
       'session:completed', 'rating:new',
       // Owner-facing lifecycle
       'booking:new', 'parker:arrived', 'parker:eta-update', 'parker:leaving',
-      // Catch-all
-      'notification:new',
+      // Catch-all + read-state changes (so the bell badge clears live)
+      'notification:new', 'notification:read',
+      // App returned to foreground OR socket reconnected after a network drop —
+      // re-sync from the API to recover any state we missed while away.
+      'app:resumed',
     ];
     const subs = events.map((evt) =>
       DeviceEventEmitter.addListener(evt, () => {
@@ -332,19 +376,32 @@ const HomeScreen = () => {
     loadDashboardData();
     loadRecentActivity();
     loadHomeStats();
-    loadUnreadCount();
+    loadUnreadCount(true); // mount — fresh
   }, [loadDashboardData, loadRecentActivity, loadHomeStats, loadUnreadCount]);
+
+  // Re-load the whole dashboard when connectivity is restored (offline banner's
+  // "Retry" / auto-reconnect) so the cards aren't left showing stale "-" data.
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(NETWORK_RECONNECTED, () => {
+      loadDashboardData();
+      loadRecentActivity();
+      loadHomeStats();
+      loadUnreadCount(true); // reconnect — fresh
+      syncSessionBar();
+    });
+    return () => sub.remove();
+  }, [loadDashboardData, loadRecentActivity, loadHomeStats, loadUnreadCount, syncSessionBar]);
 
   // Re-fetch badge count every time screen is focused (e.g. after returning from notifications)
   useFocusEffect(
     useCallback(() => {
-      loadUnreadCount();
+      loadUnreadCount(true); // focus — fresh
     }, [loadUnreadCount])
   );
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await Promise.all([loadDashboardData(), loadRecentActivity(), loadHomeStats(), loadUnreadCount(), syncSessionBar()]);
+    await Promise.all([loadDashboardData(), loadRecentActivity(), loadHomeStats(), loadUnreadCount(true), syncSessionBar()]);
     setIsRefreshing(false);
   };
 
@@ -370,6 +427,9 @@ const HomeScreen = () => {
       case 'my-spaces':
         router.push('/(my-spaces)/spaces');
         break;
+      case 'my-reports':
+        router.push('/(home)/my-reports');
+        break;
       case 'settings':
         router.push('/(home)/settings');
         break;
@@ -383,14 +443,13 @@ const HomeScreen = () => {
             text: 'Logout',
             style: 'destructive',
             onPress: async () => {
-              try {
-                await api.post('/auth/logout').catch(() => {});
-                await clearAuthData();
-                router.replace('/(auth)/login');
-              } catch {
-                await clearAuthData();
-                router.replace('/(auth)/login');
-              }
+              // Best-effort server logout, then clear ALL auth — in-memory store
+              // state AND secure storage AND the server push token — via the store's
+              // logout(). The previous manual clearAuthData() left user/token in
+              // memory, leaking the prior user into the next session.
+              await api.post('/auth/logout').catch(() => {});
+              await useAuthStore.getState().logout();
+              router.replace('/(auth)/login');
             },
           },
         ]);
@@ -424,19 +483,32 @@ const HomeScreen = () => {
       {/* Navigation Drawer */}
       <NavigationDrawer
         isOpen={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
+        onClose={() => { setDrawerOpen(false); DeviceEventEmitter.emit('drawer:state', false); }}
         userName={userName || 'User'}
         userImage={undefined}
-        userRole="both"
+        userRole={drawerRole}
         activeRoute={activeRoute}
         onMenuItemPress={handleMenuPress}
       />
 
       {/* Header */}
-      <ProHeader
-        onMenuPress={() => setDrawerOpen(true)}
-        onNotificationPress={() => router.push('/(home)/notifications')}
-        notificationCount={unreadCount}
+      <PageHeader
+        logo
+        onMenu={() => { setDrawerOpen(true); DeviceEventEmitter.emit('drawer:state', true); }}
+        right={
+          <TouchableOpacity
+            activeOpacity={0.7}
+            style={headerStyles.bellButton}
+            onPress={() => router.push('/(home)/notifications')}
+          >
+            <Bell size={18} color={Colors.textDark} strokeWidth={2.5} />
+            {unreadCount > 0 && (
+              <View style={headerStyles.bellBadge}>
+                <Text style={headerStyles.bellBadgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        }
       />
 
       {/* Main Content */}
@@ -519,6 +591,24 @@ const HomeScreen = () => {
   );
 };
 
-// Static styles removed — replaced by useMemo makeStyles inside component
+const headerStyles = StyleSheet.create({
+  bellButton: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.borderLight,
+    alignItems: 'center', justifyContent: 'center',
+    overflow: 'visible',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
+  },
+  bellBadge: {
+    position: 'absolute', top: -5, right: -5,
+    backgroundColor: Colors.primary,
+    minWidth: 16, height: 16, borderRadius: 8,
+    paddingHorizontal: 3,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: Colors.white,
+  },
+  bellBadgeText: { color: Colors.white, fontSize: 9, fontWeight: '700', lineHeight: 12 },
+});
 
 export default HomeScreen;

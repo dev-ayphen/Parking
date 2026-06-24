@@ -8,9 +8,12 @@ import {
   ChevronLeft, ChevronRight, X, Check, ArrowDownLeft, ArrowUpRight,
 } from 'lucide-react';
 import { adminApi } from '@/services/api';
+import { useAuthStore } from '@/store/authStore';
+import { SOCKET_URL } from '@/lib/config';
 import type { AdminTransactionListItem } from '@/types/api';
 
-const SOCKET_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api').replace(/\/api\/?$/, '');
+const errMsg = (e: any, fallback: string) =>
+  e?.response?.data?.error || e?.message || fallback;
 
 const TYPE_FILTERS = ['All Transactions', 'User Payments', 'Owner Earnings', 'Refunds'];
 
@@ -38,6 +41,8 @@ export default function PaymentsPage() {
 
   const [payingOut, setPayingOut] = useState(false);
   const [exporting, setExporting] = useState(false);
+  // User-visible error for failed mutating actions (payouts/refund/status/export).
+  const [actionError, setActionError] = useState('');
 
   // Refund modal
   const [refundTxn, setRefundTxn] = useState<AdminTransactionListItem | null>(null);
@@ -84,19 +89,21 @@ export default function PaymentsPage() {
   // Live-refresh when a payout/refund/status change happens server-side
   // (server emits payments:updated to the payments admin room).
   useEffect(() => {
-    const socket = createSocket(SOCKET_URL, { transports: ['websocket'] });
+    const socket = createSocket(SOCKET_URL, { transports: ['websocket'], auth: { token: useAuthStore.getState().token } });
     socket.on('connect', () => socket.emit('admin:join'));
     socket.on('payments:updated', () => { fetchOverview(); fetchTransactions(); });
     return () => { socket.disconnect(); };
   }, [fetchOverview, fetchTransactions]);
 
   const handleProcessPayouts = async () => {
+    if (!window.confirm('Process all pending owner payouts now? This will move money to owners and cannot be undone.')) return;
     try {
       setPayingOut(true);
+      setActionError('');
       await adminApi.processPayouts();
       await Promise.all([fetchOverview(), fetchTransactions()]);
     } catch (e) {
-      if (process.env.NODE_ENV === 'development') console.error('Payouts:', e);
+      setActionError(errMsg(e, 'Failed to process payouts.'));
     } finally {
       setPayingOut(false);
     }
@@ -105,6 +112,7 @@ export default function PaymentsPage() {
   const handleExport = async () => {
     try {
       setExporting(true);
+      setActionError('');
       const blob = await adminApi.exportTransactionsCsv();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -115,7 +123,7 @@ export default function PaymentsPage() {
       a.remove();
       window.URL.revokeObjectURL(url);
     } catch (e) {
-      if (process.env.NODE_ENV === 'development') console.error('Export:', e);
+      setActionError(errMsg(e, 'Failed to export transactions.'));
     } finally {
       setExporting(false);
     }
@@ -125,23 +133,27 @@ export default function PaymentsPage() {
     if (!refundTxn) return;
     try {
       setRefunding(true);
+      setActionError('');
       await adminApi.refundTransaction(refundTxn.rawId, { reason: refundReason || undefined });
       setRefundTxn(null);
       setRefundReason('');
       await Promise.all([fetchOverview(), fetchTransactions()]);
     } catch (e) {
-      if (process.env.NODE_ENV === 'development') console.error('Refund:', e);
+      setActionError(errMsg(e, 'Failed to issue refund.'));
     } finally {
       setRefunding(false);
     }
   };
 
   const markStatus = async (txn: AdminTransactionListItem, status: 'SUCCESS' | 'FAILED') => {
+    const label = status === 'SUCCESS' ? 'mark as PAID' : 'mark as FAILED';
+    if (!window.confirm(`${label.charAt(0).toUpperCase() + label.slice(1)} transaction ${txn.id} (${txn.amountDisplay})? This alters the transaction record.`)) return;
     try {
+      setActionError('');
       await adminApi.updateTransactionStatus(txn.rawId, status);
       await Promise.all([fetchOverview(), fetchTransactions()]);
     } catch (e) {
-      if (process.env.NODE_ENV === 'development') console.error('Status:', e);
+      setActionError(errMsg(e, 'Failed to update transaction status.'));
     }
   };
 
@@ -173,6 +185,14 @@ export default function PaymentsPage() {
           </button>
         </div>
       </motion.div>
+
+      {/* Action error banner */}
+      {actionError && (
+        <div className="flex items-center justify-between gap-3 bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl">
+          <span className="text-sm">{actionError}</span>
+          <button onClick={() => setActionError('')} className="text-rose-400 hover:text-rose-600"><X size={16} /></button>
+        </div>
+      )}
 
       {/* Stat cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

@@ -4,6 +4,22 @@ import { userAdminService } from './userAdmin.service';
 import { spaceAdminService } from './spaceAdmin.service';
 import { billingAdminService } from './billingAdmin.service';
 import { pushService } from './push.service';
+import { storageService } from './storage.service';
+import { BUCKETS } from '../config/supabase';
+
+/**
+ * Attachment files live in the PRIVATE bucket (PII). Stored values are keys;
+ * resolve each to a short-lived signed URL before returning to a client.
+ * Legacy rows holding full public URLs pass through unchanged.
+ */
+const resolveAttachmentUrls = async (urls: unknown): Promise<string[]> => {
+  if (!Array.isArray(urls)) return [];
+  return Promise.all(
+    urls.map((u: string) =>
+      storageService.resolveUrl(u, BUCKETS.PRIVATE).catch(() => u)
+    )
+  );
+};
 
 /**
  * Map a notification's category + metadata to the deep-link data the mobile app
@@ -288,12 +304,15 @@ export const adminService = {
   },
 
   listSupportTickets: async (query: any) => {
-    const { status, priority, category, search, page = 1, limit = 20 } = query;
+    const { status, priority, category, search, assigned, adminId, page = 1, limit = 20 } = query;
     const skip = (Number(page) - 1) * Number(limit);
     const where: any = {};
     if (status && status !== 'All') where.status = String(status).toUpperCase().replace(' ', '_');
     if (priority) where.priority = String(priority).toUpperCase();
-    if (category) where.category = String(category).toUpperCase();
+    if (category && category !== 'All') where.category = String(category).toUpperCase();
+    // Assignment filter: 'mine' (this admin), 'unassigned', else all.
+    if (assigned === 'mine' && adminId) where.assignedToId = Number(adminId);
+    else if (assigned === 'unassigned') where.assignedToId = null;
     if (search) {
       where.OR = [
         { subject: { contains: String(search), mode: 'insensitive' } },
@@ -312,6 +331,7 @@ export const adminService = {
         orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
         include: {
           user: { select: { id: true, firstName: true, lastName: true, phone: true } },
+          assignedTo: { select: { id: true, firstName: true, lastName: true } },
           _count: { select: { replies: true } },
         },
       }),
@@ -342,6 +362,10 @@ export const adminService = {
           }
         : null,
       replyCount: t._count.replies,
+      assignedTo: t.assignedTo
+        ? { id: t.assignedTo.id, name: [t.assignedTo.firstName, t.assignedTo.lastName].filter(Boolean).join(' ') || `Admin #${t.assignedTo.id}` }
+        : null,
+      slaDueAt: t.slaDueAt ?? null,
       createdAt: t.createdAt,
       updatedAt: t.updatedAt,
     }));
@@ -354,12 +378,19 @@ export const adminService = {
       where: { id: ticketId },
       include: {
         user: { select: { id: true, firstName: true, lastName: true, phone: true, email: true, role: true } },
-        replies: {
-          orderBy: { createdAt: 'asc' },
-        },
+        assignedTo: { select: { id: true, firstName: true, lastName: true } },
+        replies: { orderBy: { createdAt: 'asc' } },
       },
     });
     if (!ticket) throw new Error('Ticket not found');
+    const t: any = ticket;
+
+    // Resolve reply author names (admins who answered) in one query.
+    const authorIds = Array.from(new Set(ticket.replies.map((r) => r.authorId).filter((x): x is number => x != null)));
+    const authors = authorIds.length
+      ? await db.user.findMany({ where: { id: { in: authorIds } }, select: { id: true, firstName: true, lastName: true } })
+      : [];
+    const authorMap = new Map(authors.map((a) => [a.id, [a.firstName, a.lastName].filter(Boolean).join(' ') || `User #${a.id}`]));
 
     return {
       success: true,
@@ -372,6 +403,12 @@ export const adminService = {
         status: ticket.status,
         priority: ticket.priority,
         resolutionNote: ticket.resolutionNote,
+        slaDueAt: t.slaDueAt ?? null,
+        assignedTo: t.assignedTo
+          ? { id: t.assignedTo.id, name: [t.assignedTo.firstName, t.assignedTo.lastName].filter(Boolean).join(' ') || `Admin #${t.assignedTo.id}` }
+          : null,
+        // Alternate contact info supplied at creation.
+        contact: { name: t.contactName ?? null, email: t.contactEmail ?? null, phone: t.contactPhone ?? null },
         user: ticket.user ? {
           id: ticket.user.id,
           name: [ticket.user.firstName, ticket.user.lastName].filter(Boolean).join(' ') || ticket.user.phone,
@@ -379,17 +416,36 @@ export const adminService = {
           email: ticket.user.email,
           role: ticket.user.role,
         } : null,
-        attachmentUrls: (ticket as any).attachmentUrls || [],
-        replies: ticket.replies.map((r) => ({
+        attachmentUrls: await resolveAttachmentUrls((ticket as any).attachmentUrls),
+        replies: ticket.replies.map((r: any) => ({
           id: r.id,
           message: r.message,
           isAdmin: r.isAdmin,
           authorId: r.authorId,
+          // Real author name (so admin replies show who actually answered).
+          authorName: r.authorId != null ? (authorMap.get(r.authorId) ?? null) : null,
           createdAt: r.createdAt,
         })),
         createdAt: ticket.createdAt,
         updatedAt: ticket.updatedAt,
         closedAt: ticket.closedAt,
+      },
+    };
+  },
+
+  // Assign / unassign a ticket to an admin (pass adminId=null to unassign).
+  assignSupportTicket: async (ticketId: number, adminId: number | null) => {
+    const ticket = await db.supportTicket.update({
+      where: { id: ticketId },
+      data: { assignedToId: adminId },
+      include: { assignedTo: { select: { id: true, firstName: true, lastName: true } } },
+    });
+    const a: any = (ticket as any).assignedTo;
+    return {
+      success: true,
+      ticket: {
+        id: ticket.id,
+        assignedTo: a ? { id: a.id, name: [a.firstName, a.lastName].filter(Boolean).join(' ') || `Admin #${a.id}` } : null,
       },
     };
   },
@@ -440,7 +496,7 @@ export const adminService = {
         title: 'Support Replied',
         message: 'Our support team replied to your ticket. Tap to view.',
         category: 'SUPPORT',
-        metadata: { ticketId },
+        metadata: { screen: 'support-ticket', ticketId },
       });
     }
 
@@ -477,11 +533,14 @@ export const adminService = {
     };
   },
 
-  getAnalyticsOverview: async () => {
+  getAnalyticsOverview: async (range?: string) => {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const startOf7DaysAgo = new Date(Date.now() - 7 * 86400000);
+    // Map the dashboard range selector to a day window for the revenue trend.
+    const rangeDays = range === '30d' ? 30 : range === '90d' ? 90 : range === '1y' ? 365 : 7;
+    const startOfRange = new Date(Date.now() - rangeDays * 86400000);
+    const startOf7DaysAgo = startOfRange;
 
     const [
       totalUsers,
@@ -549,19 +608,29 @@ export const adminService = {
       ? Math.round(((activeSpaces - lastMonthSpaceCount) / lastMonthSpaceCount) * 100)
       : 0;
 
-    const revenueByDay: Record<string, number> = {};
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(Date.now() - i * 86400000);
-      const key = d.toLocaleDateString('en-IN', { weekday: 'short' });
-      revenueByDay[key] = 0;
+    // Revenue trend bucketed across the selected range. Short ranges (≤7d) show
+    // weekday labels; longer ranges sample ~7 evenly-spaced day buckets with
+    // date labels so the chart stays readable.
+    const useWeekdayLabels = rangeDays <= 7;
+    const bucketCount = useWeekdayLabels ? rangeDays : 7;
+    const daysPerBucket = Math.ceil(rangeDays / bucketCount);
+    const revBuckets: { label: string; value: number; start: number; end: number }[] = [];
+    for (let i = bucketCount - 1; i >= 0; i--) {
+      const end = Date.now() - i * daysPerBucket * 86400000;
+      const start = end - daysPerBucket * 86400000;
+      const d = new Date(end);
+      const label = useWeekdayLabels
+        ? d.toLocaleDateString('en-IN', { weekday: 'short' })
+        : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+      revBuckets.push({ label, value: 0, start, end });
     }
     (revenueLast7Days as any[]).forEach((b) => {
-      const d = b.sessionEndedAt ? new Date(b.sessionEndedAt) : new Date();
-      const key = d.toLocaleDateString('en-IN', { weekday: 'short' });
-      if (key in revenueByDay) revenueByDay[key] += b.totalAmount;
+      const t = (b.sessionEndedAt ? new Date(b.sessionEndedAt) : new Date()).getTime();
+      const bucket = revBuckets.find((bk) => t > bk.start && t <= bk.end);
+      if (bucket) bucket.value += b.totalAmount;
     });
 
-    const revenueChartData = Object.entries(revenueByDay).map(([day, value]) => ({ day, value }));
+    const revenueChartData = revBuckets.map(({ label, value }) => ({ day: label, value }));
 
     const topSpaces = (topSpacesRaw as any[]).map((s, i) => ({
       rank: i + 1,
@@ -571,13 +640,105 @@ export const adminService = {
       bookings: s._count.bookings,
     }));
 
-    const recentActivity = (recentUsers as any[]).map((u) => ({
-      id: u.id,
-      type: 'registration',
-      title: 'New User Registration',
-      user: [u.firstName, u.lastName].filter(Boolean).join(' ') || u.phone,
-      time: timeAgo(u.createdAt),
-    }));
+    // Real mixed activity feed — registrations + recent bookings + payments, so
+    // the dashboard's approval/payment/alert icons actually render (it was
+    // hardcoded to 'registration' for every row before).
+    const [recentBookingRows, recentTxnRows] = await Promise.all([
+      db.booking.findMany({
+        take: 4,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true, status: true, createdAt: true,
+          parker: { select: { firstName: true, lastName: true, phone: true } },
+          space: { select: { name: true } },
+        },
+      }),
+      db.transaction.findMany({
+        take: 4,
+        orderBy: { createdAt: 'desc' },
+        where: { status: 'SUCCESS' },
+        select: { id: true, type: true, amount: true, createdAt: true, description: true },
+      }),
+    ]);
+
+    const activityItems: Array<{ id: string; type: string; title: string; user: string; createdAt: Date }> = [
+      ...(recentUsers as any[]).map((u) => ({
+        id: `u-${u.id}`,
+        type: 'registration',
+        title: 'New User Registration',
+        user: [u.firstName, u.lastName].filter(Boolean).join(' ') || u.phone,
+        createdAt: u.createdAt,
+      })),
+      ...(recentBookingRows as any[]).map((b) => ({
+        id: `b-${b.id}`,
+        type: b.status === 'COMPLETED' ? 'payment' : b.status === 'CANCELLED' || b.status === 'REJECTED' ? 'alert' : 'approval',
+        title:
+          b.status === 'COMPLETED' ? 'Booking Completed'
+          : b.status === 'CANCELLED' || b.status === 'REJECTED' ? 'Booking Cancelled'
+          : 'New Booking',
+        user: [b.parker?.firstName, b.parker?.lastName].filter(Boolean).join(' ') || b.parker?.phone || b.space?.name || 'Parker',
+        createdAt: b.createdAt,
+      })),
+      ...(recentTxnRows as any[]).map((t) => ({
+        id: `t-${t.id}`,
+        type: 'payment',
+        title: t.type === 'REFUND' ? 'Refund Issued' : t.type === 'OWNER_PAYOUT' ? 'Owner Payout' : 'Payment Received',
+        user: t.description || t.type,
+        createdAt: t.createdAt,
+      })),
+    ];
+
+    const recentActivity = activityItems
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 8)
+      .map((a) => ({ id: a.id, type: a.type, title: a.title, user: a.user, time: timeAgo(a.createdAt) }));
+
+    // ── Extra analytics datasets (charts on the Analytics page) ──
+    const startOf6MonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+    const startOf30DaysAgo = new Date(Date.now() - 30 * 86400000);
+    const [spaceTypeGroups, revenue6Months, bookings30Days] = await Promise.all([
+      db.space.groupBy({
+        by: ['spaceType'],
+        where: { status: 'VERIFIED' },
+        _count: { spaceType: true },
+      }),
+      db.booking.findMany({
+        where: { status: 'COMPLETED', sessionEndedAt: { gte: startOf6MonthsAgo } },
+        select: { totalAmount: true, sessionEndedAt: true },
+      }),
+      db.booking.findMany({
+        where: { createdAt: { gte: startOf30DaysAgo } },
+        select: { createdAt: true },
+      }),
+    ]);
+
+    // Distribution of verified spaces by type (pie chart).
+    const spaceTypeDistribution = (spaceTypeGroups as any[])
+      .map((g) => ({ name: g.spaceType || 'Other', value: g._count.spaceType }))
+      .sort((a, b) => b.value - a.value);
+
+    // Revenue per month for the last 6 months (area chart fallback / trends).
+    const monthBuckets: { name: string; value: number; key: string }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      monthBuckets.push({ name: d.toLocaleDateString('en-IN', { month: 'short' }), value: 0, key: `${d.getFullYear()}-${d.getMonth()}` });
+    }
+    (revenue6Months as any[]).forEach((b) => {
+      const d = b.sessionEndedAt ? new Date(b.sessionEndedAt) : new Date();
+      const key = `${d.getFullYear()}-${d.getMonth()}`;
+      const bucket = monthBuckets.find((m) => m.key === key);
+      if (bucket) bucket.value += b.totalAmount;
+    });
+    const revenueByMonth = monthBuckets.map(({ name, value }) => ({ name, value }));
+
+    // Bookings grouped into 4-hour windows across the last 30 days (bar chart).
+    const hourWindows = ['12 AM', '4 AM', '8 AM', '12 PM', '4 PM', '8 PM'];
+    const hourCounts = new Array(6).fill(0);
+    (bookings30Days as any[]).forEach((b) => {
+      const h = new Date(b.createdAt).getHours();
+      hourCounts[Math.floor(h / 4)] += 1;
+    });
+    const bookingsByHour = hourWindows.map((time, i) => ({ time, value: hourCounts[i] }));
 
     const formatRevenue = (val: number) => {
       if (val >= 100000) return `₹${(val / 100000).toFixed(2)}L`;
@@ -596,6 +757,9 @@ export const adminService = {
       revenueChart: revenueChartData,
       topSpaces,
       recentActivity,
+      revenueByMonth,
+      spaceTypeDistribution,
+      bookingsByHour,
     };
   },
 

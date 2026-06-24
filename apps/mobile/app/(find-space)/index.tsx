@@ -12,42 +12,35 @@ import {View,
   ScrollView,
   Modal,
   ActivityIndicator,
-  RefreshControl} from 'react-native';
+  Linking,
+  RefreshControl,
+  DeviceEventEmitter} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import * as Location from 'expo-location';
-import * as ImagePicker from 'expo-image-picker';
+import { NETWORK_RECONNECTED } from '../../store/networkStore';
+import { getDeviceLocation } from '../../utils/location';
+import { pickMedia } from '../../utils/pickMedia';
 import LeafletMap from '../../components/LeafletMap';
 import PageHeader from '../../components/PageHeader';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getRatingStyle, formatCount } from '../../utils/ratingUtils';
 import FormLabel from '../../components/FormLabel';
 import {
-  ChevronLeft,
   Bell,
   Search,
   MapPin,
   Car,
   Clock,
-  FileText,
   Navigation,
   ChevronRight,
   X,
   Target,
-  Compass,
   Calendar,
-  Heart,
   User,
   Plus,
-  Trash2,
-  CheckCircle2,
-  Phone,
-  MessageSquare,
-  PlusCircle,
-  Camera,
-  UploadCloud,
-  Square,
-  CheckSquare,
+  SlidersHorizontal,
+  RotateCw,
+  SearchX,
 } from 'lucide-react-native';
 import Svg, { Path, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { api } from '../../services/api';
@@ -56,33 +49,27 @@ import MyVehiclesTab from '../../components/FindSpace/MyVehiclesTab';
 import ActiveSessionsTab from '../../components/FindSpace/ActiveSessionsTab';
 import BookingHistoryTab from '../../components/FindSpace/BookingHistoryTab';
 import { styles } from '../../components/FindSpace/findSpaceStyles';
+import FilterSheet from '../../components/FindSpace/FilterSheet';
 
-const PinIcon = () => (
-  <Svg width={22} height={22} viewBox="0 0 512 512">
-    <Defs>
-      <RadialGradient id="pinGrad" cx="40%" cy="30%" r="70%">
-        <Stop offset="0%" stopColor={Colors.primaryGradient} />
-        <Stop offset="100%" stopColor={Colors.primaryDark} />
-      </RadialGradient>
-    </Defs>
-    <Path
-      fill="url(#pinGrad)"
-      d="M256 32C167.6 32 96 103.6 96 192c0 112 160 288 160 288s160-176 160-288C416 103.6 344.4 32 256 32zm0 224c-35.3 0-64-28.7-64-64s28.7-64 64-64 64 28.7 64 64-28.7 64-64 64z"
-    />
-  </Svg>
-);
 
 // Search radius options (km). 5 km is the default — best balance for city parking.
 const RADIUS_OPTIONS = [1, 3, 5, 10];
 const DEFAULT_RADIUS_KM = 5;
+
+// Space-type options for the filter sheet — must match the backend enum exactly.
+const SPACE_TYPE_OPTIONS = [
+  'Independent House', 'Rented House', 'Apartment Owner Slot', 'Apartment Tenant Slot',
+  'Gated Villa', 'Shop Front Parking', 'Office Parking', 'Vacant Private Land',
+  'Inside Compound', 'Open Frontage Area',
+];
 // Map zoom delta that fits a circle of the given radius at 80% screen coverage
 const regionDeltaForRadius = (radiusKm: number) => Math.max(0.02, ((radiusKm * 2) / 111) * 1.2);
 
 const FindSpaceScreen = () => {
   const router = useRouter();
-  const { tab } = useLocalSearchParams<{ tab?: string }>();
+  const { tab, openTab } = useLocalSearchParams<{ tab?: string; openTab?: string }>();
   const mapRef = useRef<any>(null);
-  const [activeTab, setActiveTab] = useState(tab || 'map');
+  const [activeTab, setActiveTab] = useState(openTab || tab || 'map');
   const [searchQuery, setSearchQuery] = useState('');
   const [userLocation, setUserLocation] = useState<any>(null);
   // Center the search radius is drawn around (GPS by default, the searched area after a search)
@@ -101,6 +88,21 @@ const FindSpaceScreen = () => {
   const [showRadius, setShowRadius] = useState(true);
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
+  // True while the recenter FAB is actively fetching a GPS fix (shows a spinner).
+  const [isLocating, setIsLocating] = useState(false);
+
+  // ── Search filters (backend already supports parkingFor / spaceType / sort) ──
+  const [showFilters, setShowFilters] = useState(false);
+  const [filterVehicle, setFilterVehicle] = useState<'all' | 'Car' | 'Bike'>('all');
+  const [filterSpaceTypes, setFilterSpaceTypes] = useState<string[]>([]);
+  const [filterSort, setFilterSort] = useState<'distance' | 'price'>('distance');
+  // Refs so fetches from stale closures always read the current filters.
+  const filterVehicleRef = useRef<'all' | 'Car' | 'Bike'>('all');
+  const filterSpaceTypesRef = useRef<string[]>([]);
+  const filterSortRef = useRef<'distance' | 'price'>('distance');
+  // "Search this area" button — shown after the user pans the map away from the
+  // current search center, so they can re-query the visible region.
+  const [pannedCenter, setPannedCenter] = useState<{ latitude: number; longitude: number } | null>(null);
 
   // Vehicles state - loaded from API
   const [vehicles, setVehicles] = useState<any[]>([]);
@@ -132,63 +134,79 @@ const FindSpaceScreen = () => {
   const [editSidePhotoUri, setEditSidePhotoUri] = useState<string | null>(null);
   const [editRCBookUri, setEditRCBookUri] = useState<string | null>(null);
 
-  // Active bookings state - loaded from API (empty until real data)
+  // Active booking + history — REAL data from GET /bookings/my (no fake/local flow).
+  // The Active tab routes the user to the real active-session screen; History shows
+  // the user's actual completed bookings. No client-side OTP, no fabricated rows.
   const [activeBooking, setActiveBooking] = useState<any>(null);
+  const [activeLoading, setActiveLoading] = useState(false);
+  const [activeError, setActiveError] = useState<string | null>(null);
 
-  const [otpInput, setOtpInput] = useState('');
-
-  // Time remaining in seconds for active session
-  const [timeRemaining, setTimeRemaining] = useState(0);
-
-  // Booking history - loaded from API
   const [historyBookings, setHistoryBookings] = useState<any[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
-  // Countdown timer effect for active parking session
-  useEffect(() => {
-    let interval: any = null;
-    if (activeBooking && activeBooking.status === 'PARKING') {
-      interval = setInterval(() => {
-        setTimeRemaining((prev) => {
-          if (prev <= 1) {
-            clearInterval(interval);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
+  // Pull the user's real bookings; split into the current active/pending one and
+  // the completed history. Errors set an error flag (so the tabs can show a retry
+  // instead of a misleading "empty" state).
+  const loadMyBookings = useCallback(async () => {
+    setActiveLoading(true);
+    setHistoryLoading(true);
+    setActiveError(null);
+    setHistoryError(null);
+    try {
+      const json = await api.get('/bookings/my?limit=50');
+      const bookings: any[] = json?.bookings ?? json?.data ?? [];
+
+      // "Active" = the single live/pending booking the user should act on.
+      const live =
+        bookings.find((b) => b.status === 'ACTIVE') ||
+        bookings.find((b) => b.status === 'APPROVED') ||
+        bookings.find((b) => b.status === 'PENDING_APPROVAL') ||
+        null;
+      setActiveBooking(live);
+
+      // History = completed bookings only.
+      const completed = bookings
+        .filter((b) => b.status === 'COMPLETED')
+        .map((b) => ({
+          id: String(b.id),
+          spaceName: b.space?.name || 'Parking Space',
+          address: b.space?.address || '',
+          date: b.createdAt
+            ? new Date(b.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+            : '',
+          price: b.totalAmount ?? 0,
+          duration: b.duration ? `${b.duration} hour${b.duration > 1 ? 's' : ''}` : '—',
+          vehiclePlate: b.vehicle?.licensePlate || '',
+          status: 'COMPLETED',
+          rating: b.rating ?? 0,
+        }));
+      setHistoryBookings(completed);
+    } catch (e) {
+      const msg = (e as Error)?.message || 'Could not load your bookings.';
+      setActiveError(msg);
+      setHistoryError(msg);
+    } finally {
+      setActiveLoading(false);
+      setHistoryLoading(false);
     }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [activeBooking]);
+  }, []);
 
-  const formatTime = (seconds: number) => {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  };
+  // Load real bookings whenever the Active/History tab is opened.
+  useEffect(() => {
+    if (activeTab === 'active' || activeTab === 'history') {
+      loadMyBookings();
+    }
+  }, [activeTab, loadMyBookings]);
+
 
   const pickVehiclePhoto = async (
     setter: (uri: string | null) => void,
     allowDocs = false
   ) => {
     try {
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) {
-        Alert.alert('Permission Required', 'Please allow access to your photo library.');
-        return;
-      }
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: allowDocs
-          ? ImagePicker.MediaTypeOptions.Images
-          : ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: !allowDocs,
-        quality: 0.8,
-      });
-      if (!result.canceled && result.assets?.[0]) {
-        setter(result.assets[0].uri);
-      }
+      const asset = await pickMedia({ allowsEditing: !allowDocs });
+      if (asset) setter(asset.uri);
     } catch {
       Alert.alert('Error', 'Failed to pick photo');
     }
@@ -352,57 +370,17 @@ const FindSpaceScreen = () => {
     ]);
   };
 
-  const handleSetActiveVehicle = (id: string) => {
-    setVehicles((prev) =>
-      prev.map((v) => ({
-        ...v,
-        active: v.id === id,
-      }))
-    );
-  };
-
-  const handleVerifyOTP = (enteredOtp: string) => {
-    if (activeBooking && enteredOtp === activeBooking.otp) {
-      setActiveBooking((prev: any) => ({
-        ...prev,
-        status: 'PARKING',
-      }));
-      setTimeRemaining(7200); // Reset timer to 2 hours
-      Alert.alert('Check-in Successful', 'OTP verified! Your parking session has started.');
-    } else {
-      Alert.alert('Verification Failed', 'Incorrect OTP. Please check your OTP and try again.');
+  const handleSetActiveVehicle = async (id: string) => {
+    // Optimistic: reflect the new default immediately, then persist. The flag is
+    // what checkout reads to pre-select a vehicle, so it must hit the backend.
+    setVehicles((prev) => prev.map((v) => ({ ...v, active: v.id === id })));
+    try {
+      await api.put(`/vehicles/${id}/default`);
+    } catch (e: any) {
+      // Roll back to the server's truth on failure.
+      Alert.alert('Error', e?.message || 'Could not set default vehicle.');
+      loadVehiclesFromAPI();
     }
-  };
-
-  const handleLeaveSession = () => {
-    if (!activeBooking) return;
-    Alert.alert(
-      'Confirm Exit',
-      'Are you sure you want to end your parking session? The space owner will be notified to release the space.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Confirm Leaving',
-          onPress: () => {
-            // Add session log to history
-            const newHistoryItem = {
-              id: activeBooking.id,
-              spaceName: activeBooking.spaceName,
-              address: activeBooking.address,
-              date: 'Today, ' + new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-              price: activeBooking.totalPrice,
-              duration: `${activeBooking.durationHours} hours`,
-              vehiclePlate: activeBooking.vehiclePlate,
-              status: 'COMPLETED',
-              rating: 0, // not rated yet — real rating loads on next fetch
-            };
-            setHistoryBookings((prev) => [newHistoryItem, ...prev]);
-            setActiveBooking(null);
-            Alert.alert('Session Ended', 'You have successfully released the parking space. Owner will release space from their dashboard.');
-          },
-        },
-      ]
-    );
   };
 
   // Real location search using Nominatim (OpenStreetMap - FREE).
@@ -471,7 +449,7 @@ const FindSpaceScreen = () => {
         type: v.vehicleType === 'CAR' ? 'Car' : 'Bike',
         capacity: `${v.capacity} Seater`,
         role: v.ownershipType,
-        active: false,
+        active: !!v.isDefault, // the user's default vehicle (pre-selected at checkout)
         // Resolved Supabase URLs (or null) — used for display and edit-mode prefill
         frontPhotoUrl: v.frontPhotoUrl || null,
         sidePhotoUrl: v.sidePhotoUrl || null,
@@ -512,76 +490,118 @@ const FindSpaceScreen = () => {
     }, [tab])
   );
 
-  // Get user's current location (one-time)
-  useEffect(() => {
-    (async () => {
-      try {
-        // Respect the Location Services preference from Settings. If the user has
-        // turned it OFF, don't request GPS — fall back to the default city center.
-        try {
-          const prefs = await api.get('/user-preferences');
-          if (prefs?.success && prefs.preferences?.locationServices === false) {
-            const fb = { latitude: 13.0827, longitude: 80.2707 };
-            setUserLocation(fb);
-            setSearchCenter(fb);
-            const delta = regionDeltaForRadius(searchRadiusRef.current);
-            mapRef.current?.animateToRegion({ ...fb, latitudeDelta: delta, longitudeDelta: delta }, 1000);
-            fetchParkingSpaces(fb.latitude, fb.longitude);
-            return;
-          }
-        } catch {
-          // If prefs can't be read, fall through to the normal permission flow.
-        }
+  // Center the map on the user, falling back to the default city center when GPS
+  // is unavailable. Shared so the mount-time auto-detect and the "recenter" FAB
+  // behave identically.
+  const DEFAULT_CENTER = { latitude: 13.0827, longitude: 80.2707 }; // Chennai
 
-        let { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          const fb = { latitude: 13.0827, longitude: 80.2707 };
-          setUserLocation(fb);
-          setSearchCenter(fb);
-          // Zoom to fit the current radius and load spaces so the map isn't empty on denial
-          const delta = regionDeltaForRadius(searchRadiusRef.current);
-          mapRef.current?.animateToRegion({ ...fb, latitudeDelta: delta, longitudeDelta: delta }, 1000);
-          fetchParkingSpaces(fb.latitude, fb.longitude);
-          return;
-        }
-
-        const location = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.High
-        });
-        const { latitude, longitude } = location.coords;
-
-        setUserLocation({ latitude, longitude });
-        setSearchCenter({ latitude, longitude });
-
-        if (mapRef.current) {
-          const delta = regionDeltaForRadius(searchRadiusRef.current);
-          mapRef.current?.animateToRegion({
-            latitude,
-            longitude,
-            latitudeDelta: delta,
-            longitudeDelta: delta,
-          }, 1000);
-        }
-
-        fetchParkingSpaces(latitude, longitude);
-      } catch (error) {
-        const fb = { latitude: 13.0827, longitude: 80.2707 };
-        setUserLocation(fb);
-        setSearchCenter(fb);
-        const delta = regionDeltaForRadius(searchRadiusRef.current);
-        mapRef.current?.animateToRegion({ ...fb, latitudeDelta: delta, longitudeDelta: delta }, 1000);
-        fetchParkingSpaces(fb.latitude, fb.longitude);
-      }
-    })();
+  const centerOnCoords = useCallback((coords: { latitude: number; longitude: number }, isUser: boolean) => {
+    if (isUser) {
+      setUserLocation(coords);
+      setSearchCenter(coords);
+    } else {
+      // Fallback city center — used as the search center, but don't pretend it's
+      // the user's blue dot (leave userLocation null so we don't show a fake dot).
+      setSearchCenter(coords);
+    }
+    const delta = regionDeltaForRadius(searchRadiusRef.current);
+    mapRef.current?.animateToRegion({ ...coords, latitudeDelta: delta, longitudeDelta: delta }, 1000);
+    fetchParkingSpaces(coords.latitude, coords.longitude);
   }, []);
 
-  // Fetch verified parking spaces from API (geo-aware)
+  // Recenter FAB: actively (re)fetch the GPS fix and snap the map to "Near Me".
+  // Unlike the silent mount-time detect, this PROMPTS the user to enable GPS if
+  // it's off — because they explicitly asked to go to their location. This means
+  // the button works even if auto-detect failed on open (location previously not
+  // detected → tapping the FAB now retries and prompts).
+  const recenterToMe = useCallback(async () => {
+    if (isLocating) return;
+    setIsLocating(true);
+    try {
+      const result = await getDeviceLocation({ promptToEnable: true });
+      if (result.ok && result.coords) {
+        setUserLocation(result.coords);
+        setSearchCenter(result.coords);
+        setSearchLabel('Near Me');
+        setSearchQuery('');
+        setSelectedSpace(null);
+        const delta = regionDeltaForRadius(searchRadiusRef.current);
+        mapRef.current?.animateToRegion({ ...result.coords, latitudeDelta: delta, longitudeDelta: delta }, 1000);
+        fetchParkingSpaces(result.coords.latitude, result.coords.longitude, searchRadiusRef.current);
+      } else if (result.failure === 'permission-denied') {
+        Alert.alert(
+          'Location permission needed',
+          'Allow location access to center the map on you.',
+          [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => Linking.openSettings() },
+          ],
+        );
+      } else if (result.failure === 'timeout') {
+        Alert.alert('Could not get your location', 'We couldn\'t get a GPS fix. Make sure you have a clear signal and try again.');
+      }
+      // services-off already showed its own prompt inside the helper.
+    } finally {
+      setIsLocating(false);
+    }
+  }, [isLocating]);
+
+  // Get the user's current location on mount (one-time). Uses the robust helper
+  // (last-known fix + balanced accuracy + hard timeout) so it can't hang and
+  // reliably resolves on real devices.
+  useEffect(() => {
+    (async () => {
+      // Respect the Location Services preference from Settings. If the user has
+      // turned it OFF, don't request GPS — fall back to the default city center.
+      try {
+        const prefs = await api.get('/user-preferences');
+        if (prefs?.success && prefs.preferences?.locationServices === false) {
+          centerOnCoords(DEFAULT_CENTER, false);
+          return;
+        }
+      } catch {
+        // If prefs can't be read, fall through to the normal permission flow.
+      }
+
+      // Silent auto-detect: don't nag with the "turn on GPS" prompt on open.
+      const result = await getDeviceLocation({ promptToEnable: false });
+      if (result.ok && result.coords) {
+        centerOnCoords(result.coords, true);
+      } else {
+        // Permission denied / GPS off / timed out → show the default city so the
+        // map isn't empty. The recenter FAB lets the user retry with a prompt.
+        centerOnCoords(DEFAULT_CENTER, false);
+      }
+    })();
+  }, [centerOnCoords]);
+
+  // Fetch verified parking spaces from API (geo-aware + filters)
   const fetchParkingSpaces = async (lat: number, lng: number, radiusKm = searchRadiusRef.current) => {
     try {
       setSpacesLoading(true);
 
+      // Apply the active filters (refs so this is correct even from stale closures).
+      // Backend accepts parkingFor (Car|Bike|Both), spaceType, and sort=distance|price.
+      const sort = filterSortRef.current;
+      const params = [
+        `lat=${lat}`,
+        `lng=${lng}`,
+        `radius=${radiusKm}`,
+        `sort=${sort}`,
+        'limit=50',
+      ];
+      if (filterVehicleRef.current !== 'all') {
+        // The backend includes 'Both' spaces when filtering by Car/Bike, so passing
+        // just the chosen vehicle is correct.
+        params.push(`parkingFor=${filterVehicleRef.current}`);
+      }
+      if (filterSpaceTypesRef.current.length > 0) {
+        // Comma-separated list; the backend matches with IN (...).
+        params.push(`spaceType=${encodeURIComponent(filterSpaceTypesRef.current.join(','))}`);
+      }
+
       // Backend computes distanceKm with Haversine + bounding-box prefilter
-      const json = await api.get(`/spaces/search?lat=${lat}&lng=${lng}&radius=${radiusKm}&sort=distance&limit=50`);
+      const json = await api.get(`/spaces/search?${params.join('&')}`);
       const rawSpaces: any[] = Array.isArray(json) ? json : json.data || json.spaces || [];
 
       const formatDistance = (km?: number) => {
@@ -612,13 +632,23 @@ const FindSpaceScreen = () => {
           image: null,
           distanceKm: distKm,
           distance: formatDistance(distKm),
+          address: s.address ?? '',
           area: s.address?.split(',').slice(-3, -1).join(',').trim() || s.address,
           reviews: s.ratingCount ?? 0,
           amenities: s.amenities || [],
-          status: (s.availableSpots ?? s.capacity ?? 1) <= 0 ? 'booked' : 'available',
+          capacity: s.capacity ?? null,
+          // Three states: 'closed' (outside the owner's operating hours) takes
+          // priority, then 'booked' (no free slots), else 'available'. The map
+          // marker + detail badge all read this.
+          status: s.isOpenNow === false
+            ? 'closed'
+            : (s.availableSpots ?? s.capacity ?? 1) <= 0 ? 'booked' : 'available',
+          isOpenNow: s.isOpenNow !== false, // default true if backend omitted it
           spaceType: s.spaceType,
           parkingFor: s.parkingFor,
           availability: s.availability,
+          startTime: s.startTime ?? null,
+          endTime: s.endTime ?? null,
           ownerId: String(s.ownerId),
         };
       });
@@ -723,6 +753,55 @@ const FindSpaceScreen = () => {
     // using searchRadiusRef.current — so the chosen radius is honored once it resolves.
   };
 
+  // Apply the chosen filters and re-fetch around the current center.
+  const applyFilters = (next: {
+    vehicle: 'all' | 'Car' | 'Bike';
+    spaceTypes: string[];
+    sort: 'distance' | 'price';
+  }) => {
+    filterVehicleRef.current = next.vehicle;
+    filterSpaceTypesRef.current = next.spaceTypes;
+    filterSortRef.current = next.sort;
+    setFilterVehicle(next.vehicle);
+    setFilterSpaceTypes(next.spaceTypes);
+    setFilterSort(next.sort);
+    setShowFilters(false);
+    setSelectedSpace(null);
+    const center = searchCenter || userLocation;
+    if (center) fetchParkingSpaces(center.latitude, center.longitude, searchRadiusRef.current);
+  };
+
+  // True when any filter is active — drives the filter button's "on" styling + badge.
+  const activeFilterCount =
+    (filterVehicle !== 'all' ? 1 : 0) +
+    (filterSpaceTypes.length > 0 ? 1 : 0) +
+    (filterSort !== 'distance' ? 1 : 0);
+
+  // "Search this area" — re-query around wherever the user has panned the map to.
+  const searchThisArea = () => {
+    if (!pannedCenter) return;
+    setSearchCenter(pannedCenter);
+    setSearchLabel('This area');
+    setSelectedSpace(null);
+    fetchParkingSpaces(pannedCenter.latitude, pannedCenter.longitude, searchRadiusRef.current);
+    setPannedCenter(null);
+  };
+
+  // Re-fetch when connectivity is restored (offline banner's "Retry" / auto-
+  // reconnect) so we don't show stale data. Re-run the spaces search around the
+  // current center, plus vehicles, the unread badge, and the active/history
+  // bookings if one of those tabs is open.
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(NETWORK_RECONNECTED, () => {
+      const center = searchCenter || userLocation;
+      if (center) fetchParkingSpaces(center.latitude, center.longitude, searchRadiusRef.current);
+      loadVehiclesFromAPI();
+      loadUnreadCount();
+      if (activeTab === 'active' || activeTab === 'history') loadMyBookings();
+    });
+    return () => sub.remove();
+  }, [searchCenter, userLocation, activeTab, loadMyBookings]);
+
   // Calculate distance between two coordinates (Haversine formula)
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
     const R = 6371; // Earth's radius in km
@@ -750,31 +829,12 @@ const FindSpaceScreen = () => {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
 
-      {/* Header */}
+      {/* Header — single PageHeader component for all tabs */}
       {activeTab === 'map' ? (
-        <View style={styles.header}>
-          <TouchableOpacity
-            activeOpacity={0.7}
-            style={styles.menuIconButton}
-            onPress={() => {
-              // Find-Parking is a top-level destination — its back button should
-              // ALWAYS land on Home, regardless of how we got here (push from
-              // home, the session bar, a deep link, etc.). router.back() is
-              // unreliable across those entry paths, so navigate to home directly.
-              router.replace('/(home)');
-            }}
-          >
-            <ChevronLeft size={18} color={Colors.textDark} strokeWidth={2.5} />
-          </TouchableOpacity>
-
-          <View style={styles.logoContainer}>
-            <PinIcon />
-            <Text style={styles.logoText}>
-              Park<Text style={{ color: Colors.primary }}>Swift</Text>
-            </Text>
-          </View>
-
-          <View style={styles.rightActions}>
+        <PageHeader
+          logo
+          onBack={() => router.replace('/(home)')}
+          right={
             <TouchableOpacity
               activeOpacity={0.7}
               style={styles.iconButton}
@@ -787,8 +847,8 @@ const FindSpaceScreen = () => {
                 </View>
               )}
             </TouchableOpacity>
-          </View>
-        </View>
+          }
+        />
       ) : (
         <PageHeader
           title={
@@ -845,7 +905,11 @@ const FindSpaceScreen = () => {
               label: `₹${space.price}`,
               spots: space.available ?? 0,
               rating: space.rating > 0 ? space.rating : undefined,
-              status: (space.status === 'available' ? 'available' : 'booked') as 'available' | 'booked',
+              status: (space.status === 'available'
+                ? 'available'
+                : space.status === 'closed'
+                  ? 'closed'
+                  : 'booked') as 'available' | 'booked' | 'closed',
               selected: selectedSpace?.id === space.id,
             })),
           ]}
@@ -855,6 +919,16 @@ const FindSpaceScreen = () => {
             if (space) handleSuggestionPress(space);
           }}
           onMapPress={() => setSelectedSpace(null)}
+          onRegionChange={(c) => {
+            // Only offer "Search this area" once the user pans a meaningful distance
+            // from the current search center (avoids the button flickering on tiny nudges).
+            const center = searchCenter || userLocation;
+            if (!center) { setPannedCenter(c); return; }
+            const dLat = Math.abs(c.latitude - center.latitude);
+            const dLng = Math.abs(c.longitude - center.longitude);
+            // ~0.5km threshold (0.0045° ≈ 0.5km)
+            if (dLat > 0.0045 || dLng > 0.0045) setPannedCenter(c);
+          }}
         />
 
         {/* Search Bar with Suggestions */}
@@ -873,9 +947,7 @@ const FindSpaceScreen = () => {
               }}
               onFocus={() => setShowSuggestions(searchQuery.length > 0)}
             />
-            {searching ? (
-              <ActivityIndicator size="small" color={Colors.primary} />
-            ) : searchQuery.length > 0 ? (
+            {searchQuery.length > 0 ? (
               <TouchableOpacity onPress={() => {
                 setSearchQuery('');
                 setShowSuggestions(false);
@@ -891,23 +963,42 @@ const FindSpaceScreen = () => {
           {!showSuggestions && (
             <View style={styles.searchMetaRow}>
               <View style={styles.searchChip}>
-                <MapPin size={13} color={ExtendedColors.indigoAccent} strokeWidth={2.5} />
+                <MapPin size={13} color={Colors.textSecondary} strokeWidth={2.5} />
                 <Text style={styles.searchChipText} numberOfLines={1}>{searchLabel}</Text>
               </View>
-              <View style={styles.radiusSelector}>
-                {RADIUS_OPTIONS.map((r) => {
-                  const active = searchRadiusKm === r;
-                  return (
-                    <TouchableOpacity
-                      key={r}
-                      style={[styles.radiusOption, active && styles.radiusOptionActive]}
-                      onPress={() => applyRadius(r)}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={[styles.radiusOptionText, active && styles.radiusOptionTextActive]}>{r}km</Text>
-                    </TouchableOpacity>
-                  );
-                })}
+              <View style={styles.metaRight}>
+                <View style={styles.radiusSelector}>
+                  {RADIUS_OPTIONS.map((r) => {
+                    const active = searchRadiusKm === r;
+                    return (
+                      <TouchableOpacity
+                        key={r}
+                        style={[styles.radiusOption, active && styles.radiusOptionActive]}
+                        onPress={() => applyRadius(r)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[styles.radiusOptionText, active && styles.radiusOptionTextActive]}>{r}km</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                {/* Filter button — opens the filter sheet; badge shows active count */}
+                <TouchableOpacity
+                  style={[styles.filterBtn, activeFilterCount > 0 && styles.filterBtnActive]}
+                  onPress={() => setShowFilters(true)}
+                  activeOpacity={0.8}
+                >
+                  <SlidersHorizontal
+                    size={16}
+                    color={activeFilterCount > 0 ? Colors.white : Colors.textPrimary}
+                    strokeWidth={2.5}
+                  />
+                  {activeFilterCount > 0 && (
+                    <View style={styles.filterBadge}>
+                      <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
               </View>
             </View>
           )}
@@ -953,27 +1044,51 @@ const FindSpaceScreen = () => {
           {/* Searching / no-results state */}
           {showSuggestions && suggestions.length === 0 && searchQuery.length > 0 && (
             <View style={styles.suggestionsBox}>
-              <View style={styles.noSuggestions}>
-                {searching ? (
-                  <>
-                    <ActivityIndicator size="small" color={Colors.primary} />
-                    <Text style={styles.noSuggestionsText}>Searching…</Text>
-                  </>
-                ) : (
-                  <Text style={styles.noSuggestionsText}>No results found</Text>
-                )}
-              </View>
+              {searching ? (
+                <View style={styles.noSuggestions}>
+                  <ActivityIndicator size="small" color={Colors.primary} />
+                  <Text style={styles.noSuggestionsText}>Searching…</Text>
+                </View>
+              ) : (
+                <View style={styles.emptyResults}>
+                  <View style={styles.emptyResultsIcon}>
+                    <SearchX size={22} color={Colors.textMuted} strokeWidth={2} />
+                  </View>
+                  <Text style={styles.emptyResultsTitle}>No results found</Text>
+                  <Text style={styles.emptyResultsHint}>Try a different area or street name</Text>
+                </View>
+              )}
             </View>
           )}
         </View>
 
-        {/* Spaces loading indicator */}
-        {spacesLoading && (
-          <View style={styles.spacesLoadingOverlay}>
-            <ActivityIndicator size="small" color={Colors.primary} />
-            <Text style={styles.spacesLoadingText}>Finding spaces...</Text>
+        {/* "Search this area" — appears after the user pans the map away */}
+        {pannedCenter && !showSuggestions && (
+          <View style={styles.searchAreaWrap} pointerEvents="box-none">
+            <TouchableOpacity style={styles.searchAreaBtn} onPress={searchThisArea} activeOpacity={0.85}>
+              <RotateCw size={15} color={Colors.textPrimary} strokeWidth={2.5} />
+              <Text style={styles.searchAreaText}>Search this area</Text>
+            </TouchableOpacity>
           </View>
         )}
+
+        {/* Spaces loading indicator — centered on the map */}
+        {spacesLoading && (
+          <View style={styles.spacesLoadingOverlay} pointerEvents="none">
+            <View style={styles.spacesLoadingPill}>
+              <ActivityIndicator size="small" color={Colors.primary} />
+              <Text style={styles.spacesLoadingText}>Finding spaces...</Text>
+            </View>
+          </View>
+        )}
+
+        {/* ── Filter bottom sheet ─────────────────────────────────────────── */}
+        <FilterSheet
+          visible={showFilters}
+          onClose={() => setShowFilters(false)}
+          initial={{ vehicle: filterVehicle, spaceTypes: filterSpaceTypes, sort: filterSort }}
+          onApply={applyFilters}
+        />
 
         {/* Floating Actions on the Right */}
         <View style={[
@@ -985,37 +1100,26 @@ const FindSpaceScreen = () => {
           }
         ]}>
           {/* Radius Toggle Button */}
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.floatingCircleBtn, showRadius && styles.radiusButtonActive]}
             onPress={() => setShowRadius(!showRadius)}
             activeOpacity={0.8}
           >
-            <Target size={20} color={showRadius ? ExtendedColors.indigoAccent : Colors.textPrimary} strokeWidth={2.5} />
+            <Target size={20} color={Colors.textPrimary} strokeWidth={2.5} />
           </TouchableOpacity>
 
           {/* Navigation Button */}
-          <TouchableOpacity 
-            style={[styles.floatingCircleBtn, { backgroundColor: ExtendedColors.indigoAccent }]}
+          <TouchableOpacity
+            style={[styles.floatingCircleBtn, { backgroundColor: Colors.primary }]}
             activeOpacity={0.8}
-            onPress={() => {
-              if (userLocation) {
-                // Recenter to GPS — circle, label and spaces all go back to "Near Me"
-                setSearchCenter(userLocation);
-                setSearchLabel('Near Me');
-                setSearchQuery('');
-                setSelectedSpace(null);
-                const delta = regionDeltaForRadius(searchRadiusKm);
-                mapRef.current?.animateToRegion({
-                  latitude: userLocation.latitude,
-                  longitude: userLocation.longitude,
-                  latitudeDelta: delta,
-                  longitudeDelta: delta,
-                }, 1000);
-                fetchParkingSpaces(userLocation.latitude, userLocation.longitude, searchRadiusKm);
-              }
-            }}
+            onPress={recenterToMe}
+            disabled={isLocating}
           >
-            <Navigation size={20} color={Colors.white} strokeWidth={2.5} />
+            {isLocating ? (
+              <ActivityIndicator size="small" color={Colors.white} />
+            ) : (
+              <Navigation size={20} color={Colors.white} strokeWidth={2.5} />
+            )}
           </TouchableOpacity>
         </View>
 
@@ -1092,7 +1196,9 @@ const FindSpaceScreen = () => {
                     styles.statusBadgeText,
                     selectedSpace.status === 'available' ? styles.statusBadgeTextAvailable : styles.statusBadgeTextBooked
                   ]}>
-                    {selectedSpace.status === 'available' ? 'Available' : 'Booked'}
+                    {selectedSpace.status === 'available'
+                      ? 'Available'
+                      : selectedSpace.status === 'closed' ? 'Closed' : 'Booked'}
                   </Text>
                 </View>
               </View>
@@ -1124,18 +1230,20 @@ const FindSpaceScreen = () => {
                     params: {
                       spaceId: selectedSpace.id,
                       spaceName: selectedSpace.name,
-                      address: selectedSpace.area ? `${selectedSpace.name}, ${selectedSpace.area}, Chennai` : `${selectedSpace.name}, Chennai`,
+                      // Pass the REAL address (space-detail re-fetches authoritatively;
+                      // this is just the initial display, so don't fabricate a city).
+                      address: selectedSpace.address || selectedSpace.area || selectedSpace.name,
                       pricePerHour: selectedSpace.price,
                       availableSlots: selectedSpace.available ?? 0,
                       rating: selectedSpace.rating ?? 0,
-                      distance: selectedSpace.distance ? parseFloat(selectedSpace.distance) : 0.4,
+                      distance: selectedSpace.distance ? parseFloat(selectedSpace.distance) : 0,
                       lat: selectedSpace.latitude,
                       lng: selectedSpace.longitude,
                       ownerId: selectedSpace.ownerId,
                       spaceType: selectedSpace.spaceType || '',
                       amenities: JSON.stringify(selectedSpace.amenities || []),
                       frontPhotoUrl: selectedSpace.frontPhotoUrl || '',
-                      totalSlots: selectedSpace.capacity || 15,
+                      totalSlots: selectedSpace.capacity ?? selectedSpace.available ?? 0,
                     }
                   });
                 }}
@@ -1229,16 +1337,19 @@ const FindSpaceScreen = () => {
       {activeTab === 'active' && (
         <ActiveSessionsTab
           activeBooking={activeBooking}
+          loading={activeLoading}
+          error={activeError}
+          onRetry={loadMyBookings}
           setActiveTab={setActiveTab}
-          timeRemaining={timeRemaining}
-          formatTime={formatTime}
-          handleVerifyOTP={handleVerifyOTP}
-          handleLeaveSession={handleLeaveSession}
+          onOpenActiveSession={() => {}}
         />
       )}
       {activeTab === 'history' && (
         <BookingHistoryTab
           historyBookings={historyBookings}
+          loading={historyLoading}
+          error={historyError}
+          onRetry={loadMyBookings}
         />
       )}
 

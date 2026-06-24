@@ -1,27 +1,38 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   Animated, StyleSheet, Text, TouchableOpacity, View, Platform,
-  PanResponder, Keyboard, AccessibilityInfo, Pressable,
+  PanResponder, Keyboard, AccessibilityInfo, Pressable, DeviceEventEmitter,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { useRouter, useSegments } from 'expo-router';
+import { useRouter, useSegments, usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X } from 'lucide-react-native';
 import {
   useSessionBarStore, minsUntil, isDismissible, isInformational, type BarEntry, type BarVariant,
 } from '../store/sessionBarStore';
 import { useNetworkStore } from '../store/networkStore';
+import { useAuthStore } from '../store/authStore';
 import { useTheme, type AppTheme } from '../hooks/useTheme';
 import { TAB_BAR_TOTAL } from '../constants/tabBar';
 
 // ── Screens where the bar is suppressed (the screen IS the full action UI) ────
 const HIDDEN_SEGMENTS = new Set([
+  // Full action screens — the screen IS the status/action UI.
   'booking-status',
   'active-session',
   'session-complete',
   'booking-request',
   'exit-verification',
   'verify',           // owner is already inside the OTP verification flow
+  'active',           // owner's Live Sessions screen already shows the session
+  // Reading / settings sub-pages — the bar is clutter here (you're not tracking a
+  // session, you're reading). Keep it on the Home hub + booking-list screens only.
+  'notifications',
+  'settings',
+  'profile',
+  'help-support',
+  'manage-billing',
+  'my-reports',
 ]);
 
 // ── Countdown: "1:45" from total seconds ──────────────────────────────────────
@@ -91,7 +102,7 @@ function buildConfig(entry: BarEntry, C: AppTheme['colors'], nowTs: number): Bar
         title: "You're on your way",
         subtitle: otp ? `${spaceName} · OTP: ${otp.split('').join(' ')}` : `${spaceName} · generating OTP…`,
         titleColor: C.info, subtitleColor: C.info,
-        targetRoute: '/(find-space)/active-session', needsBookingId: true,
+        targetRoute: '/(find-space)', needsBookingId: false,
       };
     case 'session_active':
       return {
@@ -99,7 +110,7 @@ function buildConfig(entry: BarEntry, C: AppTheme['colors'], nowTs: number): Bar
         title: 'Currently parked',
         subtitle: remMins !== null ? `${spaceName} · ${fmtRemaining(remMins)} remaining` : spaceName,
         titleColor: C.success, subtitleColor: C.success,
-        targetRoute: '/(find-space)/active-session', needsBookingId: true,
+        targetRoute: '/(find-space)', needsBookingId: false,
       };
     case 'session_ending':
       return {
@@ -107,7 +118,15 @@ function buildConfig(entry: BarEntry, C: AppTheme['colors'], nowTs: number): Bar
         title: 'Session ending soon',
         subtitle: remMins !== null ? `${spaceName} · ${fmtRemaining(remMins)} left` : spaceName,
         titleColor: C.error, subtitleColor: C.error,
-        targetRoute: '/(find-space)/active-session', needsBookingId: true,
+        targetRoute: '/(find-space)', needsBookingId: false,
+      };
+    case 'session_leaving':
+      return {
+        bg: C.warningBg, border: C.warningBgAlt, icon: '🚶',
+        title: 'Leaving — awaiting exit',
+        subtitle: spaceName ? `${spaceName} · owner is confirming your exit` : 'Owner is confirming your exit',
+        titleColor: C.warning, subtitleColor: C.warning,
+        targetRoute: '/(find-space)', needsBookingId: false,
       };
     case 'rating_pending':
       return {
@@ -136,10 +155,7 @@ function buildConfig(entry: BarEntry, C: AppTheme['colors'], nowTs: number): Bar
         subtitle: [spaceName, parkerName, vehiclePlate, etaText ? `ETA ${etaText}` : null]
           .filter(Boolean).join(' · '),
         titleColor: C.info, subtitleColor: C.info,
-        // Parker is still travelling — there's nothing to VERIFY yet. Open the
-        // booking details (ETA, vehicle, phone, directions) instead. Verification
-        // only opens once the parker arrives (parker_at_gate).
-        targetRoute: '/(my-spaces)/booking-request', needsBookingId: true,
+        targetRoute: '/(my-spaces)/verify', needsBookingId: false,
       };
     case 'parker_at_gate':
       return {
@@ -185,7 +201,7 @@ function buildConfig(entry: BarEntry, C: AppTheme['colors'], nowTs: number): Bar
 
 // Variants that should fire a haptic the first time they appear (time-critical).
 const URGENT_VARIANTS = new Set<BarVariant>([
-  'new_request', 'session_ending', 'owner_session_ending',
+  'new_request', 'session_ending', 'session_leaving', 'owner_session_ending',
   'owner_session_leaving', 'parker_at_gate',
 ]);
 
@@ -193,6 +209,7 @@ const URGENT_VARIANTS = new Set<BarVariant>([
 export default function SessionBar() {
   const router = useRouter();
   const segments = useSegments();
+  const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const C = theme.colors;
@@ -204,6 +221,35 @@ export default function SessionBar() {
   // When offline, the bar may be showing the last-synced state — flag it so the
   // user knows it could be outdated rather than presenting stale data as live.
   const isOffline = useNetworkStore((s) => s.isConnected === false);
+  // Only ever show the bar to a signed-in user. A persisted bar must NEVER leak
+  // onto the logged-out welcome / auth screens (privacy + correctness).
+  const isLoggedIn = useAuthStore((s) => !!s.user);
+
+  // Hide the bar while the side drawer is open (it would float over the menu).
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('drawer:state', (open: boolean) => setDrawerOpen(!!open));
+    return () => sub.remove();
+  }, []);
+
+  // While the full-screen booking-request MODAL is up, hide ONLY the duplicate
+  // 'new_request' sticky bar (modal owns the request). All other bars are
+  // unaffected. Once the owner minimizes the modal, the bar takes over.
+  const [requestModalOpen, setRequestModalOpen] = useState(false);
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('owner-alert:visible', (open: boolean) => setRequestModalOpen(!!open));
+    return () => sub.remove();
+  }, []);
+
+  // Bulletproof suppression: a full-screen action screen (booking-request,
+  // verify, etc.) emits 'sessionbar:suppress' true while focused → the bar hides
+  // completely, regardless of how Expo Router reports its segments/pathname
+  // (hidden tabs inside a Tabs group don't always surface in useSegments()).
+  const [screenSuppressed, setScreenSuppressed] = useState(false);
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('sessionbar:suppress', (on: boolean) => setScreenSuppressed(!!on));
+    return () => sub.remove();
+  }, []);
 
   // 1-second tick for live countdowns + expiry pruning.
   const [nowTs, setNowTs] = useState(Date.now());
@@ -215,22 +261,33 @@ export default function SessionBar() {
     return () => clearInterval(t);
   }, [pruneExpired]);
 
-  // Context-scope the bar to the tab the user is in (mirrors Swiggy/Uber: each
-  // context surfaces only its own status):
-  //   • Owner tabs (my-spaces)  → OWNER bars only (new request, verify, etc.)
-  //   • Find-space / History    → PARKER bars only (your booking, active session)
-  //   • Home (the neutral hub)  → BOTH, stacked/swipeable — it's the one place a
-  //                               dual-role user sees their parker booking AND an
-  //                               incoming owner request at once.
+  // Context-scope the bar to the tab the user is in (mirrors Swiggy: when you're
+  // actively browsing/ordering something NEW, the previous order's status bar does
+  // NOT clutter that screen — you check it from the hub instead):
+  //   • Home (the neutral hub)  → BOTH parker + owner bars, stacked/swipeable.
+  //                               This is the ONE place you track active status.
+  //   • Owner tabs (my-spaces)  → OWNER bars only (incoming requests to act on,
+  //                               while the owner is managing their spaces).
+  //   • Find-space (map/search/ → NO bar. You're finding/booking a NEW space or
+  //     history/vehicle)           viewing history — the pending booking is tracked
+  //                                on Home + the Booking Status screen, not here.
   const group = segments[0];
   const inOwnerTabs = group === '(my-spaces)';
   const inHome = group === '(home)';
   const visibleBars = useMemo(
-    () =>
-      bars.filter((b) =>
-        inHome ? true : inOwnerTabs ? b.source === 'owner' : b.source === 'parker',
-      ),
-    [bars, inHome, inOwnerTabs],
+    () => {
+      // 1) Scope by current tab.
+      let scoped: BarEntry[];
+      if (inHome) scoped = bars;                              // hub: everything
+      else if (inOwnerTabs) scoped = bars.filter((b) => b.source === 'owner');
+      else scoped = [];                                        // find-space etc.: nothing
+      // 2) Hide 'new_request' bar while its modal is up, OR while the owner is
+      //    already on the my-spaces tab (the "Requires Attention" card there handles
+      //    pending requests — no need for a duplicate sticky bar on the same screen).
+      if (requestModalOpen || inOwnerTabs) scoped = scoped.filter((b) => b.variant !== 'new_request');
+      return scoped;
+    },
+    [bars, inHome, inOwnerTabs, requestModalOpen],
   );
 
   // Which card in the stack is showing.
@@ -240,10 +297,19 @@ export default function SessionBar() {
     if (index > visibleBars.length - 1) setIndex(Math.max(0, visibleBars.length - 1));
   }, [visibleBars.length, index]);
 
-  // Suppress on action screens.
-  const lastSegment = segments[segments.length - 1] ?? '';
-  const isSuppressed = HIDDEN_SEGMENTS.has(lastSegment);
-  const shouldShow = visibleBars.length > 0 && !isSuppressed;
+  // Suppress on "full action UI" screens (they have their own Accept/Reject/OTP
+  // controls — a floating bar would cover them). We check BOTH the segments AND
+  // the full pathname: a screen pushed inside a Tabs group with `href: null`
+  // (e.g. booking-request, verify) does NOT appear in useSegments(), so segment-
+  // only matching missed it. usePathname() returns "/booking-request", which is
+  // reliable for those hidden-tab routes.
+  const isSuppressed =
+    screenSuppressed ||
+    segments.some((s) => HIDDEN_SEGMENTS.has(s)) ||
+    [...HIDDEN_SEGMENTS].some((s) => pathname.includes(s));
+  // Never on the auth/onboarding stack, and never when signed out.
+  const inAuthFlow = group === '(auth)' || group === undefined;
+  const shouldShow = isLoggedIn && !inAuthFlow && !drawerOpen && visibleBars.length > 0 && !isSuppressed;
 
   const active = visibleBars[index] ?? visibleBars[0] ?? null;
 
@@ -315,12 +381,18 @@ export default function SessionBar() {
     [visibleBars.length, index, swipeX],
   );
 
+  const PARKER_SESSION_VARIANTS = new Set([
+    'arrived_otp_ready', 'session_active', 'session_ending', 'session_leaving',
+  ]);
+
   const handlePress = useCallback((cfg: BarConfig, entry: BarEntry) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    // Informational bars (e.g. "Request expired") are dead status notices — there
-    // is nothing to act on, so a tap does NOT navigate. The user dismisses them
-    // with the X. Only actionable bars deep-link to their screen.
     if (isInformational(entry.variant)) return;
+    // Parker active-session bars → open the Active tab inline (not the separate screen)
+    if (PARKER_SESSION_VARIANTS.has(entry.variant)) {
+      router.push({ pathname: '/(find-space)', params: { openTab: 'active' } });
+      return;
+    }
     const route = cfg.targetRoute as any;
     if (cfg.needsBookingId && entry.bookingId) {
       router.push({ pathname: route, params: { bookingId: entry.bookingId } });
@@ -336,6 +408,10 @@ export default function SessionBar() {
   }, [dismiss]);
 
   if (!active) return null;
+  // Hard gate: when signed out or on the auth/onboarding stack, render NOTHING at
+  // all (not even an off-screen, animated-away bar). A persisted bar must never
+  // appear — even briefly — on a logged-out screen.
+  if (!isLoggedIn || inAuthFlow || drawerOpen || isSuppressed) return null;
 
   const cfg = buildConfig(active, C, nowTs);
   if (!cfg) return null;

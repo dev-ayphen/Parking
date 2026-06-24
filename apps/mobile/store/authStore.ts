@@ -3,6 +3,7 @@ import {
   getAuthToken,
   getUserId,
   saveAuthToken,
+  saveRefreshToken,
   saveUserId,
   clearAuthData,
 } from '../utils/secureStorage';
@@ -26,8 +27,7 @@ interface AuthState {
   isHydrated: boolean;
   isAuthenticated: () => boolean;
   hydrate: () => Promise<void>;
-  setSession: (token: string, user: AuthUser, expiresIn?: number) => Promise<void>;
-  setUser: (user: AuthUser | null) => void;
+  setSession: (token: string, user: AuthUser, expiresIn?: number, refreshToken?: string) => Promise<void>;
   refreshProfile: () => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -57,15 +57,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  setSession: async (token, user, expiresIn) => {
+  setSession: async (token, user, expiresIn, refreshToken) => {
     await saveAuthToken(token, expiresIn);
+    // Persist the refresh token so api.service refreshAccessToken() can use it
+    // to silently renew the access token instead of forcing a re-login.
+    if (refreshToken) await saveRefreshToken(refreshToken);
     await saveUserId(user.id);
     // Re-arm the session-lost guard so a future expiry can trigger one more alert.
     resetAuthLostGuard();
     set({ token, user });
   },
-
-  setUser: (user) => set({ user }),
 
   refreshProfile: async () => {
     const { token } = get();
@@ -101,5 +102,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     await clearAuthData();
     set({ user: null, token: null });
+
+    // Wipe any session bars so the signed-out welcome screen (and the next user
+    // on this device) never sees the previous session's booking bar. Imported
+    // lazily to avoid a circular store dependency.
+    try {
+      const { useSessionBarStore } = require('./sessionBarStore');
+      useSessionBarStore.getState().clearAll();
+    } catch {
+      // never block logout
+    }
   },
 }));

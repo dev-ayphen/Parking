@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { AdminUser } from '../types/auth';
+import { API_BASE } from '@/lib/config';
 
 interface AuthState {
   user: AdminUser | null;
@@ -8,7 +9,6 @@ interface AuthState {
   token: string | null;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
-  setUser: (user: AdminUser | null) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -21,14 +21,22 @@ export const useAuthStore = create<AuthState>()(
       login: async (email: string, password: string) => {
         set({ isLoading: true });
         try {
-          const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api';
           const response = await fetch(`${API_BASE}/auth/admin-login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, password }),
           });
           const data = await response.json();
-          if (!response.ok) throw new Error(data.error || 'Invalid credentials');
+          if (!response.ok) {
+            // The backend returns `error` as a STRING for auth failures, but as an
+            // OBJECT ({ message, code, ... }) for validation errors. Passing an
+            // object to new Error() yields "[object Object]" — so extract a string.
+            const e = data?.error;
+            const msg =
+              typeof e === 'string' ? e
+              : (e?.message || data?.message || 'Invalid credentials');
+            throw new Error(msg);
+          }
           const user: AdminUser = {
             id: String(data.user.id),
             email: data.user.email,
@@ -43,10 +51,6 @@ export const useAuthStore = create<AuthState>()(
 
       logout: () => {
         set({ user: null, token: null });
-      },
-
-      setUser: (user) => {
-        set({ user });
       },
     }),
     {

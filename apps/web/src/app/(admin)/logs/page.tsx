@@ -9,9 +9,9 @@ import {
 } from 'lucide-react';
 import { io as createSocket } from 'socket.io-client';
 import { adminApi } from '@/services/api';
+import { useAuthStore } from '@/store/authStore';
+import { SOCKET_URL } from '@/lib/config';
 import { exportCsv } from '@/lib/download';
-
-const SOCKET_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api').replace(/\/api\/?$/, '');
 
 interface SystemLog {
   id: number;
@@ -31,9 +31,13 @@ export default function SystemLogsPage() {
   const [sourceFilter, setSourceFilter] = useState('All');
   const [logs, setLogs] = useState<SystemLog[]>([]);
   const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [exporting, setExporting] = useState(false);
+  const [backingUp, setBackingUp] = useState(false);
+  const PAGE_SIZE = 100;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const handleExport = async () => {
     setExporting(true);
@@ -42,6 +46,14 @@ export default function SystemLogsPage() {
       'system-logs',
     );
     setExporting(false);
+  };
+
+  // "Manual Backup" downloads a full unfiltered snapshot of system logs as CSV.
+  const handleBackup = async () => {
+    setBackingUp(true);
+    const ok = await exportCsv(() => adminApi.exportLogsCsv({}), 'logs-backup');
+    if (!ok) setError('Backup failed. Please try again.');
+    setBackingUp(false);
   };
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -52,8 +64,8 @@ export default function SystemLogsPage() {
         level: levelFilter,
         source: sourceFilter,
         search: searchQuery || undefined,
-        page: 1,
-        limit: 100,
+        page,
+        limit: PAGE_SIZE,
       });
       setLogs(res.logs || []);
       setTotal(res.total || 0);
@@ -62,7 +74,10 @@ export default function SystemLogsPage() {
     } finally {
       setLoading(false);
     }
-  }, [levelFilter, sourceFilter, searchQuery]);
+  }, [levelFilter, sourceFilter, searchQuery, page]);
+
+  // Reset to page 1 whenever filters/search change.
+  useEffect(() => { setPage(1); }, [levelFilter, sourceFilter, searchQuery]);
 
   // Debounced fetch on filter/search changes
   useEffect(() => {
@@ -72,7 +87,7 @@ export default function SystemLogsPage() {
 
   // Socket: debounced refetch on any event
   useEffect(() => {
-    const socket = createSocket(SOCKET_URL, { transports: ['websocket'] });
+    const socket = createSocket(SOCKET_URL, { transports: ['websocket'], auth: { token: useAuthStore.getState().token } });
 
     const debouncedRefresh = () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -112,9 +127,13 @@ export default function SystemLogsPage() {
           <p className="text-gray-500 mt-1">Monitor platform health, errors, and database activity.</p>
         </div>
         <div className="flex gap-3">
-          <button className="flex items-center gap-2 bg-indigo-50 text-indigo-700 px-4 py-2 rounded-xl font-medium border border-indigo-100 shadow-sm">
-            <DatabaseBackup size={18} />
-            Manual Backup
+          <button
+            onClick={handleBackup}
+            disabled={backingUp}
+            className="flex items-center gap-2 bg-indigo-50 text-indigo-700 px-4 py-2 rounded-xl font-medium border border-indigo-100 shadow-sm hover:bg-indigo-100 transition-colors disabled:opacity-60"
+          >
+            {backingUp ? <Loader2 size={18} className="animate-spin" /> : <DatabaseBackup size={18} />}
+            {backingUp ? 'Backing up…' : 'Manual Backup'}
           </button>
         </div>
       </motion.div>
@@ -248,12 +267,39 @@ export default function SystemLogsPage() {
           )}
 
           {/* Live indicator */}
-          <div className="flex items-center gap-2 mt-4 text-gray-500 animate-pulse">
-            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-            Tailing live logs...
-          </div>
+          {page === 1 && (
+            <div className="flex items-center gap-2 mt-4 text-gray-500 animate-pulse">
+              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+              Tailing live logs...
+            </div>
+          )}
         </div>
       </motion.div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-gray-500">
+            Page {page} of {totalPages} · {total.toLocaleString()} entries
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Previous
+            </button>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

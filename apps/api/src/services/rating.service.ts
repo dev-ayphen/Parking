@@ -5,6 +5,13 @@ export const ratingService = {
    * Parker rates a completed booking (rates the space owner).
    * bookingId is a CUID string. Upserts so re-rating updates the existing record.
    */
+  /**
+   * Submit a rating on a COMPLETED booking. MUTUAL (Airbnb/Turo-style):
+   *   - the PARKER rates the space owner, OR
+   *   - the OWNER rates the parker.
+   * The rater is whoever is calling; the ratee is the *other* party. One rating
+   * per person per booking (unique on bookingId+raterId), so both can rate.
+   */
   submitRating: async (userId: number, data: any) => {
     if (!userId) {
       throw Object.assign(new Error('Authentication required'), { statusCode: 401 });
@@ -27,30 +34,48 @@ export const ratingService = {
     if (!booking) {
       throw Object.assign(new Error('Booking not found'), { statusCode: 404 });
     }
-    if (booking.parkerId !== userId) {
-      throw Object.assign(new Error('Only the parker can rate this booking'), { statusCode: 403 });
+
+    const ownerId = (booking.space as any)?.ownerId as number | undefined;
+    const isParker = booking.parkerId === userId;
+    const isOwner = ownerId === userId;
+    if (!isParker && !isOwner) {
+      throw Object.assign(new Error('Only the parker or the space owner can rate this booking'), { statusCode: 403 });
+    }
+    // Only a genuinely completed stay can be rated — a real, finished session.
+    if (booking.status !== 'COMPLETED') {
+      throw Object.assign(
+        new Error('You can only review a booking after the session is completed.'),
+        { statusCode: 403 },
+      );
     }
 
-    const rateeId = (booking.space as any)?.ownerId;
+    // Ratee is the OTHER party: parker rates owner; owner rates parker.
+    const rateeId = isParker ? ownerId : booking.parkerId;
     if (!rateeId) {
-      throw Object.assign(new Error('Space owner not found'), { statusCode: 400 });
+      throw Object.assign(new Error('Other party not found'), { statusCode: 400 });
     }
-    const isUpdate = !!(await db.rating.findUnique({ where: { bookingId }, select: { id: true } }));
+
+    const isUpdate = !!(await db.rating.findUnique({
+      where: { bookingId_raterId: { bookingId, raterId: userId } },
+      select: { id: true },
+    }));
 
     const result = await db.rating.upsert({
-      where: { bookingId },
+      where: { bookingId_raterId: { bookingId, raterId: userId } },
       create: { bookingId, raterId: userId, rateeId, rating, review },
       update: { rating, review },
     });
 
-    // Return the context the controller needs to notify the owner live.
+    // Context for the controller to notify the rated party live.
     return {
       success: true,
       rating: result,
-      ownerId: rateeId as number,
+      direction: isParker ? 'PARKER_RATED_OWNER' : 'OWNER_RATED_PARKER',
+      rateeId: rateeId as number,
+      ownerId: ownerId as number,
       spaceId: (booking.space as any)?.id as number,
       spaceName: (booking.space as any)?.name as string,
-      isUpdate, // true = parker edited an existing rating (don't re-notify)
+      isUpdate, // true = edited an existing rating (don't re-notify)
     };
   },
 };

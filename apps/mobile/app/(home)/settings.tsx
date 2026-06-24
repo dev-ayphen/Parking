@@ -11,7 +11,7 @@ import {View,
   Alert} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Bell, Lock, Globe, Moon, Shield, Trash2 } from 'lucide-react-native';
+import { Bell, Globe, Moon, Shield, Trash2, Download } from 'lucide-react-native';
 import { PageHeader } from '../../components';
 import { api } from '../../services/api';
 import { toast } from '../../utils/toast';
@@ -32,6 +32,31 @@ export default function SettingsScreen() {
   const darkTheme = themeMode === 'dark';
   const logout = useAuthStore((s) => s.logout);
   const [deleting, setDeleting] = useState(false);
+  const [requestingData, setRequestingData] = useState(false);
+
+  const handleRequestData = () => {
+    Alert.alert(
+      'Request My Data',
+      'We will prepare a copy of your personal data and email it to your registered address within 30 days, as required by privacy regulations. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Request',
+          onPress: async () => {
+            try {
+              setRequestingData(true);
+              await api.post('/legal/data-request', { type: 'EXPORT' });
+              Alert.alert('Request Received', "We've logged your data request. You'll hear from us within 30 days.");
+            } catch (e: any) {
+              Alert.alert('Could not submit', e?.message || 'Please try again.');
+            } finally {
+              setRequestingData(false);
+            }
+          },
+        },
+      ],
+    );
+  };
 
   const handleDeleteAccount = () => {
     Alert.alert(
@@ -210,6 +235,17 @@ export default function SettingsScreen() {
               thumbColor={Colors.white}
             />
           </View>
+
+          <TouchableOpacity style={styles.settingItem} onPress={handleRequestData} disabled={requestingData} activeOpacity={0.7}>
+            <View style={styles.settingLeft}>
+              <View style={styles.iconContainer}><Download size={20} color={Colors.textSecondary} /></View>
+              <View style={styles.settingText}>
+                <Text style={styles.settingLabel}>Request My Data</Text>
+                <Text style={styles.settingDesc}>Get a copy of your personal data</Text>
+              </View>
+            </View>
+            {requestingData && <ActivityIndicator size="small" color={Colors.primary} />}
+          </TouchableOpacity>
         </View>
 
         {/* Account — deletion (Play Store / GDPR compliance) */}
@@ -235,14 +271,6 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.white },
-  _unusedHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: Spacing.screenH, paddingVertical: Spacing['3xl'], backgroundColor: Colors.white,
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4 },
-      android: { elevation: 4 },
-    }),
-  },
   backButton: {
     width: 38, height: 38, borderRadius: BorderRadius.circle, backgroundColor: Colors.screenBg,   // 19 = circle ✓
     borderWidth: 1, borderColor: Colors.surfaceBg, alignItems: 'center', justifyContent: 'center',

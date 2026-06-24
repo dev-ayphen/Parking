@@ -49,13 +49,22 @@ const BookingConfirmScreen = () => {
   const vehicleId = params.vehicleId as string;
   const vehicleRegistration = params.vehicleRegistration as string;
   const vehicleType = params.vehicleType as string;
-  const durationHours = parseInt(params.durationHours as string, 10);
-  const pricePerHour = parseInt(params.pricePerHour as string, 10);
-  const basePrice = parseInt(params.basePrice as string, 10);
-  const totalPrice = parseInt(params.totalPrice as string, 10);
+  // Parse safely — a missing/non-numeric param must never render "₹NaN".
+  const toNum = (v: unknown): number | null => {
+    const n = parseInt(v as string, 10);
+    return Number.isFinite(n) ? n : null;
+  };
+  const durationHours = toNum(params.durationHours) ?? 1;
+  const pricePerHour = toNum(params.pricePerHour);
+  // Derive base/total from the rate when those params are absent.
+  const basePrice = toNum(params.basePrice) ?? (pricePerHour != null ? pricePerHour * durationHours : null);
+  const totalPrice = toNum(params.totalPrice) ?? basePrice;
+  // Display helper — shows "—" instead of NaN when a value is genuinely unknown.
+  const money = (v: number | null) => (v != null ? `₹${v}` : '—');
 
-  // Booking flow state
-  const [arrivalMinutes, setArrivalMinutes] = useState<number>(20);
+  // Booking flow state. arrivalMinutes starts NULL — the user must actively pick
+  // an arrival time before they can confirm (no silent default).
+  const [arrivalMinutes, setArrivalMinutes] = useState<number | null>(null);
   const [customMode, setCustomMode] = useState(false);
   const [customValue, setCustomValue] = useState('');
   const [declarations, setDeclarations] = useState<Record<DeclarationKey, boolean>>({
@@ -69,8 +78,22 @@ const BookingConfirmScreen = () => {
 
   const allAccepted = DECLARATIONS.every((d) => declarations[d.key]);
 
-  // Get current date and time
-  const now = new Date();
+  // Arrival time is mandatory: either a preset is selected, or custom mode holds a
+  // valid positive number. Confirm stays disabled until this is true.
+  const customMinutes = parseInt(customValue, 10);
+  const hasArrivalTime = customMode
+    ? !isNaN(customMinutes) && customMinutes > 0
+    : arrivalMinutes != null;
+
+  // "Now" ticks every 30s so the displayed start time stays current while the
+  // user reads the declarations (instead of freezing at mount and drifting from
+  // the real eta we send on submit).
+  const [now, setNow] = useState(() => new Date());
+  React.useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 30 * 1000);
+    return () => clearInterval(t);
+  }, []);
+
   const bookingDate = now.toLocaleDateString('en-IN', {
     day: '2-digit',
     month: 'short',
@@ -120,8 +143,12 @@ const BookingConfirmScreen = () => {
       Alert.alert('Declarations Required', 'Please accept all declarations before confirming your booking.');
       return;
     }
-    const finalMinutes = customMode ? parseInt(customValue, 10) : arrivalMinutes;
-    if (customMode && (isNaN(finalMinutes) || finalMinutes <= 0)) {
+    if (!hasArrivalTime) {
+      Alert.alert('Arrival Time Required', 'Please choose when you will arrive before confirming.');
+      return;
+    }
+    const finalMinutes = customMode ? parseInt(customValue, 10) : (arrivalMinutes as number);
+    if (isNaN(finalMinutes) || finalMinutes <= 0) {
       Alert.alert('Invalid Arrival Time', 'Please enter a valid number of minutes.');
       return;
     }
@@ -149,7 +176,7 @@ const BookingConfirmScreen = () => {
       const bookingId = json.booking?.id;
 
       // 2. Record the consent / declarations (best-effort — booking already created)
-      if (bookingId) {
+      if (bookingId != null) {
         try {
           await api.post(`/bookings/${bookingId}/consent`, {
             ...declarations,
@@ -161,15 +188,26 @@ const BookingConfirmScreen = () => {
         }
       }
 
-      // 3. Go to booking success screen (auto-navigates to status after 2 sec)
-      router.replace({
-        pathname: '/(find-space)/booking-success',
-        params: {
-          bookingId: bookingId.toString(),
-          spaceName,
-          totalAmount: totalPrice.toString(),
-        },
-      });
+      // 3. The booking WAS created (json.success was true). If the id is missing
+      // for any reason, never show "Booking Failed" — the booking exists. Route to
+      // the success screen with the id when we have it, otherwise fall back to the
+      // bookings list so the user can see their placed booking.
+      if (bookingId != null) {
+        router.replace({
+          pathname: '/(find-space)/booking-success',
+          params: {
+            bookingId: String(bookingId),
+            spaceName,
+            totalAmount: totalPrice != null ? String(totalPrice) : '',
+          },
+        });
+      } else {
+        Alert.alert(
+          'Booking Placed',
+          'Your booking was placed successfully. You can track it in your bookings.',
+        );
+        router.replace('/(home)/my-bookings');
+      }
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : String(e);
       Alert.alert('Booking Failed', errorMsg || 'Unknown error occurred');
@@ -239,8 +277,12 @@ const BookingConfirmScreen = () => {
 
           {/* Arrival Time Card */}
           <View style={styles.sectionCard}>
-            <Text style={styles.sectionCardTitle}>When will you arrive?</Text>
-            <Text style={styles.sectionCardSubtitle}>The owner will be notified of your expected arrival.</Text>
+            <Text style={styles.sectionCardTitle}>When will you arrive? *</Text>
+            <Text style={styles.sectionCardSubtitle}>
+              {hasArrivalTime
+                ? 'The owner will be notified of your expected arrival.'
+                : 'Required — pick your arrival time to continue.'}
+            </Text>
             <View style={styles.arrivalRow}>
               {ARRIVAL_PRESETS.map((preset) => {
                 const active = !customMode && arrivalMinutes === preset.value;
@@ -292,16 +334,16 @@ const BookingConfirmScreen = () => {
 
             <View style={styles.breakdownRow}>
               <Text style={styles.breakdownLabel}>
-                ₹{pricePerHour} × {durationHours}h
+                {money(pricePerHour)} × {durationHours}h
               </Text>
-              <Text style={styles.breakdownValue}>₹{basePrice}</Text>
+              <Text style={styles.breakdownValue}>{money(basePrice)}</Text>
             </View>
 
             <View style={styles.breakdownDivider} />
 
             <View style={styles.breakdownRow}>
               <Text style={styles.totalLabel}>Total Amount</Text>
-              <Text style={styles.totalValue}>₹{totalPrice}</Text>
+              <Text style={styles.totalValue}>{money(totalPrice)}</Text>
             </View>
           </View>
 
@@ -328,15 +370,15 @@ const BookingConfirmScreen = () => {
                 {allAccepted && <Check size={14} color={Colors.white} strokeWidth={3} />}
               </View>
               <Text style={styles.declarationText}>
-                I have read and agree to the Parking Terms & Conditions
+                I have read and agree to the{' '}
+                <Text
+                  style={styles.declarationLink}
+                  onPress={() => router.push('/(find-space)/booking-terms')}
+                  suppressHighlighting
+                >
+                  Parking Terms &amp; Conditions
+                </Text>
               </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              onPress={() => router.push('/(find-space)/booking-terms')}
-              style={{ marginTop: 8 }}
-            >
-              <Text style={{ color: Colors.primary, fontSize: FontSize.sm, fontWeight: FontWeight.semibold }}>View Terms & Conditions</Text>
             </TouchableOpacity>
           </View>
 
@@ -348,17 +390,17 @@ const BookingConfirmScreen = () => {
       {/* Sticky Footer */}
       <View style={styles.stickyFooter}>
         <TouchableOpacity
-          style={[styles.confirmButton, (!allAccepted || submitting) && styles.confirmButtonDisabled]}
+          style={[styles.confirmButton, (!allAccepted || !hasArrivalTime || submitting) && styles.confirmButtonDisabled]}
           onPress={handleConfirm}
           activeOpacity={0.8}
-          disabled={!allAccepted || submitting}
+          disabled={!allAccepted || !hasArrivalTime || submitting}
         >
           {submitting ? (
             <ActivityIndicator color={Colors.white} size="small" />
           ) : (
             <>
               <Text style={styles.confirmButtonText}>Confirm Booking</Text>
-              <Text style={styles.confirmButtonPrice}>₹{totalPrice}</Text>
+              <Text style={styles.confirmButtonPrice}>{money(totalPrice)}</Text>
             </>
           )}
         </TouchableOpacity>
@@ -577,6 +619,11 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.medium,
     color: Colors.textDark,
     lineHeight: 19,
+  },
+  declarationLink: {
+    color: Colors.primary,
+    fontWeight: FontWeight.semibold,
+    textDecorationLine: 'underline',
   },
   stickyFooter: {
     backgroundColor: Colors.white,

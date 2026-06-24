@@ -152,6 +152,26 @@ export const adminController = {
     }
   },
 
+  // Soft "please upload this document" request — notifies the owner, no status change.
+  requestSpaceDocument: async (req: Request, res: Response) => {
+    try {
+      const spaceId = parseInt(req.params.id);
+      const { documentLabel, message } = req.body ?? {};
+      const result = await adminService.requestSpaceDocument(spaceId, documentLabel, message);
+      const ownerId = (result as any)?.ownerId;
+      // Reuse the realtime notification channel so the owner sees it live.
+      emitToAdmin('spaces', 'space:updated', { spaceId });
+      await logEvent('INFO', 'spaces', `Document requested for space ${spaceId}`, { documentLabel, message }, req.user?.id);
+      if (req.user?.id) await auditService.logAdminAction({
+        adminId: req.user.id, action: 'SPACE_DOC_REQUESTED', targetType: 'SPACE', targetId: spaceId,
+        reason: message, payload: { documentLabel }, req,
+      });
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
   blockSpace: async (req: Request, res: Response) => {
     try {
       const spaceId = parseInt(req.params.id);
@@ -163,6 +183,35 @@ export const adminController = {
       if (req.user?.id) await auditService.logAdminAction({
         adminId: req.user.id, action: 'SPACE_BLOCKED', targetType: 'SPACE', targetId: spaceId,
         reason: req.body?.reason, payload: { ownerId }, req,
+      });
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
+  getSpaceForAdmin: async (req: Request, res: Response) => {
+    try {
+      const spaceId = parseInt(req.params.id);
+      if (Number.isNaN(spaceId)) return res.status(400).json({ error: 'Invalid space id' });
+      const result = await adminService.getSpaceForAdmin(spaceId);
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
+  unblockSpace: async (req: Request, res: Response) => {
+    try {
+      const spaceId = parseInt(req.params.id);
+      const result = await adminService.unblockSpace(spaceId);
+      const ownerId = (result as any)?.space?.ownerId ?? (result as any)?.ownerId;
+      if (ownerId) emitToUser(ownerId, 'space:status', { spaceId, status: 'VERIFIED' });
+      emitToAdmin('spaces', 'space:updated', { spaceId, status: 'VERIFIED' });
+      await logEvent('INFO', 'spaces', `Space ${spaceId} unblocked`, { ownerId }, req.user?.id);
+      if (req.user?.id) await auditService.logAdminAction({
+        adminId: req.user.id, action: 'SPACE_UNBLOCKED', targetType: 'SPACE', targetId: spaceId,
+        payload: { ownerId }, req,
       });
       res.json(result);
     } catch (error) {
@@ -210,16 +259,18 @@ export const adminController = {
 
   listSupportTickets: async (req: Request, res: Response) => {
     try {
-      const result = await adminService.listSupportTickets(req.query);
+      // Pass the current admin id so the "My Tickets" filter resolves to them.
+      const result = await adminService.listSupportTickets({ ...req.query, adminId: req.user?.id });
       res.json(result);
     } catch (error) {
       sendError(res, error);
     }
   },
 
-  getAnalyticsOverview: async (_req: Request, res: Response) => {
+  getAnalyticsOverview: async (req: Request, res: Response) => {
     try {
-      const result = await adminService.getAnalyticsOverview();
+      const range = typeof req.query.range === 'string' ? req.query.range : undefined;
+      const result = await adminService.getAnalyticsOverview(range);
       res.json(result);
     } catch (error) {
       sendError(res, error);
@@ -259,7 +310,8 @@ export const adminController = {
       const result = await adminService.updateSubscriptionPlan(planId, req.body);
       if (req.user?.id) await auditService.logAdminAction({
         adminId: req.user.id, action: 'SUBSCRIPTION_PLAN_UPDATED', targetType: 'SUBSCRIPTION_PLAN',
-        targetId: planId, payload: req.body, req,
+        // Audit the old→new diff (e.g. price ₹499 → ₹599), not just the raw body.
+        targetId: planId, payload: { changes: (result as any)?.changes ?? {} }, req,
       });
       // Real-time ping to active subscribers of this plan when price changed
       const notifiedUserIds = (result as any)?.notifiedUserIds as number[] | undefined;
@@ -285,6 +337,98 @@ export const adminController = {
       if (Array.isArray(notifiedUserIds)) {
         notifiedUserIds.forEach((uid) => emitToUser(uid, 'notification:new', { category: 'PAYMENT' }));
       }
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
+  getSubscriptionAnalytics: async (_req: Request, res: Response) => {
+    try {
+      const result = await adminService.getSubscriptionAnalytics();
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
+  // ── Admin actions on an individual subscription ──────────────────────────
+  getSubscriptionDetail: async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid subscription id' });
+      const result = await adminService.getSubscriptionDetail(id);
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
+  suspendSubscription: async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid subscription id' });
+      const reason = req.body?.reason ? String(req.body.reason) : undefined;
+      const result = await adminService.suspendSubscription(id, reason);
+      const userId = (result as any)?.subscription?.userId;
+      if (userId) emitToUser(userId, 'subscription:updated', { status: 'SUSPENDED' });
+      emitToAdmin('payments', 'subscription:updated', { id });
+      if (req.user?.id) await auditService.logAdminAction({
+        adminId: req.user.id, action: 'SUBSCRIPTION_SUSPENDED', targetType: 'SUBSCRIPTION', targetId: id, reason, req,
+      });
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
+  reactivateSubscription: async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid subscription id' });
+      const result = await adminService.reactivateSubscription(id);
+      const userId = (result as any)?.subscription?.userId;
+      if (userId) emitToUser(userId, 'subscription:updated', { status: 'ACTIVE' });
+      emitToAdmin('payments', 'subscription:updated', { id });
+      if (req.user?.id) await auditService.logAdminAction({
+        adminId: req.user.id, action: 'SUBSCRIPTION_REACTIVATED', targetType: 'SUBSCRIPTION', targetId: id, req,
+      });
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
+  extendSubscription: async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid subscription id' });
+      const days = parseInt(req.body?.days);
+      const result = await adminService.extendSubscription(id, days);
+      const userId = (result as any)?.subscription?.userId;
+      if (userId) emitToUser(userId, 'subscription:updated', { extended: days });
+      emitToAdmin('payments', 'subscription:updated', { id });
+      if (req.user?.id) await auditService.logAdminAction({
+        adminId: req.user.id, action: 'SUBSCRIPTION_EXTENDED', targetType: 'SUBSCRIPTION', targetId: id, payload: { days }, req,
+      });
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
+  forceCancelSubscription: async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid subscription id' });
+      const reason = req.body?.reason ? String(req.body.reason) : undefined;
+      const result = await adminService.forceCancelSubscription(id, reason);
+      const userId = (result as any)?.subscription?.userId;
+      if (userId) emitToUser(userId, 'subscription:updated', { status: 'CANCELLED' });
+      emitToAdmin('payments', 'subscription:updated', { id });
+      if (req.user?.id) await auditService.logAdminAction({
+        adminId: req.user.id, action: 'SUBSCRIPTION_FORCE_CANCELLED', targetType: 'SUBSCRIPTION', targetId: id, reason, req,
+      });
       res.json(result);
     } catch (error) {
       sendError(res, error);
@@ -359,6 +503,28 @@ export const adminController = {
         req.body?.message ?? ''
       );
       emitTicketEvent('support:reply', ticketId, { ticketId, reply: result.reply });
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
+  // Assign / unassign a ticket. Body { adminId } — adminId 'me' assigns to caller,
+  // null/absent unassigns, a number assigns to that admin.
+  assignSupportTicket: async (req: Request, res: Response) => {
+    try {
+      const ticketId = parseInt(req.params.id);
+      if (Number.isNaN(ticketId)) return res.status(400).json({ error: 'Invalid ticket id' });
+      const raw = req.body?.adminId;
+      let adminId: number | null;
+      if (raw === 'me') adminId = req.user?.id ?? null;
+      else if (raw == null) adminId = null;
+      else {
+        adminId = Number(raw);
+        if (!Number.isInteger(adminId)) return res.status(400).json({ error: 'Invalid adminId' });
+      }
+      const result = await adminService.assignSupportTicket(ticketId, adminId);
+      emitToAdmin('support', 'support:updated', { ticketId, assignedTo: result.ticket.assignedTo });
       res.json(result);
     } catch (error) {
       sendError(res, error);

@@ -7,12 +7,13 @@ import {View,
   RefreshControl,
   StatusBar,
   ActivityIndicator,
-  Alert} from 'react-native';
+  Alert,
+  DeviceEventEmitter} from 'react-native';
 import { toast } from '../../utils/toast';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Plus, MapPin, Edit3, Trash2, Clock, CheckCircle, XCircle, AlertTriangle, Car, IndianRupee, BarChart3 } from 'lucide-react-native';
-import { PageHeader } from '../../components';
+import { PageHeader, LoadErrorState } from '../../components';
 import { api } from '../../services/api';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 
@@ -94,6 +95,8 @@ export default function MySpacesListScreen() {
   useFocusEffect(
     useCallback(() => {
       fetchSpaces();
+      DeviceEventEmitter.emit('sessionbar:suppress', true);
+      return () => { DeviceEventEmitter.emit('sessionbar:suppress', false); };
     }, [fetchSpaces])
   );
 
@@ -181,7 +184,7 @@ export default function MySpacesListScreen() {
           </View>
           <View style={styles.metaChip}>
             <IndianRupee size={12} color={Colors.textSecondary} />
-            <Text style={styles.metaChipText}>₹{item.hourlyRate}/hr</Text>
+            <Text style={styles.metaChipText}>{item.hourlyRate}/hr</Text>
           </View>
           <View style={styles.metaChip}>
             <Clock size={12} color={Colors.textSecondary} />
@@ -261,7 +264,7 @@ export default function MySpacesListScreen() {
           title="My Spaces"
           right={
             <TouchableOpacity style={styles.addBtn} onPress={() => router.push('/add-space')}>
-              <Plus size={20} color={Colors.primary} strokeWidth={2.5} />
+              <Plus size={18} color={Colors.primary} strokeWidth={2.5} />
             </TouchableOpacity>
           }
         />
@@ -278,14 +281,7 @@ export default function MySpacesListScreen() {
       <SafeAreaView style={styles.safeArea}>
         <StatusBar barStyle="dark-content" />
         <PageHeader title="My Spaces" />
-        <View style={styles.centerBox}>
-          <XCircle size={48} color={Colors.errorAlt} strokeWidth={1.5} />
-          <Text style={styles.errorTitle}>Failed to load</Text>
-          <Text style={styles.errorMsg}>{error}</Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={() => fetchSpaces()}>
-            <Text style={styles.retryBtnText}>Try Again</Text>
-          </TouchableOpacity>
-        </View>
+        <LoadErrorState message={error} onRetry={() => fetchSpaces()} />
       </SafeAreaView>
     );
   }
@@ -366,8 +362,11 @@ export default function MySpacesListScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: Colors.white },
   addBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: Colors.primaryBg, alignItems: 'center', justifyContent: 'center',
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.borderLight,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
   },
   tabsContainer: {
     flexDirection: 'row', backgroundColor: Colors.white,

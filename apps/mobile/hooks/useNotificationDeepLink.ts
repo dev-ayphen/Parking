@@ -1,7 +1,22 @@
 import { useEffect, useRef } from 'react';
-import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../store/authStore';
+
+// expo-notifications THROWS on import in Expo Go (SDK 53+ removed the native push
+// module). So we never import it statically — we lazily require it only on a real
+// build, and return null in Expo Go so deep-link handling degrades to a no-op.
+const isExpoGo =
+  Constants.appOwnership === 'expo' || Constants.executionEnvironment === 'storeClient';
+
+function getNotifications(): any | null {
+  if (isExpoGo) return null;
+  try {
+    return require('expo-notifications');
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Routes a tapped push notification to the right screen using the `data` payload
@@ -25,11 +40,16 @@ export function useNotificationDeepLink() {
   const handledColdStart = useRef(false);
 
   useEffect(() => {
+    // No push module in Expo Go → nothing to deep-link from. Skip cleanly.
+    const Notifications = getNotifications();
+    if (!Notifications) return;
+
     const route = (data: any) => {
       if (!data) return;
       const screen = data.screen as string | undefined;
       const bookingId = data.bookingId ? String(data.bookingId) : undefined;
       const ticketId = data.ticketId ? String(data.ticketId) : undefined;
+      const spaceId = data.spaceId ? String(data.spaceId) : undefined;
 
       try {
         switch (screen) {
@@ -59,6 +79,14 @@ export function useNotificationDeepLink() {
               router.push('/(home)/support/tickets');
             }
             break;
+          case 'space-detail':
+            // "A spot just opened up" availability alert → open the space directly.
+            if (spaceId) {
+              router.push({ pathname: '/(find-space)/space-detail', params: { spaceId } });
+            } else {
+              router.push('/(find-space)');
+            }
+            break;
           case 'verify':
             // Parker is at the gate with an arrival OTP — owner opens the Verify tab.
             router.push('/(my-spaces)/verify');
@@ -78,7 +106,7 @@ export function useNotificationDeepLink() {
     };
 
     // Warm taps while the app is running.
-    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+    const sub = Notifications.addNotificationResponseReceivedListener((response: any) => {
       route(response?.notification?.request?.content?.data);
     });
 

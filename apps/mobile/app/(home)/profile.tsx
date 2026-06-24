@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
+import { pickMedia } from '../../utils/pickMedia';
 import { User, Phone, Mail, Camera, ShieldAlert, X } from 'lucide-react-native';
 import { api } from '../../services/api';
 import { PageHeader, ScreenLoader } from '../../components';
@@ -79,20 +79,9 @@ const ProfileScreen = () => {
 
   const handlePickPhoto = async () => {
     try {
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) {
-        toast.info('Allow photo access to update your picture.');
-        return;
-      }
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-      if (result.canceled || !result.assets?.[0]) return;
+      const asset = await pickMedia({ aspect: [1, 1] });
+      if (!asset) return;
 
-      const asset = result.assets[0];
       setPhotoUploading(true);
 
       // Derive a filename + mime from the picked asset.

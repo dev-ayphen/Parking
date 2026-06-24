@@ -72,13 +72,15 @@ model User {
   ratingsGiven        Rating[]  @relation("RatingsGiven")
   ratingsReceived     Rating[]  @relation("RatingsReceived")
   subscriptions       Subscription[]
-  supportTickets      SupportTicket[]
+  supportTickets      SupportTicket[] @relation("TicketOwner")
+  assignedTickets     SupportTicket[] @relation("TicketAssignee")
   transactions        Transaction[]
   notifications       Notification[]
   complianceLogs      ComplianceLog[]
   incidentReports     IncidentReport[]
   abuseReportsAbout   AbuseReport[]   @relation("AbuseReportsAbout")
   abuseReportsBy      AbuseReport[]   @relation("AbuseReportsBy")
+  availabilityAlerts  SpaceAvailabilityAlert[]
 
   @@index([deletedAt])
   @@index([role])
@@ -176,11 +178,30 @@ model Space {
   bookings        Booking[]
   documents       SpaceDocument[]
   ownerConsent    OwnerConsent?
+  availabilityAlerts SpaceAvailabilityAlert[]
 
   @@index([status])
   @@index([ownerId])
   @@index([lat, lng])
   @@index([deletedAt])
+}
+
+// "Notify me when available" — a parker subscribes to a FULL space and is
+// alerted (in-app notification + socket) the moment a slot frees. One-shot:
+// the row is deleted once the alert fires, so a parker re-subscribes if they
+// miss it. No queue, no hold, no reservation — booking stays first-come.
+model SpaceAvailabilityAlert {
+  id         Int      @id @default(autoincrement())
+  spaceId    Int
+  space      Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId     Int
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  // A user can only hold one active alert per space.
+  @@unique([spaceId, userId])
+  @@index([spaceId])
+  @@index([userId])
 }
 
 model OwnerConsent {
@@ -198,6 +219,10 @@ model OwnerConsent {
   acceptOwnerResponsibility   Boolean  @default(false)
   acceptLegalCompliance       Boolean  @default(false)
   acceptPublicObstructionRules Boolean @default(false)
+  // The owner's explicit "I confirm I own / am authorised to list this space"
+  // tick. Legal audit trail for unauthorised-listing disputes (with userId +
+  // acceptedAt + ipAddress already captured above).
+  confirmedOwnership          Boolean  @default(false)
 
   // ── Non-violation declaration (verbatim text snapshotted at consent) ─
   acceptNonViolationDeclaration Boolean @default(false)
@@ -263,10 +288,15 @@ model Vehicle {
   frontPhotoUrl   String?
   sidePhotoUrl    String?
   rcBookUrl       String?
+  // The user's default vehicle — pre-selected at checkout. At most one per user
+  // is true (enforced in the service: setting a default clears the others).
+  isDefault       Boolean  @default(false)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   bookings        Booking[]
+
+  @@index([userId])
 }
 
 model Booking {
@@ -279,6 +309,14 @@ model Booking {
   vehicle           Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
   duration          Int      // hours
   eta               DateTime
+  // Set when the parker CHANGES their arrival time via "Update Arrival Time".
+  // null = the parker never updated it (still the original ETA). When set, the
+  // owner's "Parker is on the way" card highlights the new time as updated.
+  etaUpdatedAt      DateTime?
+  // Hourly rate SNAPSHOT taken at booking creation. The final bill is computed
+  // from this, NOT the space's live hourlyRate — so an owner editing their rate
+  // mid-session can never change what an already-booked parker is charged.
+  ratePerHour       Float    @default(0)
   totalAmount       Float
   paymentMode       String   @default("DIRECT_AT_SPACE")
   status            String   @default("PENDING_APPROVAL") // PENDING_APPROVAL | APPROVED | ACTIVE | COMPLETED | CANCELLED | REJECTED
@@ -287,6 +325,10 @@ model Booking {
   // null (not cancelled) | NO_SHOW | USER_CANCELLED | OWNER_CANCELLED | ADMIN_CANCELLED
   cancelReason      String?
   sessionOtp        String?
+  // Set when the parker taps "I've arrived". Surfaces them on the owner's Verify
+  // screen so the owner can start the condition check — BEFORE the arrival OTP is
+  // generated (which only happens after the condition check is acknowledged).
+  arrivedAt         DateTime?
   sessionStartedAt  DateTime?
   sessionEndedAt    DateTime?
   exitTime          DateTime?
@@ -294,7 +336,7 @@ model Booking {
   updatedAt         DateTime @updatedAt
 
   verification      ConditionVerification?
-  rating            Rating?
+  ratings           Rating[]   // up to 2 — parker→owner and owner→parker (mutual)
   consent           BookingConsent?
   incidents         IncidentReport[]
 
@@ -344,7 +386,7 @@ model ConditionVerification {
 
 model Rating {
   id        Int      @id @default(autoincrement())
-  bookingId String   @unique
+  bookingId String
   booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   raterId   Int
   rater     User     @relation("RatingsGiven", fields: [raterId], references: [id], onDelete: Cascade)
@@ -361,7 +403,12 @@ model Rating {
   hiddenBy  String?   // admin label/email who hid it
   hiddenAt  DateTime?
 
+  // One rating per PERSON per booking — lets BOTH the parker rate the owner AND
+  // the owner rate the parker on the same booking (mutual, Airbnb/Turo-style),
+  // while still preventing anyone from rating the same booking twice.
+  @@unique([bookingId, raterId])
   @@index([isHidden])
+  @@index([rateeId])
 }
 
 model SubscriptionPlan {
@@ -376,6 +423,15 @@ model SubscriptionPlan {
   colorKey      String   @default("blue")   // blue | indigo | amber
   isActive      Boolean  @default(true)
   sortOrder     Int      @default(0)
+
+  // ── Real capability limits (enforced server-side, NOT just display text) ──
+  // maxSpaces = -1 means unlimited. Boolean flags gate premium features.
+  maxSpaces           Int     @default(2)
+  hasAnalytics        Boolean @default(false)
+  hasFeaturedListing  Boolean @default(false)
+  hasCsvExport        Boolean @default(false)
+  hasPrioritySupport  Boolean @default(false)
+
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -395,6 +451,10 @@ model Subscription {
   startDate   DateTime @default(now())
   renewalDate DateTime
   autoRenewal Boolean  @default(true)
+  // A downgrade requested by the owner takes effect at the NEXT renewal, not
+  // immediately. We park the target plan here; the daily expiry/renewal job
+  // applies it when renewalDate is reached. null = no pending downgrade.
+  scheduledDowngradePlanId Int?
   createdAt   DateTime @default(now())
 
   invoices    Invoice[]
@@ -492,6 +552,11 @@ model Transaction {
   subscriptionId Int?
   bookingId      String?
 
+  // For REFUND rows: the id of the original transaction being refunded. Lets us
+  // detect "already refunded" by an EXACT id match instead of a fragile
+  // description substring (where TXN-001 wrongly matched TXN-0011).
+  refundedTxnId  Int?     @unique
+
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -556,18 +621,31 @@ model PlatformSettings {
 model SupportTicket {
   id              Int      @id @default(autoincrement())
   userId          Int
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user            User     @relation("TicketOwner", fields: [userId], references: [id], onDelete: Cascade)
   subject         String?  // Optional short title
   category        String   // BOOKING | SPACE_OWNER | SUBSCRIPTION | ACCOUNT | TECHNICAL | OTHER
   description     String
   status          String   @default("OPEN") // OPEN | IN_PROGRESS | WAITING_FOR_USER | RESOLVED | CLOSED
   priority        String   @default("NORMAL") // LOW | NORMAL | HIGH | URGENT
-  attachmentUrls  String[] // Screenshot/image URLs
-  isLiveChat      Boolean  @default(false) // True if created from Live Chat screen
+  attachmentUrls  String[] // Screenshot/image storage keys (private bucket)
   resolutionNote  String?
   closedAt        DateTime?
   rating          Int?     // 1-5, after user marks resolved
   ratingComment   String?
+
+  // Alternate contact info supplied by the user at creation (support teams often
+  // need a reachable number/email distinct from the account profile).
+  contactName     String?
+  contactEmail    String?
+  contactPhone    String?
+
+  // Assignment — which admin owns this ticket (null = unassigned).
+  assignedToId    Int?
+  assignedTo      User?    @relation("TicketAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  // SLA — when a first response is due, derived from priority at creation.
+  slaDueAt        DateTime?
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -575,6 +653,7 @@ model SupportTicket {
 
   @@index([status, priority])
   @@index([userId, status])
+  @@index([assignedToId])
 }
 
 model SupportTicketReply {
@@ -656,8 +735,10 @@ model IncidentReport {
   id                Int      @id @default(autoincrement())
   bookingId         String   @unique
   booking           Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  reportedByUserId  Int
-  reportedByUser    User     @relation(fields: [reportedByUserId], references: [id], onDelete: SetNull)
+  // Nullable so onDelete: SetNull is valid — if the reporter's account is deleted
+  // the report (legal evidence) is retained with a null reporter.
+  reportedByUserId  Int?
+  reportedByUser    User?    @relation(fields: [reportedByUserId], references: [id], onDelete: SetNull)
   reportType        String   // TOWING | VEHICLE_DAMAGE | UNSAFE_SPACE | DISPUTE | PROPERTY_DAMAGE | HARASSMENT | ILLEGAL_PARKING | THEFT | OTHER
   description       String
   evidenceUrls      String[] // photo/video proof
@@ -676,8 +757,10 @@ model AbuseReport {
   id                Int      @id @default(autoincrement())
   reportedUserId    Int
   reportedUser      User     @relation("AbuseReportsAbout", fields: [reportedUserId], references: [id], onDelete: Cascade)
-  reportedByUserId  Int
-  reportedByUser    User     @relation("AbuseReportsBy", fields: [reportedByUserId], references: [id], onDelete: SetNull)
+  // Nullable so onDelete: SetNull is valid — retain the report if the reporter
+  // deletes their account.
+  reportedByUserId  Int?
+  reportedByUser    User?    @relation("AbuseReportsBy", fields: [reportedByUserId], references: [id], onDelete: SetNull)
   abuseType         String   // FAKER_BOOKING | DAMAGING_PROPERTY | REPEATED_CANCELLATION | ILLEGAL_PARKING | HARASSMENT | FAKE_SPACE | UNSAFE_AREA | OFFLINE_PAYMENT_DEMAND | MISLEADING_LISTING | OTHER
   description       String
   evidenceUrls      String[]

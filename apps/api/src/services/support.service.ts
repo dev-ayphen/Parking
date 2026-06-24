@@ -1,7 +1,41 @@
 import { db } from '../config/database';
+import { storageService } from './storage.service';
+import { BUCKETS } from '../config/supabase';
+
+/**
+ * Attachment files live in the PRIVATE bucket (PII). Stored values are keys;
+ * resolve each to a short-lived signed URL before returning to a client.
+ * Legacy rows holding full public URLs pass through unchanged.
+ */
+const resolveAttachmentUrls = async (urls: unknown): Promise<string[]> => {
+  if (!Array.isArray(urls)) return [];
+  return Promise.all(
+    urls.map((u: string) =>
+      storageService.resolveUrl(u, BUCKETS.PRIVATE).catch(() => u)
+    )
+  );
+};
+
+/** Sign the attachmentUrls on an already-mapped ticket object. */
+const signTicketAttachments = async <T extends { attachmentUrls?: string[] }>(
+  ticket: T
+): Promise<T> => ({
+  ...ticket,
+  attachmentUrls: await resolveAttachmentUrls(ticket.attachmentUrls),
+});
 
 const VALID_CATEGORIES = ['BOOKING', 'SPACE_OWNER', 'SUBSCRIPTION', 'ACCOUNT', 'TECHNICAL', 'OTHER'];
 const VALID_PRIORITIES = ['LOW', 'NORMAL', 'HIGH', 'URGENT'];
+
+// Anti-spam limits (per user). Enforced in the service so they hold across
+// instances (not just per-IP like express-rate-limit).
+const MAX_TICKETS_PER_DAY = 5;
+const MAX_OPEN_TICKETS = 3;
+// Open = anything not yet resolved/closed.
+const OPEN_STATUSES = ['OPEN', 'IN_PROGRESS', 'WAITING_FOR_USER'];
+
+// SLA first-response targets (hours) by priority. slaDueAt = createdAt + target.
+const SLA_HOURS: Record<string, number> = { URGENT: 2, HIGH: 8, NORMAL: 24, LOW: 72 };
 
 // Standardized reference format — fixed-width, zero-padded, prefixed per entity
 // type, matching ABU-xxxxx (abuse) and INC-xxxxx (incidents). One pattern users
@@ -26,9 +60,9 @@ function mapTicket(t: any) {
     status: t.status,
     statusLabel: STATUS_DISPLAY[t.status] ?? t.status,
     priority: t.priority,
-    isLiveChat: t.isLiveChat,
     attachmentUrls: t.attachmentUrls || [],
     resolutionNote: t.resolutionNote,
+    slaDueAt: t.slaDueAt ?? null,
     rating: t.rating,
     ratingComment: t.ratingComment,
     replyCount: t._count?.replies ?? t.replies?.length ?? 0,
@@ -50,7 +84,9 @@ export const supportService = {
       description: string;
       priority?: string;
       attachmentUrls?: string[];
-      isLiveChat?: boolean;
+      contactName?: string;
+      contactEmail?: string;
+      contactPhone?: string;
     },
   ) => {
     const category = String(data.category || 'OTHER').toUpperCase();
@@ -64,6 +100,34 @@ export const supportService = {
     const description = (data.description || '').trim();
     if (!description) throw new Error('Description is required');
 
+    // Attachment count cap (size is enforced by the upload middleware).
+    const attachmentUrls = Array.isArray(data.attachmentUrls) ? data.attachmentUrls : [];
+    if (attachmentUrls.length > 5) {
+      throw Object.assign(new Error('A ticket can have at most 5 attachments.'), { statusCode: 400 });
+    }
+
+    // ── Anti-spam rate limits (per user) ──────────────────────────────────
+    const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const [openCount, dayCount] = await Promise.all([
+      db.supportTicket.count({ where: { userId, status: { in: OPEN_STATUSES } } }),
+      db.supportTicket.count({ where: { userId, createdAt: { gte: dayAgo } } }),
+    ]);
+    if (openCount >= MAX_OPEN_TICKETS) {
+      throw Object.assign(
+        new Error(`You already have ${openCount} active tickets. Please wait until one is resolved before creating a new ticket.`),
+        { statusCode: 429, code: 'TOO_MANY_OPEN_TICKETS' },
+      );
+    }
+    if (dayCount >= MAX_TICKETS_PER_DAY) {
+      throw Object.assign(
+        new Error(`You've reached the daily limit of ${MAX_TICKETS_PER_DAY} tickets. Please try again tomorrow or reply on an existing ticket.`),
+        { statusCode: 429, code: 'DAILY_TICKET_LIMIT' },
+      );
+    }
+
+    // SLA first-response target from priority.
+    const slaDueAt = new Date(Date.now() + (SLA_HOURS[priority] ?? 24) * 60 * 60 * 1000);
+
     const ticket = await db.supportTicket.create({
       data: {
         userId,
@@ -71,24 +135,16 @@ export const supportService = {
         category,
         description,
         priority,
-        attachmentUrls: Array.isArray(data.attachmentUrls) ? data.attachmentUrls : [],
-        isLiveChat: Boolean(data.isLiveChat),
+        attachmentUrls,
+        contactName: (data.contactName || '').trim() || null,
+        contactEmail: (data.contactEmail || '').trim() || null,
+        contactPhone: (data.contactPhone || '').trim() || null,
+        slaDueAt,
         status: 'OPEN',
       },
     });
 
-    // Auto-send greeting for live chat tickets
-    if (ticket.isLiveChat) {
-      await db.supportTicketReply.create({
-        data: {
-          ticketId: ticket.id,
-          message: 'Hi 👋 How can we help you today? Our support team will reply shortly. Average response time: 5 mins.',
-          isAdmin: true,
-        },
-      });
-    }
-
-    return { success: true, ticket: mapTicket(ticket) };
+    return { success: true, ticket: await signTicketAttachments(mapTicket(ticket)) };
   },
 
   listMyTickets: async (userId: number, query: any) => {
@@ -111,7 +167,10 @@ export const supportService = {
       include: { _count: { select: { replies: true } } },
     });
 
-    return { success: true, tickets: (tickets as any[]).map(mapTicket) };
+    return {
+      success: true,
+      tickets: await Promise.all((tickets as any[]).map((t) => signTicketAttachments(mapTicket(t)))),
+    };
   },
 
   getMyTicket: async (userId: number, ticketId: number) => {
@@ -128,7 +187,7 @@ export const supportService = {
     return {
       success: true,
       ticket: {
-        ...mapTicket(ticket),
+        ...(await signTicketAttachments(mapTicket(ticket))),
         replies: (ticket.replies as any[]).map((r) => ({
           id: r.id,
           message: r.message,
@@ -181,7 +240,7 @@ export const supportService = {
       where: { id: ticketId },
       data: { status: 'IN_PROGRESS', closedAt: null, rating: null, ratingComment: null },
     });
-    return { success: true, ticket: mapTicket(updated) };
+    return { success: true, ticket: await signTicketAttachments(mapTicket(updated)) };
   },
 
   rateTicket: async (
@@ -202,6 +261,6 @@ export const supportService = {
       where: { id: ticketId },
       data: { rating, ratingComment: (data.comment || '').trim() || null },
     });
-    return { success: true, ticket: mapTicket(updated) };
+    return { success: true, ticket: await signTicketAttachments(mapTicket(updated)) };
   },
 };

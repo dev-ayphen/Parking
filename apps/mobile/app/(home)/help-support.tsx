@@ -35,7 +35,7 @@ const FAQ_DATA: FAQItem[] = [
   },
   {
     question: 'How to request a refund?',
-    answer: 'Refunds for eligible cancellations are credited directly to your source payment method within 5-7 business days. You can track refund status in the Wallet section.',
+    answer: 'Refunds for eligible cancellations are credited directly to your original payment method within 5-7 business days. You can check the status of a cancelled booking under My Bookings.',
   },
   {
     question: 'How to add a new parking space?',
@@ -43,7 +43,7 @@ const FAQ_DATA: FAQItem[] = [
   },
   {
     question: 'What are the payout cycles for hosts?',
-    answer: 'Payouts are aggregated weekly and deposited directly into your linked bank account every Monday. You can update bank details in host settings.',
+    answer: 'Payouts are aggregated weekly and deposited directly into your linked bank account every Monday. You can manage your billing and bank details from My Spaces › Manage Subscription.',
   },
 ];
 

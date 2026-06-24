@@ -1,65 +1,38 @@
 import { StyleSheet, Platform } from 'react-native';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import { TAB_BAR_TOTAL } from '../../constants/tabBar';
 
 export const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.white,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.screenH,
-    paddingVertical: Spacing.xl,
-    backgroundColor: Colors.white,
-    borderBottomWidth: 0,
-  },
-  menuIconButton: {
-    width: 38,
-    height: 38,
-    borderRadius: BorderRadius.circle,              // 19 = circle ✓
-    backgroundColor: Colors.screenBg,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBg,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-  },
-  logoText: {
-    fontSize: FontSize['2xl'],                      // 18 = 2xl ✓
-    fontWeight: FontWeight.black,                   // '900' = black ✓
-    color: Colors.textPrimary,
-    letterSpacing: -0.6,
-  },
-  rightActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing['2xl'],
-  },
+  // Matches the canonical PageHeader.backButton (36×36).
   iconButton: {
-    width: 38,
-    height: 38,
-    borderRadius: BorderRadius.circle,              // 19 = circle ✓
-    backgroundColor: Colors.screenBg,
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.circle,
+    backgroundColor: Colors.white,
     borderWidth: 1,
-    borderColor: Colors.surfaceBg,
+    borderColor: Colors.borderLight,
     alignItems: 'center',
     justifyContent: 'center',
-    position: 'relative',
+    overflow: 'visible',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
   },
   bellBadge: {
     position: 'absolute',
-    top: 5,
-    right: 5,
+    top: -5,
+    right: -5,
     backgroundColor: Colors.primary,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    paddingHorizontal: 3,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,
@@ -67,8 +40,9 @@ export const styles = StyleSheet.create({
   },
   bellBadgeText: {
     color: Colors.white,
-    fontSize: FontSize.tiny,                        // 8 = tiny ✓
+    fontSize: 9,
     fontWeight: FontWeight.boldAlias,
+    lineHeight: 12,
   },
   mapContainer: {
     flex: 1,
@@ -115,6 +89,8 @@ export const styles = StyleSheet.create({
     fontSize: FontSize.lg,                           // 15 — slightly larger, readable
     color: Colors.textPrimary,
     paddingVertical: 0,                             // kill default vertical padding
+    letterSpacing: 0,                               // force normal spacing (no scatter)
+    textAlign: 'left',
   },
   searchMetaRow: {
     flexDirection: 'row',
@@ -127,8 +103,8 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: ExtendedColors.indigoBg,
-    borderColor: ExtendedColors.indigoBorder,
+    backgroundColor: Colors.white,
+    borderColor: Colors.borderMedium,
     borderWidth: 1,
     paddingHorizontal: Spacing.lg,
     paddingVertical: 5,
@@ -138,7 +114,7 @@ export const styles = StyleSheet.create({
   searchChipText: {
     fontSize: FontSize.sm,                          // 12 = sm ✓
     fontWeight: FontWeight.bold,
-    color: ExtendedColors.indigoText,
+    color: Colors.textBody,
     flexShrink: 1,
   },
   radiusSelector: {
@@ -159,7 +135,7 @@ export const styles = StyleSheet.create({
     borderRadius: BorderRadius.lg,                 // 16 = lg ✓
   },
   radiusOptionActive: {
-    backgroundColor: ExtendedColors.indigoAccent,
+    backgroundColor: Colors.textPrimary,
   },
   radiusOptionText: {
     fontSize: FontSize.xs,                          // 11 = xs ✓
@@ -168,6 +144,75 @@ export const styles = StyleSheet.create({
   },
   radiusOptionTextActive: {
     color: Colors.white,
+  },
+  // Right side of the search meta row: radius selector + filter button together.
+  metaRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  filterBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.circleXl,
+    backgroundColor: Colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  filterBtnActive: {
+    backgroundColor: Colors.textPrimary,
+  },
+  filterBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    paddingHorizontal: 4,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: Colors.white,
+  },
+  filterBadgeText: {
+    fontSize: FontSize.tiny,
+    fontWeight: FontWeight.bold,
+    color: Colors.white,
+  },
+  // "Search this area" floating pill, centered below the search bar.
+  searchAreaWrap: {
+    position: 'absolute',
+    top: 132,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 30,
+  },
+  searchAreaBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Colors.white,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: 9,
+    borderRadius: BorderRadius.circleXl,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  searchAreaText: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.bold,
+    color: Colors.textPrimary,
   },
   suggestionsBox: {
     backgroundColor: Colors.white,
@@ -231,23 +276,58 @@ export const styles = StyleSheet.create({
     color: Colors.textMuted,
     fontWeight: FontWeight.medium,
   },
+  // Richer "no results" empty state — icon + title + recovery hint
+  emptyResults: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing['2xl'],
+  },
+  emptyResultsIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: BorderRadius.circle,
+    backgroundColor: Colors.screenBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.md,
+  },
+  emptyResultsTitle: {
+    fontSize: FontSize.md,                           // 14 = md ✓
+    color: Colors.textSecondary,
+    fontWeight: FontWeight.semibold,
+  },
+  emptyResultsHint: {
+    fontSize: FontSize.sm,                           // 12 = sm ✓
+    color: Colors.textMuted,
+    fontWeight: FontWeight.medium,
+    marginTop: 2,
+    textAlign: 'center',
+  },
   spacesLoadingOverlay: {
     position: 'absolute',
-    top: Spacing['3xl'],
-    alignSelf: 'center',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 30,
+    pointerEvents: 'none',
+  },
+  spacesLoadingPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
     backgroundColor: Colors.white,
     paddingHorizontal: Spacing['2xl'],
     paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.circleXl,           // 20 = circleXl ✓
+    borderRadius: BorderRadius.circleXl,
     elevation: 4,
     shadowColor: Colors.textPrimary,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
-    zIndex: 30,
   },
   spacesLoadingText: {
     fontSize: FontSize.base,                        // 13 = base ✓
@@ -267,15 +347,18 @@ export const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     alignItems: 'center',
     justifyContent: 'center',
+    // Soft, rounded shadow. A tight shadowRadius (≈4) made iOS render the shadow
+    // as a hard SQUARE box behind the round button; a larger, lighter radius lets
+    // the shadow diffuse into a circular halo that follows the borderRadius.
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
     elevation: 4,
   },
   radiusButtonActive: {
-    borderColor: ExtendedColors.indigoAccent,
-    backgroundColor: ExtendedColors.indigoBg,
+    borderColor: Colors.textPrimary,
+    backgroundColor: Colors.surfaceBg,
     borderWidth: 2,
   },
   spaceCard: {
@@ -438,16 +521,16 @@ export const styles = StyleSheet.create({
     gap: Spacing.md,
   },
   amenityBadge: {
-    backgroundColor: ExtendedColors.indigoBg,
+    backgroundColor: Colors.primaryBg,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.badge,               // 6 = badge ✓
     borderWidth: 1,
-    borderColor: ExtendedColors.indigoTint,
+    borderColor: Colors.primaryLight,
   },
   amenityText: {
     fontSize: FontSize.xs,                          // 11 = xs ✓
-    color: ExtendedColors.indigoAccent,
+    color: Colors.primary,
     fontWeight: FontWeight.bold,
   },
   filterSheet: {
@@ -501,8 +584,8 @@ export const styles = StyleSheet.create({
     backgroundColor: Colors.screenBg,
   },
   filterOptionActive: {
-    backgroundColor: ExtendedColors.indigoBg,
-    borderColor: ExtendedColors.indigoAccent,
+    backgroundColor: Colors.primaryBg,
+    borderColor: Colors.primary,
   },
   filterOptionText: {
     fontSize: FontSize.md,                          // 14 = md ✓
@@ -510,7 +593,7 @@ export const styles = StyleSheet.create({
     fontWeight: FontWeight.medium,
   },
   filterOptionTextActive: {
-    color: ExtendedColors.indigoAccent,
+    color: Colors.primary,
     fontWeight: FontWeight.semibold,
   },
   applyBtn: {
@@ -623,7 +706,7 @@ export const styles = StyleSheet.create({
   },
   legendCard: {
     position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 60 : 50,
+    bottom: TAB_BAR_TOTAL + Spacing.xl,
     left: Spacing['3xl'],
     width: 280,
     backgroundColor: Colors.white,
@@ -1298,6 +1381,13 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+    gap: Spacing.md,
+  },
+  // Title block must flex so a long space name / address wraps instead of pushing
+  // the status badge off the right edge of the card.
+  historyHeaderText: {
+    flex: 1,
+    minWidth: 0,
   },
   historySpaceName: {
     fontSize: FontSize.lg,                          // 15 = lg ✓
@@ -1313,6 +1403,7 @@ export const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.badge,               // 6 = badge ✓
+    flexShrink: 0,                                  // never squeeze/clip the badge
   },
   statusBadgeCompleted: {
     backgroundColor: ExtendedColors.greenTint,

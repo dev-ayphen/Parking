@@ -1,4 +1,20 @@
 import { db } from '../config/database';
+import { storageService } from './storage.service';
+import { BUCKETS } from '../config/supabase';
+
+/**
+ * Evidence files live in the PRIVATE bucket (PII). Stored values are keys;
+ * resolve each to a short-lived signed URL before returning to a client.
+ * Legacy rows holding full public URLs pass through unchanged.
+ */
+const resolveEvidenceUrls = async (urls: unknown): Promise<string[]> => {
+  if (!Array.isArray(urls)) return [];
+  return Promise.all(
+    urls.map((u: string) =>
+      storageService.resolveUrl(u, BUCKETS.PRIVATE).catch(() => u)
+    )
+  );
+};
 
 const VALID_TYPES = [
   'FAKER_BOOKING',
@@ -64,12 +80,21 @@ export const abuseService = {
     return { success: true, report };
   },
 
-  listReports: async (filters: { status?: string; page?: number }) => {
+  listReports: async (filters: { status?: string; page?: number; search?: string }) => {
     const page = filters.page ?? 1;
     const take = 20;
     const skip = (page - 1) * take;
 
-    const where = filters.status ? { status: filters.status } : {};
+    const where: any = {};
+    if (filters.status) where.status = filters.status;
+    if (filters.search) {
+      const s = filters.search;
+      where.OR = [
+        { reportedUser: { firstName: { contains: s, mode: 'insensitive' } } },
+        { reportedUser: { lastName: { contains: s, mode: 'insensitive' } } },
+        { reportedUser: { phone: { contains: s, mode: 'insensitive' } } },
+      ];
+    }
     const [reports, total] = await Promise.all([
       db.abuseReport.findMany({
         where,
@@ -83,7 +108,13 @@ export const abuseService = {
       }),
       db.abuseReport.count({ where }),
     ]);
-    return { success: true, reports, total, page, pages: Math.ceil(total / take) };
+    const withSigned = await Promise.all(
+      reports.map(async (r) => ({
+        ...r,
+        evidenceUrls: await resolveEvidenceUrls((r as any).evidenceUrls),
+      }))
+    );
+    return { success: true, reports: withSigned, total, page, pages: Math.ceil(total / take) };
   },
 
   getReport: async (reportId: number) => {
@@ -95,7 +126,10 @@ export const abuseService = {
       },
     });
     if (!report) throw Object.assign(new Error('Report not found'), { statusCode: 404 });
-    return { success: true, report };
+    return {
+      success: true,
+      report: { ...report, evidenceUrls: await resolveEvidenceUrls((report as any).evidenceUrls) },
+    };
   },
 
   actionReport: async (reportId: number, adminId: number, data: {
@@ -162,6 +196,9 @@ export const abuseService = {
       where: { reportedByUserId: userId },
       select: {
         id: true, abuseType: true, description: true, status: true, createdAt: true,
+        // The admin's resolution note + when it was actioned, so the reporter can
+        // see WHAT the admin did (not just that it was "Resolved").
+        adminAction: true, updatedAt: true,
         reportedUser: { select: { id: true, firstName: true, lastName: true } },
       },
       orderBy: { createdAt: 'desc' },

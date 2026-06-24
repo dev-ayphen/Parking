@@ -48,6 +48,35 @@ export class ApiError extends Error {
 }
 
 /**
+ * Extract a STRING error message from an arbitrary backend response body.
+ *
+ * The backend usually returns `{ error: "some text" }`, but a validation/Zod
+ * failure can return `{ error: { ... } }` or `{ message: [...] }`. If such an
+ * object reached ApiError.message and was later handed to Alert.alert / a toast
+ * (native bridge), it crashed with:
+ *   "Value for message cannot be cast from ReadableNativeMap to String".
+ * Coercing here guarantees ApiError.message is ALWAYS a string at the source.
+ */
+function errorMessageFrom(data: any, fallback: string): string {
+  if (data == null) return fallback;
+  if (typeof data === 'string') return data || fallback;
+
+  const pick = data.error ?? data.message ?? data.msg;
+  if (typeof pick === 'string' && pick.trim()) return pick;
+
+  // Zod-style: array of issues, or a nested object with its own message.
+  if (Array.isArray(pick)) {
+    const first = pick.find((x) => typeof x?.message === 'string')?.message;
+    if (first) return first;
+  }
+  if (pick && typeof pick === 'object' && typeof pick.message === 'string' && pick.message.trim()) {
+    return pick.message;
+  }
+
+  return fallback;
+}
+
+/**
  * Refresh access token using refresh token
  * Called automatically when token is about to expire
  */
@@ -118,13 +147,20 @@ export async function apiCall<T = any>(
     const isFormData =
       typeof FormData !== 'undefined' && options.body instanceof FormData;
 
+    // Only declare a JSON content-type when we ACTUALLY send a body. A bodyless
+    // request (e.g. PUT /bookings/:id/accept) that still advertises
+    // `application/json` makes Express's json() parser try to parse an empty body
+    // — which RN's fetch can represent as a stray NUL — yielding
+    // "Unexpected token '\x00' is not valid JSON" (400). No body → no content-type.
+    const hasBody = options.body != null;
+
     let headers: Record<string, string> = {
-      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+      ...(isFormData || !hasBody ? {} : { 'Content-Type': 'application/json' }),
       ...(options.headers as Record<string, string>),
     };
 
-    if (isFormData) {
-      // Strip any caller-supplied JSON content-type so the boundary is generated.
+    if (isFormData || !hasBody) {
+      // No JSON content-type for uploads (boundary is auto-set) or empty bodies.
       delete headers['Content-Type'];
       delete (headers as any)['content-type'];
     }
@@ -189,7 +225,7 @@ export async function apiCall<T = any>(
         throw new ApiError('Your session has expired. Please log in again.', 401, false, false);
       }
       throw new ApiError(
-        data?.error || `HTTP ${response.status}`,
+        errorMessageFrom(data, `HTTP ${response.status}`),
         response.status,
         false,
         false

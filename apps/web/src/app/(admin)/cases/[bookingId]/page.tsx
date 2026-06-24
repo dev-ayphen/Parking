@@ -228,6 +228,39 @@ const OverviewTab = ({ ev }: any) => (
       <Field icon={Lock} label="Visibility" value={ev.space.visibility} />
       <Field icon={Lock} label="Status" value={ev.space.status} />
       {ev.space.requiresAdminReview && <Field icon={AlertTriangle} label="Risk flag" value="Requires admin review" />}
+
+      {/* Listing media — the front/area photos and walkthrough video the owner
+          submitted at Add Space, kept as part of the case evidence. */}
+      {(ev.space.frontPhotoUrl || ev.space.areaPhotoUrl || ev.space.videoUrl) && (
+        <>
+          <div className="border-t border-gray-100 my-3" />
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">Listing media</p>
+          <div className="grid grid-cols-2 gap-3">
+            {ev.space.frontPhotoUrl && (
+              <div>
+                <p className="text-[10px] text-gray-500 font-semibold uppercase mb-1">Front photo</p>
+                <a href={ev.space.frontPhotoUrl} target="_blank" rel="noopener noreferrer">
+                  <img src={ev.space.frontPhotoUrl} alt="Front" className="w-full h-28 object-cover rounded-lg border border-gray-200" />
+                </a>
+              </div>
+            )}
+            {ev.space.areaPhotoUrl && (
+              <div>
+                <p className="text-[10px] text-gray-500 font-semibold uppercase mb-1">Area photo</p>
+                <a href={ev.space.areaPhotoUrl} target="_blank" rel="noopener noreferrer">
+                  <img src={ev.space.areaPhotoUrl} alt="Area" className="w-full h-28 object-cover rounded-lg border border-gray-200" />
+                </a>
+              </div>
+            )}
+            {ev.space.videoUrl && (
+              <div className="col-span-2">
+                <p className="text-[10px] text-gray-500 font-semibold uppercase mb-1">Walkthrough video</p>
+                <video src={ev.space.videoUrl} controls className="w-full rounded-lg border border-gray-200 max-h-44" />
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </Card>
   </div>
 );
@@ -260,6 +293,7 @@ const ConsentTab = ({ ev }: any) => (
     <Card title="Owner consent (Space submission)">
       {ev.ownerConsent ? (
         <>
+          <Field icon={CheckCircle2} label="Confirmed ownership / authorisation" value={ev.ownerConsent.confirmedOwnership ? 'Yes' : 'No'} />
           <Field icon={CheckCircle2} label="Accept owner responsibility" value={ev.ownerConsent.acceptOwnerResponsibility ? 'Yes' : 'No'} />
           <Field icon={CheckCircle2} label="Accept legal compliance" value={ev.ownerConsent.acceptLegalCompliance ? 'Yes' : 'No'} />
           <Field icon={CheckCircle2} label="Accept public obstruction rules" value={ev.ownerConsent.acceptPublicObstructionRules ? 'Yes' : 'No'} />

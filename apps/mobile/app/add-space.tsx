@@ -14,8 +14,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../hooks/useTheme';
 import { CheckCircle } from 'lucide-react-native';
+import { getDeviceLocation } from '../utils/location';
+import { Linking } from 'react-native';
 import { LeafletMapHandle } from '../components/LeafletMap';
-import * as ImagePicker from 'expo-image-picker';
+import { pickMedia } from '../utils/pickMedia';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { PageHeader } from '../components';
 import { z } from 'zod';
@@ -235,9 +237,15 @@ export default function AddSpaceScreen() {
     lng: number;
   }>>([]);
   const [markerCoord, setMarkerCoord] = useState({ latitude: 12.9716, longitude: 77.5946 });
+  const [isLocatingMe, setIsLocatingMe] = useState(false);
   const mapRef = useRef<LeafletMapHandle>(null);
   // id is set for docs already on the server (edit mode prefill) — these are not re-uploaded on save.
   const [uploadedDocs, setUploadedDocs] = useState<Array<{ name: string; uri: string; id?: number }>>([]);
+  // Document rules fetched from the server (source of truth), so the required-
+  // docs/proof text never drift from the backend. Null until loaded → component
+  // falls back to its local constants.
+  const [docRulesMap, setDocRulesMap] = useState<Record<string, string[]> | undefined>(undefined);
+  const [proofTextMap, setProofTextMap] = useState<Record<string, string> | undefined>(undefined);
   // Space photos/video — may be a local device URI (newly picked) or a Supabase URL (edit prefill).
   const [frontPhotoUri, setFrontPhotoUri] = useState<string | null>(null);
   const [areaPhotoUri, setAreaPhotoUri] = useState<string | null>(null);
@@ -378,6 +386,31 @@ export default function AddSpaceScreen() {
     };
   }, [isEdit, editId, reset]);
 
+  // Load document rules from the server (source of truth). Builds the same flat
+  // maps the form needs: spaceType → [doc labels] and spaceType → proof hint.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get('/spaces/document-rules');
+        const rules: any[] = res?.rules ?? [];
+        if (cancelled || rules.length === 0) return;
+        const reqs: Record<string, string[]> = {};
+        const proof: Record<string, string> = {};
+        for (const r of rules) {
+          const labels = (r.docs ?? []).map((d: any) => d.label).filter(Boolean);
+          reqs[r.spaceType] = labels;
+          proof[r.spaceType] = r.note || (labels.length ? labels.join(', ') : '');
+        }
+        setDocRulesMap(reqs);
+        setProofTextMap(proof);
+      } catch {
+        // fall back to the component's local constants
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const applyLocation = (lat: number, lng: number, displayAddress: string) => {
     setValue('latitude', lat, { shouldValidate: true });
     setValue('longitude', lng, { shouldValidate: true });
@@ -385,6 +418,40 @@ export default function AddSpaceScreen() {
     const coord = { latitude: lat, longitude: lng };
     setMarkerCoord(coord);
     mapRef.current?.animateToRegion({ ...coord, latitudeDelta: 0.01 });
+  };
+
+  // "Use my current location" — grabs the device GPS fix, drops the pin there, and
+  // reverse-geocodes it into the address field. Mirrors the permission/GPS-off
+  // handling used on the Find-Space map so behaviour is consistent.
+  const useCurrentLocation = async () => {
+    if (isLocatingMe) return;
+    setIsLocatingMe(true);
+    try {
+      // Robust helper: last-known fix + balanced accuracy + hard timeout, so it
+      // resolves reliably on real devices and never hangs. Prompt the user to
+      // enable GPS if it's off, since they explicitly tapped this button.
+      const result = await getDeviceLocation({ promptToEnable: true });
+      if (result.ok && result.coords) {
+        const { latitude, longitude } = result.coords;
+        // Drop the pin + zoom immediately, then fill the address from the coords.
+        applyLocation(latitude, longitude, '');
+        await reverseGeocode(latitude, longitude);
+      } else if (result.failure === 'permission-denied') {
+        Alert.alert(
+          'Location permission needed',
+          'Allow location access to pin your space automatically, or search/tap the map instead.',
+          [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => Linking.openSettings() },
+          ],
+        );
+      } else if (result.failure === 'timeout') {
+        Alert.alert('Could not get location', 'We couldn\'t get a GPS fix. Make sure you have a clear signal, or search/tap the map to set your space location.');
+      }
+      // services-off already showed its own prompt inside the helper.
+    } finally {
+      setIsLocatingMe(false);
+    }
   };
 
   // Build a human-readable address from a Nominatim address object.
@@ -468,24 +535,46 @@ export default function AddSpaceScreen() {
 
   const handlePickDocument = async () => {
     try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert('Permission Required', 'Please allow access to your photo library.');
-        return;
-      }
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: false,
-        quality: 0.8,
-      });
-      if (!result.canceled && result.assets.length > 0) {
-        const asset = result.assets[0];
-        const name = asset.fileName || `document_${Date.now()}.jpg`;
-        setUploadedDocs((prev) => [...prev, { name, uri: asset.uri }]);
-      }
+      const asset = await pickMedia({ allowsEditing: false });
+      if (!asset) return;
+      const name = asset.fileName || `document_${Date.now()}.jpg`;
+      setUploadedDocs((prev) => [...prev, { name, uri: asset.uri }]);
     } catch {
       Alert.alert('Error', 'Failed to pick document');
     }
+  };
+
+  // Remove an uploaded document. A doc with an `id` is already on the server
+  // (edit mode), so confirm + DELETE it server-side; otherwise just drop the
+  // local pick. Previously the trash button only mutated local state, so
+  // "removing" a persisted KYC doc in edit mode was a silent no-op.
+  const handleRemoveUploadedDoc = (
+    index: number,
+    doc: { name: string; uri: string; id?: number },
+  ) => {
+    if (!doc.id || !isEdit || editId === null) {
+      setUploadedDocs((prev) => prev.filter((_, i) => i !== index));
+      return;
+    }
+    Alert.alert(
+      'Remove Document',
+      `Delete "${doc.name}"? This permanently removes it from your space.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.delete(`/spaces/${editId}/documents/${doc.id}`);
+              setUploadedDocs((prev) => prev.filter((_, i) => i !== index));
+            } catch (e: any) {
+              Alert.alert('Error', e?.message || 'Could not delete the document. Try again.');
+            }
+          },
+        },
+      ],
+    );
   };
 
   // Pick a space photo (front/area) and remember its URI + set the form flag.
@@ -494,41 +583,22 @@ export default function AddSpaceScreen() {
     field: 'frontPhoto' | 'areaPhoto'
   ) => {
     try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert('Permission Required', 'Please allow access to your photo library.');
-        return;
-      }
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        quality: 0.8,
-      });
-      if (result.canceled || !result.assets?.[0]) return;
-      const uri = result.assets[0].uri;
-      if (kind === 'front') setFrontPhotoUri(uri);
-      else setAreaPhotoUri(uri);
+      const asset = await pickMedia({ allowsEditing: true });
+      if (!asset) return;
+      if (kind === 'front') setFrontPhotoUri(asset.uri);
+      else setAreaPhotoUri(asset.uri);
       setValue(field, true, { shouldValidate: true });
     } catch {
       Alert.alert('Error', 'Failed to pick photo');
     }
   };
 
-  // Pick a short area video.
+  // Pick / record a short area video.
   const pickAreaVideo = async () => {
     try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert('Permission Required', 'Please allow access to your photo library.');
-        return;
-      }
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
-        quality: 0.8,
-        videoMaxDuration: 30,
-      });
-      if (result.canceled || !result.assets?.[0]) return;
-      setAreaVideoUri(result.assets[0].uri);
+      const asset = await pickMedia({ media: 'videos' });
+      if (!asset) return;
+      setAreaVideoUri(asset.uri);
       setValue('areaVideo', true);
     } catch {
       Alert.alert('Error', 'Failed to pick video');
@@ -586,6 +656,25 @@ export default function AddSpaceScreen() {
   const onSubmit = async (data: SpaceFormData) => {
     try {
       setIsSubmitting(true);
+
+      // ── Re-validate the MANDATORY uploads at submit time ──────────────────
+      // The step-4 gate can be bypassed (back-nav, edit-mode prefill), so enforce
+      // the same rules here before we create/patch the space.
+      // 1) Front photo is mandatory (a local pick on a new space, or an existing
+      //    Supabase URL in edit mode — both populate frontPhotoUri).
+      if (!frontPhotoUri) {
+        setIsSubmitting(false);
+        Alert.alert('Front Photo Required', 'Please add the mandatory front photo before submitting.');
+        return;
+      }
+      // 2) At least one proof document is mandatory for every type except
+      //    "Open Frontage Area" (images-only, admin review).
+      if (data.spaceType !== 'Open Frontage Area' && uploadedDocs.length === 0) {
+        setIsSubmitting(false);
+        Alert.alert('Document Required', 'Please upload at least one required proof document before submitting.');
+        return;
+      }
+
       const payload = {
         spaceName: data.spaceName,
         spaceType: data.spaceType,
@@ -636,8 +725,15 @@ export default function AddSpaceScreen() {
       if (areaPhotoUri  && needsUpload(areaPhotoUri))  { const g = guess(areaPhotoUri);  mediaFiles.push({ field: 'areaPhoto',  uri: areaPhotoUri,  name: `area.${g.ext}`,  type: g.type }); }
       if (areaVideoUri  && needsUpload(areaVideoUri))  { const g = guess(areaVideoUri);  mediaFiles.push({ field: 'areaVideo',  uri: areaVideoUri,  name: `video.${g.ext}`, type: g.type }); }
 
-      // Track upload failures so we surface them instead of silently "succeeding".
-      const uploadErrors: string[] = [];
+      // Track upload failures, separating MANDATORY (front photo, required docs)
+      // from optional (area photo/video). A mandatory failure fails the whole
+      // submission — we must NOT show "Space Submitted!" with a missing front
+      // photo or no proof doc. Optional failures stay best-effort (warn only).
+      const optionalErrors: string[] = [];
+      const mandatoryErrors: string[] = [];
+      // Whether a NEW front photo was part of this upload batch (it's only missing
+      // from the batch when it's already a remote URL in edit mode = already saved).
+      const frontPhotoInBatch = mediaFiles.some((m) => m.field === 'frontPhoto');
 
       if (mediaFiles.length > 0) {
         if (__DEV__) console.log('[ADD-SPACE] uploading media:', mediaFiles.map(m => ({ field: m.field, uri: m.uri.slice(0, 40), type: m.type })));
@@ -647,13 +743,21 @@ export default function AddSpaceScreen() {
         } catch (e) {
           const msg = (e as Error)?.message || 'unknown error';
           if (__DEV__) console.log('[ADD-SPACE] media upload FAILED:', msg, e);
-          uploadErrors.push(`Photos/video: ${msg}`);
+          // The media endpoint uploads front photo + area photo/video together. If
+          // the front photo was in this batch, the failure is mandatory.
+          if (frontPhotoInBatch) mandatoryErrors.push(`Front photo: ${msg}`);
+          else optionalErrors.push(`Photos/video: ${msg}`);
         }
       }
 
       // Upload only NEW proof documents (those without an id are freshly picked from device).
+      // Documents are mandatory for every space type except "Open Frontage Area".
+      const docsMandatory = data.spaceType !== 'Open Frontage Area';
+      let newDocsUploaded = 0;
+      let newDocsAttempted = 0;
       for (const doc of uploadedDocs) {
         if (doc.id) continue; // already on server — skip re-upload
+        newDocsAttempted++;
         try {
           const ext = (doc.uri.split('.').pop() || 'jpg').toLowerCase();
           const mimeType = ext === 'png' ? 'image/png' : ext === 'pdf' ? 'application/pdf' : 'image/jpeg';
@@ -663,18 +767,41 @@ export default function AddSpaceScreen() {
             [{ field: 'file', uri: doc.uri, name: doc.name, type: mimeType }],
             { documentType: docType, documentLabel: doc.name }
           );
+          newDocsUploaded++;
         } catch (e) {
           const msg = (e as Error)?.message || 'unknown error';
           if (__DEV__) console.log('[ADD-SPACE] doc upload failed', doc.name, e);
-          uploadErrors.push(`Document "${doc.name}": ${msg}`);
+          (docsMandatory ? mandatoryErrors : optionalErrors).push(`Document "${doc.name}": ${msg}`);
         }
       }
 
-      // If any media/doc failed to upload, tell the user — don't pretend it all saved.
-      if (uploadErrors.length > 0) {
+      // Mandatory-doc rule: for a type that requires docs, the space must end up
+      // with at least one proof. If we attempted to upload new docs and NONE
+      // succeeded (and none were already on the server in edit mode), that's a
+      // mandatory failure.
+      if (docsMandatory && newDocsAttempted > 0 && newDocsUploaded === 0) {
+        const alreadyOnServer = uploadedDocs.some((d) => d.id);
+        if (!alreadyOnServer && !mandatoryErrors.some((e) => e.startsWith('Document'))) {
+          mandatoryErrors.push('Document: required proof failed to upload.');
+        }
+      }
+
+      // A mandatory upload failed → the submission is NOT successful. Surface the
+      // error and stay on the form so the user can retry, rather than showing success.
+      if (mandatoryErrors.length > 0) {
+        setIsSubmitting(false);
         Alert.alert(
-          'Some files did not upload',
-          `The space was saved, but these uploads failed:\n\n${uploadErrors.join('\n')}\n\nPlease open the space and re-upload them.`
+          'Submission Incomplete',
+          `Your space was created but a REQUIRED upload failed, so it can't be submitted for review yet:\n\n${mandatoryErrors.join('\n')}\n\nPlease tap Submit again to retry the upload.`
+        );
+        return;
+      }
+
+      // Only optional uploads failed → space is fine, just warn.
+      if (optionalErrors.length > 0) {
+        Alert.alert(
+          'Some optional files did not upload',
+          `The space was saved, but these optional uploads failed:\n\n${optionalErrors.join('\n')}\n\nYou can open the space and re-upload them.`
         );
       }
 
@@ -684,7 +811,37 @@ export default function AddSpaceScreen() {
         spaceType: space.spaceType,
       });
     } catch (error) {
-      Alert.alert('Submission Failed', (error as Error).message);
+      // The backend returns 403 with a structured error for subscription gating:
+      //   SUBSCRIPTION_REQUIRED (no active plan) / PLAN_LIMIT_REACHED (over limit).
+      // ApiError carries the backend `error` payload on `.message`, which may be an
+      // object { message, code, status } or a plain string — handle both robustly.
+      const err = error as any;
+      const status: number | undefined = err?.status;
+      const rawMsg = err?.message;
+      const errObj = rawMsg && typeof rawMsg === 'object' ? rawMsg : null;
+      const code: string | undefined = errObj?.code ?? err?.code;
+      const humanMsg: string =
+        (errObj?.message as string) ||
+        (typeof rawMsg === 'string' ? rawMsg : '') ||
+        'Something went wrong. Please try again.';
+
+      const isSubGate =
+        code === 'SUBSCRIPTION_REQUIRED' ||
+        code === 'PLAN_LIMIT_REACHED' ||
+        (status === 403 && /subscription|plan|upgrade/i.test(humanMsg));
+
+      if (isSubGate) {
+        Alert.alert(
+          'Subscription Required',
+          humanMsg,
+          [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'View Plans', onPress: () => router.push('/(my-spaces)/subscription-plans') },
+          ],
+        );
+      } else {
+        Alert.alert('Submission Failed', humanMsg);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -801,7 +958,7 @@ export default function AddSpaceScreen() {
             {isSubmitting ? (
               <ActivityIndicator size="small" color={Colors.primary} />
             ) : (
-              <Text style={styles.headerBtnText}>{step === 5 ? 'Submit' : 'Next'}</Text>
+              <Text style={styles.headerBtnText} numberOfLines={1}>{step === 5 ? 'Submit' : 'Next'}</Text>
             )}
           </TouchableOpacity>
         }
@@ -850,6 +1007,8 @@ export default function AddSpaceScreen() {
               pickSuggestion={pickSuggestion}
               markerCoord={markerCoord}
               reverseGeocode={reverseGeocode}
+              useCurrentLocation={useCurrentLocation}
+              isLocatingMe={isLocatingMe}
               mapRef={mapRef}
             />
           )}
@@ -894,6 +1053,9 @@ export default function AddSpaceScreen() {
               uploadedDocs={uploadedDocs}
               setUploadedDocs={setUploadedDocs}
               handlePickDocument={handlePickDocument}
+              onRemoveUploadedDoc={handleRemoveUploadedDoc}
+              docRulesMap={docRulesMap}
+              proofTextMap={proofTextMap}
               frontPhotoUri={frontPhotoUri}
               areaPhotoUri={areaPhotoUri}
               areaVideoUri={areaVideoUri}

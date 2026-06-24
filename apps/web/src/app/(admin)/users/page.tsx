@@ -1,18 +1,18 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef, useLayoutEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { io as createSocket } from 'socket.io-client';
-
-const SOCKET_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api').replace(/\/api\/?$/, '');
 import {
   Search, MoreVertical, Download,
   CheckCircle2, XCircle, Mail, Phone, ChevronLeft, ChevronRight, Loader2,
-  Eye, Ban, Trash2, UserX, UserCheck, X, AlertTriangle, Calendar,
-  Car, MapPin as MapPinIcon, Star, ShieldAlert,
+  Eye, Ban, Trash2, UserX, UserCheck, X,
 } from 'lucide-react';
 import { adminApi } from '@/services/api';
+import { useAuthStore } from '@/store/authStore';
+import { SOCKET_URL } from '@/lib/config';
 import { exportCsv } from '@/lib/download';
 import { TableSkeleton } from '@/components/Skeleton';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
@@ -27,6 +27,9 @@ import type { AdminUser, UserDetails } from './_components/types';
 const tabs = ['All Users', 'Active', 'Inactive', 'Suspended', 'Banned'] as const;
 
 export default function UsersPage() {
+  const searchParams = useSearchParams();
+  const focusId = searchParams.get('focus');
+  const focusHandledRef = useRef(false);
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>('All Users');
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [total, setTotal] = useState(0);
@@ -35,6 +38,7 @@ export default function UsersPage() {
   const debouncedSearch = useDebouncedValue(search, 400);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [actionError, setActionError] = useState('');
   const [exporting, setExporting] = useState(false);
   const [menuOpenFor, setMenuOpenFor] = useState<number | null>(null);
 
@@ -74,7 +78,7 @@ export default function UsersPage() {
 
   // Real-time: refresh on any user update
   useEffect(() => {
-    const socket = createSocket(SOCKET_URL, { transports: ['websocket'] });
+    const socket = createSocket(SOCKET_URL, { transports: ['websocket'], auth: { token: useAuthStore.getState().token } });
     socket.on('connect', () => socket.emit('admin:join'));
     socket.on('user:updated', fetchUsers);
     socket.on('user:deleted', fetchUsers);
@@ -93,25 +97,44 @@ export default function UsersPage() {
   const handleView = async (user: AdminUser) => {
     setMenuOpenFor(null);
     setLoadingDetails(true);
+    setActionError('');
     try {
       const res = await adminApi.getUserDetails(user.id);
       setViewingUser(res.user);
     } catch (e: any) {
-      alert(e?.response?.data?.error || e?.message || 'Failed to load user');
+      setActionError(e?.response?.data?.error || e?.message || 'Failed to load user');
     } finally {
       setLoadingDetails(false);
     }
   };
 
+  // Auto-open a user's details when arriving via /users?focus=<id> (e.g. from Moderation).
+  // Runs once after the list loads; falls back to seeding the search box if the user
+  // isn't on the current page so the admin can still find them.
+  useEffect(() => {
+    if (!focusId || focusHandledRef.current || loading) return;
+    const target = users.find((u) => String(u.id) === String(focusId));
+    if (target) {
+      focusHandledRef.current = true;
+      handleView(target);
+    } else if (users.length > 0) {
+      // List loaded but user not present — seed the search to surface them.
+      focusHandledRef.current = true;
+      setSearch(String(focusId));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusId, loading, users]);
+
   const handleUnsuspend = async (user: AdminUser) => {
     setMenuOpenFor(null);
-    if (!confirm(`Reinstate ${user.name}?`)) return;
+    if (!window.confirm(`Reinstate ${user.name}?`)) return;
     try {
       setActionLoading(true);
+      setActionError('');
       await adminApi.unsuspendUser(user.id);
       await fetchUsers();
     } catch (e: any) {
-      alert(e?.response?.data?.error || e?.message || 'Failed to reinstate');
+      setActionError(e?.response?.data?.error || e?.message || 'Failed to reinstate');
     } finally {
       setActionLoading(false);
     }
@@ -145,6 +168,13 @@ export default function UsersPage() {
           {exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Export CSV
         </button>
       </div>
+
+      {actionError && (
+        <div className="flex items-center justify-between gap-3 bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl">
+          <span className="text-sm">{actionError}</span>
+          <button onClick={() => setActionError('')} className="text-rose-400 hover:text-rose-600"><X size={16} /></button>
+        </div>
+      )}
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}

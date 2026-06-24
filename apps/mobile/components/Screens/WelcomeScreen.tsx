@@ -3,12 +3,12 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
   StatusBar,
   Dimensions,
   Animated,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import Svg, { Path, Defs, RadialGradient, Stop } from 'react-native-svg';
@@ -66,9 +66,6 @@ const WelcomeScreen = () => {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.white }]}>
       <StatusBar backgroundColor={colors.white} barStyle="dark-content" />
 
-      {/* Decorative Top Background Circles */}
-      <View style={styles.topCircle} />
-      <View style={styles.smallCircle} />
 
       <Animated.View
         style={[
@@ -151,24 +148,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  topCircle: {
-    width: width * 1.2,
-    height: width * 1.2,
-    borderRadius: width * 0.6,
-    backgroundColor: 'rgba(220,1,89,0.03)',
-    position: 'absolute',
-    top: -width * 0.6,
-    right: -width * 0.2,
-  },
-  smallCircle: {
-    width: width * 0.8,
-    height: width * 0.8,
-    borderRadius: width * 0.4,
-    backgroundColor: 'rgba(220,1,89,0.02)',
-    position: 'absolute',
-    top: width * 0.2,
-    left: -width * 0.4,
-  },
   content: {
     flex: 1,
     paddingHorizontal: 32,
@@ -190,11 +169,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF1F6',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#DC0159',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.15,
-    shadowRadius: 24,
-    elevation: 8,
   },
   title: {
     fontSize: 48,

@@ -15,9 +15,10 @@ import {View,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ChevronLeft, ShieldCheck } from 'lucide-react-native';
+import { ShieldCheck } from 'lucide-react-native';
 import { api } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
+import PageHeader from '../../components/PageHeader';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors, Shadows } from '../../theme';
 
 const { width, height } = Dimensions.get('window');
@@ -77,8 +78,9 @@ const VerifyOtpScreen = () => {
     try {
       const data = await api.post('/auth/verify-otp', { phone, otp });
 
-      // Save token + user + expiry BEFORE navigating so every screen finds auth ready
-      await setSession(data.token, data.user, data.expiresIn);
+      // Save token + user + expiry + refresh token BEFORE navigating so every
+      // screen finds auth ready and token refresh can work later.
+      await setSession(data.token, data.user, data.expiresIn, data.refreshToken);
 
       // Record T&C acceptance if user hasn't accepted current version yet.
       // This fires once on first login and again only when T&C version changes.
@@ -96,10 +98,16 @@ const VerifyOtpScreen = () => {
 
       setLoading(false);
 
-      if (data.user.isNewUser) {
-        router.push({
+      // Gate on isProfileComplete — the actual source of truth — NOT isNewUser.
+      // A returning user who abandoned profile setup also has no name/email, and
+      // must finish it before using the app (name + phone are mandatory). Using
+      // isNewUser let such users slip into Home with a null name.
+      if (!data.user.isProfileComplete) {
+        // replace (not push) so the user can't swipe back past this gate into the
+        // app — profile completion is mandatory before anything else.
+        router.replace({
           pathname: '/(auth)/complete-profile',
-          params: { token: data.token, userId: data.user.id, expiresIn: data.expiresIn },
+          params: { token: data.token, userId: data.user.id, expiresIn: data.expiresIn, refreshToken: data.refreshToken },
         });
       } else {
         router.replace('/(home)');
@@ -135,16 +143,7 @@ const VerifyOtpScreen = () => {
         <View style={styles.topCircle} />
         <View style={styles.smallCircle} />
 
-        {/* Back Button */}
-        <View style={styles.backRow}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-            activeOpacity={0.7}
-          >
-            <ChevronLeft size={20} color={Colors.textDark} strokeWidth={2.5} />
-          </TouchableOpacity>
-        </View>
+        <PageHeader title="" onBack={() => router.back()} />
 
         <Animated.View
           style={[
@@ -272,22 +271,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: width * 0.1,
     right: -width * 0.5,
-  },
-  backRow: {
-    paddingHorizontal: Spacing.screenH,
-    paddingTop: Spacing.md,
-    zIndex: 10,
-  },
-  backButton: {
-    width: 38,
-    height: 38,
-    borderRadius: BorderRadius.circle,
-    backgroundColor: Colors.white,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Shadows.card,
   },
   content: {
     flex: 1,

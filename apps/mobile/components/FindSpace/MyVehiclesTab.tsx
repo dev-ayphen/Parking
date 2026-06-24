@@ -511,7 +511,7 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
                       <Text style={styles.vehicleNameText}>{item.name}</Text>
                       {item.active && (
                         <View style={styles.activeBadge}>
-                          <Text style={styles.activeBadgeText}>ACTIVE</Text>
+                          <Text style={styles.activeBadgeText}>DEFAULT</Text>
                         </View>
                       )}
                       {item.rcVerified && (
@@ -546,9 +546,9 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
 
           {/* Informational tip */}
           <View style={styles.tipContainer}>
-            <Text style={styles.tipTitle}>💡 Navigation Tip</Text>
+            <Text style={styles.tipTitle}>💡 Default Vehicle</Text>
             <Text style={styles.tipText}>
-              The vehicle marked as "ACTIVE" is selected by default during checkout reservations. You can tap any vehicle card above to set it as active.
+              Tap any vehicle to set it as your default. It will be pre-selected when you book a parking spot.
             </Text>
           </View>
         </>

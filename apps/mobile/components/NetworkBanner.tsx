@@ -2,7 +2,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet, Text, View, Platform, Pressable, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WifiOff, Wifi, RotateCw } from 'lucide-react-native';
-import { useNetworkStore } from '../store/networkStore';
+import { DeviceEventEmitter } from 'react-native';
+import { useNetworkStore, NETWORK_RECONNECTED } from '../store/networkStore';
+import { toast } from '../utils/toast';
 import { Colors, FontSize, FontWeight, Spacing } from '../theme';
 
 export const NetworkBanner = () => {
@@ -16,52 +18,37 @@ export const NetworkBanner = () => {
   // We need a ref to track the previous connection state to detect "came back online"
   const prevConnected = useRef(isConnected);
 
+  // Declarative visibility — driven SOLELY by the current isConnected value, not
+  // by tracking transitions through a ref (which broke across Fast Refresh and in
+  // the "already online" race). Offline → slide the banner in. Online → if we
+  // were offline, flash "Back online" then hide; otherwise just stay hidden.
   useEffect(() => {
-    // If still initializing (isConnected === null), do nothing
-    if (isConnected === null) return;
+    if (isConnected === null) return; // still initializing
 
     if (!isConnected) {
-      // Went offline
       setStatus('offline');
-      Animated.spring(translateY, {
-        toValue: 0,
-        useNativeDriver: true,
-        bounciness: 0,
-      }).start();
-    } else if (isConnected && prevConnected.current === false) {
-      // Came back online
-      setStatus('back_online');
-      Animated.spring(translateY, {
-        toValue: 0,
-        useNativeDriver: true,
-        bounciness: 0,
-      }).start();
-
-      // Hide after 2 seconds
-      const timer = setTimeout(() => {
-        Animated.timing(translateY, {
-          toValue: -150,
-          duration: 300,
-          useNativeDriver: true,
-        }).start(() => {
-          setStatus('hidden');
-        });
-      }, 2000);
-
+      Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
       prevConnected.current = isConnected;
-      return () => clearTimeout(timer);
-    } else {
-      // Already online or initial state is online, ensure hidden
-      Animated.timing(translateY, {
-        toValue: -150,
-        duration: 0,
-        useNativeDriver: true,
-      }).start(() => {
-        setStatus('hidden');
-      });
+      return;
     }
 
+    // isConnected is true here.
+    const wasOffline = prevConnected.current === false;
     prevConnected.current = isConnected;
+
+    if (wasOffline) {
+      setStatus('back_online');
+      Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
+      const timer = setTimeout(() => {
+        Animated.timing(translateY, { toValue: -150, duration: 300, useNativeDriver: true })
+          .start(() => setStatus('hidden'));
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+
+    // Already online → ensure hidden.
+    setStatus('hidden');
+    translateY.setValue(-150);
   }, [isConnected, translateY]);
 
   if (status === 'hidden') return null;
@@ -74,8 +61,21 @@ export const NetworkBanner = () => {
   const onRetry = async () => {
     if (retrying) return;
     setRetrying(true);
-    await refresh();           // re-checks NetInfo; banner auto-hides if reconnected
-    setTimeout(() => setRetrying(false), 600);
+    const online = await refresh();
+    setRetrying(false);
+    if (online) {
+      // Reload the visible screen's data.
+      DeviceEventEmitter.emit(NETWORK_RECONNECTED);
+      // Force the banner away NOW — don't wait on the isConnected effect, which
+      // may not re-run if the store was already 'online'. Slide up and hide.
+      Animated.timing(translateY, {
+        toValue: -150,
+        duration: 300,
+        useNativeDriver: true,
+      }).start(() => setStatus('hidden'));
+    } else {
+      toast.error('Still offline. Check your connection and try again.');
+    }
   };
 
   return (

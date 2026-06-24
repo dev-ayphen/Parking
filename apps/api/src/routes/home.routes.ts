@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { authenticate } from '../middleware/auth';
 import { db } from '../config/database';
+import { entitlementService } from '../services/entitlement.service';
 
 const router = Router();
 
@@ -292,7 +293,7 @@ router.get('/owner-history', authenticate, async (req: Request, res: Response) =
       where: { spaceId: { in: spaceIds }, status: 'COMPLETED' },
       include: {
         parker: { select: { id: true, firstName: true, lastName: true, phone: true } },
-        rating: { select: { rating: true, review: true } },
+        ratings: { select: { rating: true, review: true, raterId: true } },
       },
       orderBy: { sessionEndedAt: 'desc' },
       take: 50,
@@ -373,8 +374,8 @@ router.get('/owner-history', authenticate, async (req: Request, res: Response) =
         date: `${formatDate(startedAt)} · ${formatTime(startedAt)} – ${formatTime(endedAt)}`,
         duration: `${durationH}h ${durationM}m`,
         amount: `₹${(b.totalAmount || 0).toLocaleString('en-IN')}`,
-        rating: b.rating?.rating || 0,
-        review: b.rating?.review || '',
+        rating: (b as any).ratings?.find((r: any) => r.raterId === b.parkerId)?.rating || 0,
+        review: (b as any).ratings?.find((r: any) => r.raterId === b.parkerId)?.review || '',
       };
     });
 
@@ -418,15 +419,39 @@ router.get('/owner-dashboard', authenticate, async (req: Request, res: Response)
     const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const monthLabel = monthStart.toLocaleDateString('en-IN', { month: 'long' });
 
-    // If owner has no spaces, return empty dashboard
+    // If owner has no spaces, return empty dashboard — but STILL include their
+    // subscription + entitlements. A freshly-subscribed owner has no spaces yet,
+    // and the client uses these to lift the "subscription required" gate so they
+    // can add their first space. Omitting them traps the owner permanently.
     if (spaceIds.length === 0) {
+      const [noSpaceSub, noSpaceEnt] = await Promise.all([
+        db.subscription.findFirst({
+          where: { userId, status: 'ACTIVE' },
+          include: { planRef: true },
+          orderBy: { createdAt: 'desc' },
+        }),
+        entitlementService.getForUser(userId),
+      ]);
       return res.json({
         success: true,
         revenue: { amount: 0, monthLabel, trendPct: 0, nextPayoutDate: null, completedThisMonth: 0 },
         stats: { activeSpacesCount: 0, todayBookingsCount: 0 },
-        subscription: null,
+        subscription: noSpaceSub
+          ? { planName: noSpaceSub.planRef?.name || noSpaceSub.planName, status: noSpaceSub.status }
+          : null,
+        entitlements: noSpaceEnt,
+        usage: {
+          spacesUsed: 0,
+          maxSpaces: noSpaceEnt.maxSpaces,
+          daysRemaining: noSpaceSub
+            ? Math.max(0, Math.ceil((noSpaceSub.renewalDate.getTime() - Date.now()) / 86400000))
+            : 0,
+          isExpired: !noSpaceEnt.isSubscribed,
+        },
         pendingRequests: [],
         liveSessions: [],
+        awaitingArrival: [],
+        recentRequests: [],
       });
     }
 
@@ -436,6 +461,7 @@ router.get('/owner-dashboard', authenticate, async (req: Request, res: Response)
       todayBookings,
       pendingBookings,
       activeBookings,
+      awaitingArrivalBookings,
       activeSubscription,
       recentBookings,
     ] = await Promise.all([
@@ -453,7 +479,7 @@ router.get('/owner-dashboard', authenticate, async (req: Request, res: Response)
       db.booking.findMany({
         where: { spaceId: { in: spaceIds }, status: 'PENDING_APPROVAL' },
         include: {
-          parker: { select: { id: true, firstName: true, lastName: true, phone: true } },
+          parker: { select: { id: true, firstName: true, lastName: true, phone: true, photoUrl: true } },
           space: { select: { id: true, name: true, lat: true, lng: true } },
           vehicle: { select: { brandModel: true, licensePlate: true } },
         },
@@ -463,11 +489,23 @@ router.get('/owner-dashboard', authenticate, async (req: Request, res: Response)
       db.booking.findMany({
         where: { spaceId: { in: spaceIds }, status: 'ACTIVE' },
         include: {
-          parker: { select: { id: true, firstName: true, lastName: true, phone: true } },
+          parker: { select: { id: true, firstName: true, lastName: true, phone: true, photoUrl: true } },
           space: { select: { id: true, name: true } },
           vehicle: { select: { brandModel: true, licensePlate: true } },
         },
         orderBy: { sessionStartedAt: 'desc' },
+        take: 10,
+      }),
+      // ACCEPTED but not yet started — drives the owner's "Parker on the way" /
+      // "Parker at gate — verify OTP" status bars between APPROVED and ACTIVE.
+      db.booking.findMany({
+        where: { spaceId: { in: spaceIds }, status: 'APPROVED' },
+        include: {
+          parker: { select: { id: true, firstName: true, lastName: true, phone: true, photoUrl: true } },
+          space: { select: { id: true, name: true } },
+          vehicle: { select: { brandModel: true, licensePlate: true } },
+        },
+        orderBy: { eta: 'asc' },
         take: 10,
       }),
       db.subscription.findFirst({
@@ -481,7 +519,7 @@ router.get('/owner-dashboard', authenticate, async (req: Request, res: Response)
           status: { in: ['APPROVED', 'REJECTED', 'EXPIRED', 'CANCELLED', 'COMPLETED'] },
         },
         include: {
-          parker: { select: { id: true, firstName: true, lastName: true, phone: true } },
+          parker: { select: { id: true, firstName: true, lastName: true, phone: true, photoUrl: true } },
           space: { select: { id: true, name: true } },
           vehicle: { select: { brandModel: true, licensePlate: true } },
         },
@@ -489,6 +527,9 @@ router.get('/owner-dashboard', authenticate, async (req: Request, res: Response)
         take: 20,
       }),
     ]);
+
+    // Owner's effective entitlements (drives the usage meter + lock state).
+    const ownerEntitlements = await entitlementService.getForUser(userId);
 
     // Revenue
     const monthRevenue = monthBookings.reduce((acc, b) => acc + (b.totalAmount || 0), 0);
@@ -513,6 +554,7 @@ router.get('/owner-dashboard', authenticate, async (req: Request, res: Response)
         id: b.id,
         parkerName: name,
         initials: initialsOf(name),
+        parkerPhotoUrl: b.parker?.photoUrl || null,
         phone: b.parker?.phone || '—',
         spaceName: b.space?.name || '—',
         durationHours: b.duration,
@@ -531,6 +573,7 @@ router.get('/owner-dashboard', authenticate, async (req: Request, res: Response)
         id: b.id,
         parkerName: name,
         initials: initialsOf(name),
+        parkerPhotoUrl: b.parker?.photoUrl || null,
         spaceName: b.space?.name || '—',
         status: b.status, // APPROVED | REJECTED | EXPIRED | CANCELLED | COMPLETED
         durationHours: b.duration,
@@ -557,6 +600,7 @@ router.get('/owner-dashboard', authenticate, async (req: Request, res: Response)
         id: b.id,
         parkerName: name,
         initials: initialsOf(name),
+        parkerPhotoUrl: b.parker?.photoUrl || null,
         spaceName: b.space?.name || '—',
         startTime: formatTime(startedAt),
         endTime: formatTime(endsAt),
@@ -569,6 +613,22 @@ router.get('/owner-dashboard', authenticate, async (req: Request, res: Response)
         licensePlate: b.vehicle?.licensePlate || null,
         // Parker has tapped "I Am Leaving" — owner must confirm the exit now.
         isLeaving: !!b.sessionEndedAt,
+      };
+    });
+
+    // Accepted-but-not-started bookings → drive the owner's "on the way" / "at gate"
+    // status bars. `atGate` is true once the parker has arrived or generated their
+    // arrival OTP; otherwise they're still en route.
+    const awaitingArrival = (awaitingArrivalBookings as any[]).map((b) => {
+      const name = fullName(b.parker);
+      const fmt = (d: Date) => d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+      return {
+        id: b.id,
+        parkerName: name,
+        spaceName: b.space?.name || '—',
+        licensePlate: b.vehicle?.licensePlate || null,
+        etaText: b.eta ? fmt(new Date(b.eta)) : null,
+        atGate: !!b.arrivedAt || !!b.sessionOtp,
       };
     });
 
@@ -592,8 +652,20 @@ router.get('/owner-dashboard', authenticate, async (req: Request, res: Response)
         autoRenewal: activeSubscription.autoRenewal,
         status: activeSubscription.status,
       } : null,
+      // Entitlements + usage so the dashboard can show the "subscribe to list /
+      // renew to continue" lock state and the usage meter.
+      entitlements: ownerEntitlements,
+      usage: {
+        spacesUsed: spaces.length,
+        maxSpaces: ownerEntitlements.maxSpaces,
+        daysRemaining: activeSubscription
+          ? Math.max(0, Math.ceil((activeSubscription.renewalDate.getTime() - Date.now()) / 86400000))
+          : 0,
+        isExpired: !ownerEntitlements.isSubscribed,
+      },
       pendingRequests,
       liveSessions,
+      awaitingArrival,
       recentRequests,
     });
   } catch (error) {

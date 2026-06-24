@@ -19,6 +19,7 @@ export type BarVariant =
   | 'arrived_otp_ready'    // Parker: APPROVED + OTP generated, heading over
   | 'session_active'       // Parker: ACTIVE
   | 'session_ending'       // Parker: ACTIVE + < 15 min left
+  | 'session_leaving'      // Parker: tapped "I'm leaving" — awaiting owner exit
   | 'rating_pending'       // Parker: COMPLETED, no rating yet
   | 'new_request'          // Owner:  PENDING_APPROVAL incoming
   | 'parker_en_route'      // Owner:  APPROVED, parker coming
@@ -60,6 +61,7 @@ export interface BarEntry extends BarData {
 export type BarSource = 'parker' | 'owner';
 
 const PRIORITY: Record<NonNullable<BarVariant>, number> = {
+  session_leaving:       7,
   session_ending:        6,
   session_active:        5,
   arrived_otp_ready:     4,
@@ -146,13 +148,15 @@ interface SessionBarState {
   /** Remove every bar owned by `source` (e.g. role has nothing active). */
   clearSource: (source: BarSource) => void;
 
+  /** Wipe ALL bars + dismissed history. Called on logout so a signed-out user
+   *  (or the next person on the device) never sees the previous user's bar. */
+  clearAll: () => void;
+
   /** User explicitly closed a (dismissible) bar. */
   dismiss: (id: string) => void;
 
   /** Drop bars whose countdown has fully expired (so we never show "0:00" forever). */
   pruneExpired: () => void;
-
-  clearAll: () => void;
 }
 
 function buildEntry(source: BarSource, bar: Partial<BarData> & { variant: BarVariant }): BarEntry {
@@ -203,6 +207,10 @@ export const useSessionBarStore = create<SessionBarState>()(
         set({ bars: cur.bars.filter((b) => b.source !== source) });
       },
 
+      // Keep dismissedIds across logout so a dismissed rating banner never
+      // reappears after the user signs back in to the same account.
+      clearAll: () => set((cur) => ({ bars: [], dismissedIds: cur.dismissedIds })),
+
       dismiss: (id) => {
         const cur = get();
         set({
@@ -226,15 +234,19 @@ export const useSessionBarStore = create<SessionBarState>()(
         });
         if (kept.length !== cur.bars.length) set({ bars: kept });
       },
-
-      clearAll: () => set({ bars: [], dismissedIds: [] }),
     }),
     {
       name: 'session-bar',
       storage: createJSONStorage(() => AsyncStorage),
       // Persist the bars + dismissals so the strip is present immediately on a
       // cold start, before the first API sync re-derives the truth.
-      partialize: (s) => ({ bars: s.bars, dismissedIds: s.dismissedIds }),
+      // SECURITY: the arrival OTP must NOT be written to disk — strip it from every
+      // persisted bar. It's re-fetched from the API on the next sync, so the live
+      // bar still shows it; it just never sits in AsyncStorage.
+      partialize: (s) => ({
+        bars: s.bars.map((b) => ({ ...b, otp: null })),
+        dismissedIds: s.dismissedIds,
+      }),
     },
   ),
 );

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {View,
   Text,
   StyleSheet,
@@ -12,11 +12,12 @@ import {View,
   Image,
   Modal,
   TextInput,
+  DeviceEventEmitter,
   Linking} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MapPin, Clock, Car, Shield, Zap, Droplets, Star, Camera, User, AlertTriangle, CalendarClock, Minus, Plus, PlayCircle, Image as ImageIcon, Flag, X, Navigation } from 'lucide-react-native';
+import { MapPin, Clock, Car, Shield, Zap, Droplets, Star, Camera, User, AlertTriangle, Minus, Plus, PlayCircle, Image as ImageIcon, Flag, X, Navigation, Bell, BellRing, ChevronRight } from 'lucide-react-native';
 import LeafletMap from '../../components/LeafletMap';
 import PageHeader from '../../components/PageHeader';
 import ReportSubmitted from '../../components/ReportSubmitted';
@@ -25,7 +26,7 @@ import { api } from '../../services/api';
 import { getRatingStyle, formatCount } from '../../utils/ratingUtils';
 import { useAuthStore } from '../../store/authStore';
 import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
-import { useNetworkStore } from '../../store/networkStore';
+import { useNetworkStore, NETWORK_RECONNECTED } from '../../store/networkStore';
 import { useTheme, type AppTheme } from '../../hooks/useTheme';
 
 interface AmenityItem {
@@ -83,16 +84,26 @@ const SpaceDetailScreen = () => {
   const [reportRef, setReportRef] = useState<string | null>(null);
   const [reportSubmittedAt, setReportSubmittedAt] = useState<string | null>(null);
 
-  // Parse params (instant display while the full record loads)
+  // "Notify me when available" — only relevant while the space is full.
+  const [alertSubscribed, setAlertSubscribed] = useState(false);
+  const [alertBusy, setAlertBusy] = useState(false);
+
+  // Parse params (instant display while the full record loads).
+  // NOTE: never substitute fabricated money/coords. A non-finite parse → null so
+  // the UI shows a skeleton/"—" instead of a misleading hardcoded value.
   const spaceId = parseInt(params.spaceId as string, 10);
   const pSpaceName = (params.spaceName as string) || 'Parking Space';
   const pAddress = (params.address as string) || 'Unknown Address';
-  const pPricePerHour = parseInt(params.pricePerHour as string, 10) || 50;
-  const pAvailableSlots = parseInt(params.availableSlots as string, 10) || 5;
-  const pTotalSlots = parseInt(params.totalSlots as string, 10) || 15;
-  const distance = parseFloat(params.distance as string) || 0;
-  const pLat = parseFloat(params.lat as string) || 13.0827;
-  const pLng = parseFloat(params.lng as string) || 80.2707;
+  const numOrNull = (raw: unknown): number | null => {
+    const n = parseFloat(raw as string);
+    return Number.isFinite(n) ? n : null;
+  };
+  const pPricePerHour = numOrNull(params.pricePerHour);
+  const pAvailableSlots = numOrNull(params.availableSlots);
+  const pTotalSlots = numOrNull(params.totalSlots);
+  const distance = numOrNull(params.distance) ?? 0;
+  const pLat = numOrNull(params.lat);
+  const pLng = numOrNull(params.lng);
   const pFrontPhotoUrl = (params.frontPhotoUrl as string) || '';
   const pRawAmenities: string[] = (() => {
     try { return JSON.parse(params.amenities as string || '[]'); }
@@ -100,34 +111,43 @@ const SpaceDetailScreen = () => {
   })();
 
   // Fetch the full space record
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const json = await api.get(`/spaces/${spaceId}`);
-        if (alive) setSpace(json.space || json.data || json);
-      } catch (e) {
-        if (__DEV__) console.log('[SPACE_DETAIL] fetch error', e);
-      } finally {
-        if (alive) setFetching(false);
-      }
-    })();
-    return () => { alive = false; };
+  const loadSpace = useCallback(async () => {
+    try {
+      const json = await api.get(`/spaces/${spaceId}`);
+      setSpace(json.space || json.data || json);
+    } catch (e) {
+      if (__DEV__) console.log('[SPACE_DETAIL] fetch error', e);
+    } finally {
+      setFetching(false);
+    }
   }, [spaceId]);
 
-  // Merge — prefer the fetched record, fall back to params
+  useEffect(() => { loadSpace(); }, [loadSpace]);
+
+  // Re-fetch when connectivity is restored (the offline banner's "Retry" /
+  // auto-reconnect emits this) so the screen isn't left showing stale data.
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(NETWORK_RECONNECTED, () => loadSpace());
+    return () => sub.remove();
+  }, [loadSpace]);
+
+  // Merge — prefer the fetched record, fall back to params. Money/slots/coords may
+  // be null when genuinely missing (then we render skeletons/"—", never fakes).
   const spaceName = space?.name ?? pSpaceName;
   const address = space?.address ?? pAddress;
   const landmark = space?.landmark ?? null;
-  const pricePerHour = space?.hourlyRate ?? pPricePerHour;
-  const totalSlots = space?.capacity ?? pTotalSlots;
+  const rawPrice = space?.hourlyRate ?? pPricePerHour;
+  const pricePerHour: number | null = Number.isFinite(rawPrice) ? Number(rawPrice) : null;
+  const totalSlots: number | null = space?.capacity ?? pTotalSlots ?? null;
   // Live availability from API (capacity − active bookings); params only as pre-load fallback
-  const availableSlots = space?.availableSpots ?? pAvailableSlots;
+  const availableSlots: number | null = space?.availableSpots ?? pAvailableSlots ?? null;
   // Real space rating (0 ⇒ no reviews yet ⇒ "New" badge); never use the fake param default
   const rating = space?.ratingAvg ?? 0;
   const ratingCount = space?.ratingCount ?? 0;
-  const lat = space?.lat ?? pLat;
-  const lng = space?.lng ?? pLng;
+  // Coords: only valid when present; missing → no map marker (don't drop a pin on Chennai).
+  const lat: number | null = space?.lat ?? pLat;
+  const lng: number | null = space?.lng ?? pLng;
+  const hasCoords = Number.isFinite(lat) && Number.isFinite(lng);
   const frontPhotoUrl = space?.frontPhotoUrl ?? pFrontPhotoUrl;
   const areaPhotoUrl = space?.areaPhotoUrl ?? '';
   const videoUrl = space?.videoUrl ?? null;
@@ -153,9 +173,15 @@ const SpaceDetailScreen = () => {
   const riskKey = spaceType ? RISK_MAP[spaceType] : null;
   const risk = riskKey ? getRiskStyle(theme)[riskKey] : null;
 
-  // Calculate totals (no GST)
-  const basePrice = pricePerHour * selectedDurationHours;
-  const totalPrice = basePrice;
+  // Client-side total is a DISPLAY ESTIMATE only — the authoritative amount is
+  // whatever the server returns at booking-confirm / session-complete. When the
+  // hourly price is unknown, leave the estimate null so we render "—", not ₹0.
+  const basePrice: number | null = pricePerHour != null ? pricePerHour * selectedDurationHours : null;
+  const totalPrice: number | null = basePrice;
+
+  // "Full" only when we KNOW availability and it's 0. While slots are unknown
+  // (null, still loading) we don't disable the button on a guess.
+  const isFull = availableSlots != null && availableSlots <= 0;
 
   const amenityIconMap: Record<string, React.ReactNode> = {
     'CCTV': <Shield size={14} color={C.textSecondary} strokeWidth={2.5} />,
@@ -197,6 +223,20 @@ const SpaceDetailScreen = () => {
 
   const isOwnSpace = space?.ownerId && currentUser?.id && space.ownerId === currentUser.id;
 
+  // Once we know the space is full (and not the user's own), check whether they
+  // already hold a "notify me" alert so the button shows the right state.
+  useEffect(() => {
+    if (!Number.isFinite(spaceId) || !isFull || isOwnSpace) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get(`/spaces/${spaceId}/availability-alert`);
+        if (!cancelled) setAlertSubscribed(!!res?.subscribed);
+      } catch { /* non-critical — default to not subscribed */ }
+    })();
+    return () => { cancelled = true; };
+  }, [spaceId, isFull, isOwnSpace]);
+
   const SPACE_REPORT_REASONS: { value: string; label: string }[] = [
     { value: 'FAKE_SPACE',          label: 'Fake or non-existent space' },
     { value: 'MISLEADING_LISTING',  label: 'Wrong address / incorrect photos' },
@@ -232,6 +272,55 @@ const SpaceDetailScreen = () => {
     }
   };
 
+  const proceedToVehicleSelect = () => {
+    // Price must be known to continue — these are passed forward as the estimate
+    // (the server still computes the authoritative amount at confirm/complete).
+    if (pricePerHour == null || basePrice == null || totalPrice == null) {
+      Alert.alert('Price Unavailable', 'This space\'s price could not be loaded. Please try again in a moment.');
+      return;
+    }
+    router.push({
+      pathname: '/(find-space)/vehicle-select',
+      params: {
+        spaceId,
+        spaceName,
+        address,
+        durationHours: selectedDurationHours,
+        pricePerHour,
+        basePrice,
+        totalPrice,
+      },
+    });
+  };
+
+  // Toggle the "notify me when available" alert for a full space.
+  const handleToggleAlert = async () => {
+    if (!useNetworkStore.getState().requireOnline()) return;
+    if (alertBusy) return;
+    setAlertBusy(true);
+    try {
+      if (alertSubscribed) {
+        await api.delete(`/spaces/${spaceId}/availability-alert`);
+        setAlertSubscribed(false);
+      } else {
+        const res = await api.post(`/spaces/${spaceId}/availability-alert`);
+        if (res?.available) {
+          // A slot opened up between load and tap — just let them book.
+          setAlertSubscribed(false);
+          await loadSpace();
+          Alert.alert('Good news', 'A spot just opened up — you can book it now.');
+        } else {
+          setAlertSubscribed(true);
+          Alert.alert("We'll let you know", "You'll be notified the moment a spot opens up here.");
+        }
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not update your alert. Please try again.');
+    } finally {
+      setAlertBusy(false);
+    }
+  };
+
   const handleBookNow = () => {
     if (!useNetworkStore.getState().requireOnline()) return;
     // If user owns this space, navigate to manage
@@ -248,18 +337,38 @@ const SpaceDetailScreen = () => {
       return;
     }
 
-    router.push({
-      pathname: '/(find-space)/vehicle-select',
-      params: {
-        spaceId,
-        spaceName,
-        address,
-        durationHours: selectedDurationHours,
-        pricePerHour,
-        basePrice,
-        totalPrice,
-      },
-    });
+    // HIGH-risk (roadside / open-frontage) spaces require an explicit
+    // acknowledgment that the parker proceeds at their own responsibility. We
+    // record it server-side as legal evidence before continuing. Lower-risk
+    // spaces go straight through.
+    if (riskKey === 'HIGH') {
+      Alert.alert(
+        'Proceed at Your Own Responsibility',
+        'This is an open roadside space. ParkSwift cannot guarantee its safety, and you book it entirely at your own risk. Do you want to continue?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'I Understand, Continue',
+            style: 'destructive',
+            onPress: async () => {
+              // Best-effort: record the acknowledgment, but never block the
+              // booking if the network call fails.
+              try {
+                await api.post(`/spaces/${spaceId}/roadside-acknowledgment`, {
+                  platform: Platform.OS,
+                });
+              } catch {
+                // swallow — acknowledgment is best-effort evidence
+              }
+              proceedToVehicleSelect();
+            },
+          },
+        ],
+      );
+      return;
+    }
+
+    proceedToVehicleSelect();
   };
 
   const handleGetDirections = () => {
@@ -383,7 +492,7 @@ const SpaceDetailScreen = () => {
                   <Text style={styles.spaceName}>{spaceName}</Text>
                 </View>
                 <View style={styles.priceBadge}>
-                  {fetching ? (
+                  {fetching || pricePerHour == null ? (
                     <View style={styles.skeletonChip} />
                   ) : (
                     <Text style={styles.priceBadgeValue}>₹{pricePerHour}<Text style={styles.priceBadgeUnit}>/hr</Text></Text>
@@ -419,6 +528,7 @@ const SpaceDetailScreen = () => {
                 </View>
                 {ratingCount > 0 && (
                   <TouchableOpacity
+                    style={styles.reviewsLinkBtn}
                     onPress={() =>
                       router.push({
                         pathname: '/(find-space)/space-reviews',
@@ -426,11 +536,12 @@ const SpaceDetailScreen = () => {
                       })
                     }
                     activeOpacity={0.6}
+                    hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
                   >
                     <Text style={styles.reviewsLink}>
                       {formatCount(ratingCount)} review{ratingCount !== 1 ? 's' : ''}
-                      <Text style={styles.reviewsLinkArrow}>  ›</Text>
                     </Text>
+                    <ChevronRight size={14} color={C.primary} strokeWidth={2.5} />
                   </TouchableOpacity>
                 )}
                 {distance > 0 && <Text style={styles.metaMuted}>{distance.toFixed(1)} km</Text>}
@@ -459,7 +570,7 @@ const SpaceDetailScreen = () => {
                     <Car size={16} color={C.textSecondary} strokeWidth={2} />
                     <Text style={styles.detailLabel}>Available Spots</Text>
                   </View>
-                  {fetching ? (
+                  {fetching || availableSlots == null || totalSlots == null ? (
                     <View style={styles.skeletonChip} />
                   ) : (
                     <Text style={styles.detailValue}>
@@ -485,20 +596,35 @@ const SpaceDetailScreen = () => {
                     <Text style={styles.detailValue}>{parkingFor}</Text>
                   </View>
                 )}
-                {ownerName && (
-                  <View style={[styles.detailRow, { borderBottomWidth: 0 }]}>
-                    <View style={styles.detailRowLeft}>
-                      <User size={16} color={C.textSecondary} strokeWidth={2} />
-                      <Text style={styles.detailLabel}>Space Owner</Text>
-                    </View>
-                    <View style={styles.compactOwner}>
-                      {ownerPhoto ? (
-                        <Image source={{ uri: ownerPhoto }} style={styles.compactOwnerAvatar} />
-                      ) : null}
-                      <Text style={styles.detailValue}>{ownerName}</Text>
-                    </View>
-                  </View>
-                )}
+                {ownerName && (() => {
+                  const ownerId = space?.ownerId || space?.owner?.id;
+                  // Tap the owner to view their public profile (rating, spaces) —
+                  // but not for your own space.
+                  const canView = !!ownerId && !isOwnSpace;
+                  return (
+                    <TouchableOpacity
+                      style={[styles.detailRow, { borderBottomWidth: 0 }]}
+                      activeOpacity={canView ? 0.6 : 1}
+                      disabled={!canView}
+                      onPress={() => {
+                        if (canView) {
+                          router.push({ pathname: '/(find-space)/public-profile', params: { userId: String(ownerId) } });
+                        }
+                      }}
+                    >
+                      <View style={styles.detailRowLeft}>
+                        <User size={16} color={C.textSecondary} strokeWidth={2} />
+                        <Text style={styles.detailLabel}>Space Owner</Text>
+                      </View>
+                      <View style={styles.compactOwner}>
+                        {ownerPhoto ? (
+                          <Image source={{ uri: ownerPhoto }} style={styles.compactOwnerAvatar} />
+                        ) : null}
+                        <Text style={[styles.detailValue, canView && { color: C.primary }]}>{ownerName}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })()}
               </View>
 
               {amenities.length > 0 && (
@@ -583,27 +709,33 @@ const SpaceDetailScreen = () => {
             </View>
 
             {/* ── Location Map ── */}
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Location</Text>
-              <View style={styles.miniMap} pointerEvents="none">
-                <LeafletMap
-                  interactive={false}
-                  initialRegion={{ latitude: lat, longitude: lng, latitudeDelta: 0.008 }}
-                  markers={[{ id: 'space', lat, lng, kind: 'pin' }]}
-                />
+            {/* Only render the map when we have real coordinates — never drop a pin
+                on the Chennai city centre for a space whose lat/lng is missing. */}
+            {hasCoords && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Location</Text>
+                <View style={styles.miniMap} pointerEvents="none">
+                  <LeafletMap
+                    interactive={false}
+                    initialRegion={{ latitude: lat as number, longitude: lng as number, latitudeDelta: 0.008 }}
+                    markers={[{ id: 'space', lat: lat as number, lng: lng as number, kind: 'pin' }]}
+                  />
+                </View>
               </View>
-            </View>
+            )}
 
-            {/* ── Price Summary ── */}
+            {/* ── Price Summary (estimate; server total is authoritative) ── */}
             <View style={styles.priceCard}>
               <View style={styles.priceRow}>
-                <Text style={styles.priceRowLabel}>₹{pricePerHour} × {selectedDurationHours}h</Text>
-                <Text style={styles.priceRowValue}>₹{basePrice}</Text>
+                <Text style={styles.priceRowLabel}>
+                  {pricePerHour != null ? `₹${pricePerHour} × ${selectedDurationHours}h` : `Estimated · ${selectedDurationHours}h`}
+                </Text>
+                <Text style={styles.priceRowValue}>{basePrice != null ? `₹${basePrice}` : '—'}</Text>
               </View>
               <View style={styles.priceDivider} />
               <View style={styles.priceRow}>
-                <Text style={styles.totalLabel}>Total</Text>
-                <Text style={styles.totalValue}>₹{totalPrice}</Text>
+                <Text style={styles.totalLabel}>Estimated Total</Text>
+                <Text style={styles.totalValue}>{totalPrice != null ? `₹${totalPrice}` : '—'}</Text>
               </View>
             </View>
 
@@ -701,36 +833,54 @@ const SpaceDetailScreen = () => {
       {/* ── Sticky Footer ── */}
       <View style={styles.footer}>
         <View style={styles.footerLeft}>
-          <Text style={styles.footerPriceLabel}>Total Price</Text>
+          <Text style={styles.footerPriceLabel}>Est. Total</Text>
           <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: Spacing.xs }}>
-            <Text style={styles.footerPrice}>₹{totalPrice}</Text>
+            <Text style={styles.footerPrice}>{totalPrice != null ? `₹${totalPrice}` : '—'}</Text>
             <Text style={styles.footerPriceDuration}>/ {selectedDurationHours}h</Text>
           </View>
         </View>
-        <TouchableOpacity
-          style={[
-            styles.bookBtn,
-            availableSlots <= 0 && !isOwnSpace && styles.bookBtnDisabled,
-            riskKey === 'HIGH' && !isOwnSpace && availableSlots > 0 && styles.bookBtnHighRisk,
-          ]}
-          onPress={availableSlots <= 0 && !isOwnSpace ? undefined : handleBookNow}
-          activeOpacity={availableSlots <= 0 && !isOwnSpace ? 1 : 0.8}
-          disabled={loading || (availableSlots <= 0 && !isOwnSpace)}
-        >
-          {loading ? (
-            <ActivityIndicator color={C.white} size="small" />
-          ) : (
-            <Text style={styles.bookBtnText}>
-              {isOwnSpace
-                ? 'Manage Space'
-                : availableSlots <= 0
-                ? 'Fully Occupied'
-                : riskKey === 'HIGH'
-                ? 'Proceed at Your Own Responsibility'
-                : 'Book Now'}
-            </Text>
-          )}
-        </TouchableOpacity>
+        {isFull && !isOwnSpace ? (
+          // Full → no dead end. Let the parker subscribe to an availability alert.
+          <TouchableOpacity
+            style={[styles.bookBtn, alertSubscribed ? styles.notifyBtnActive : styles.notifyBtn]}
+            onPress={handleToggleAlert}
+            activeOpacity={0.8}
+            disabled={alertBusy}
+          >
+            {alertBusy ? (
+              <ActivityIndicator color={alertSubscribed ? C.primary : C.white} size="small" />
+            ) : (
+              <View style={styles.notifyBtnInner}>
+                {alertSubscribed ? <BellRing size={18} color={C.primary} /> : <Bell size={18} color={C.white} />}
+                <Text style={[styles.bookBtnText, alertSubscribed && styles.notifyBtnActiveText]}>
+                  {alertSubscribed ? "We'll notify you" : 'Notify me when available'}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={[
+              styles.bookBtn,
+              riskKey === 'HIGH' && !isOwnSpace && styles.bookBtnHighRisk,
+            ]}
+            onPress={handleBookNow}
+            activeOpacity={0.8}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color={C.white} size="small" />
+            ) : (
+              <Text style={styles.bookBtnText}>
+                {isOwnSpace
+                  ? 'Manage Space'
+                  : riskKey === 'HIGH'
+                  ? 'Proceed at Your Own Responsibility'
+                  : 'Book Now'}
+              </Text>
+            )}
+          </TouchableOpacity>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -824,8 +974,18 @@ const makeStyles = ({ colors: C }: AppTheme) => StyleSheet.create({
 
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, flexWrap: 'wrap', marginBottom: Spacing.xl },
   metaMuted: { fontSize: FontSize.xs, color: C.textMuted, fontWeight: FontWeight.medium },              // 11=xs ✓
-  reviewsLink: { fontSize: FontSize.xs, color: C.primary, fontWeight: FontWeight.semibold },
-  reviewsLinkArrow: { fontSize: FontSize.sm, color: C.primary, fontWeight: FontWeight.bold },
+  // Tappable "X reviews ›" pill — padding + background give it a real, easy-to-hit
+  // touch target (the bare text was too small to reliably tap).
+  reviewsLinkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.badge,
+    backgroundColor: C.primaryBg,
+  },
+  reviewsLink: { fontSize: FontSize.xs, color: C.primary, fontWeight: FontWeight.bold },
   ratingChip: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, paddingHorizontal: Spacing.sm, paddingVertical: 3, borderRadius: BorderRadius.badge },  // 6=badge ✓
   ratingChipText: { fontSize: FontSize.xs, fontWeight: FontWeight.bold },
   riskChip: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: Spacing.sm, paddingVertical: 3, borderRadius: BorderRadius.badge, borderWidth: 1 },
@@ -917,6 +1077,11 @@ const makeStyles = ({ colors: C }: AppTheme) => StyleSheet.create({
   bookBtnDisabled: { backgroundColor: C.textMuted },
   bookBtnHighRisk: { backgroundColor: C.error },
   bookBtnText: { color: C.white, fontSize: FontSize.lg, fontWeight: FontWeight.bold },                 // 15=lg ✓
+  // "Notify me when available" footer button (full space)
+  notifyBtn: { backgroundColor: C.primary },
+  notifyBtnActive: { backgroundColor: C.primaryBg, borderWidth: 1.5, borderColor: C.primary },
+  notifyBtnActiveText: { color: C.primary },
+  notifyBtnInner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
 
   // Skeleton placeholder shown while background fetch is in flight
   skeletonChip: { backgroundColor: C.surfaceBg, height: 14, width: 40, borderRadius: BorderRadius.xs },  // 4=xs ✓

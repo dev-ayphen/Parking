@@ -8,21 +8,19 @@ import {
   Shield,
   AlertTriangle,
   Calendar,
-  User,
   Car,
   MapPin,
   ChevronLeft,
   ChevronRight,
   ArrowRight,
-  Filter,
   Flag,
   FileText,
 } from 'lucide-react';
 import { io as createSocket } from 'socket.io-client';
 import { adminApi } from '@/services/api';
+import { useAuthStore } from '@/store/authStore';
+import { SOCKET_URL } from '@/lib/config';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
-
-const SOCKET_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api').replace(/\/api\/?$/, '');
 
 interface CaseRow {
   bookingId: string;
@@ -112,7 +110,7 @@ export default function CasesPage() {
 
   // Live-refresh — a new incident or abuse report creates/flags a case.
   useEffect(() => {
-    const socket = createSocket(SOCKET_URL, { transports: ['websocket'] });
+    const socket = createSocket(SOCKET_URL, { transports: ['websocket'], auth: { token: useAuthStore.getState().token } });
     socket.on('connect', () => socket.emit('admin:join'));
     socket.on('incident:new', () => fetchCases());
     socket.on('abuse:new', () => fetchCases());

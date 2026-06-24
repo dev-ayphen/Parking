@@ -31,10 +31,11 @@ export const abuseController = {
   // Admin handlers (called from admin.routes.ts)
   listAbuseReports: async (req: Request, res: Response) => {
     try {
-      const { status, page } = req.query;
+      const { status, page, search } = req.query;
       const result = await abuseService.listReports({
         status: status as string,
         page: page ? parseInt(page as string) : 1,
+        search: search ? (search as string) : undefined,
       });
       res.json(result);
     } catch (error) {
@@ -75,6 +76,17 @@ export const abuseController = {
             : appliedStatus === 'BANNED'
               ? 'Your account has been banned for policy violations.'
               : 'Your account has been suspended for policy violations.',
+          category: 'SYSTEM',
+        });
+      } else if (reportedUserId && req.body?.action === 'WARNING_ISSUED') {
+        // A warning doesn't change the account status, but the user MUST still be
+        // told — otherwise "Warning Issued" only updates the admin panel and the
+        // user never actually receives the warning.
+        await adminService.notifyUser(reportedUserId, {
+          title: 'Warning from ParkSwift',
+          message: req.body?.adminAction
+            ? String(req.body.adminAction)
+            : 'You have received a warning for violating our community guidelines. Repeated violations may lead to suspension or a ban.',
           category: 'SYSTEM',
         });
       }

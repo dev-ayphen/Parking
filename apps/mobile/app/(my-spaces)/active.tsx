@@ -33,6 +33,7 @@ interface LiveSession {
   progressPercent: number;
   isLeaving?: boolean;
   leftAt?: string | null;
+  markedPaid?: boolean;
 }
 
 export default function ActiveSessionsScreen() {
@@ -88,7 +89,7 @@ export default function ActiveSessionsScreen() {
 
   // Live refresh on session lifecycle events
   useEffect(() => {
-    const events = ['session:started', 'session:completed', 'parker:leaving', 'booking:cancelled', 'notification:new', NETWORK_RECONNECTED];
+    const events = ['session:started', 'session:completed', 'parker:leaving', 'booking:cancelled', 'booking:paid-marked', 'notification:new', NETWORK_RECONNECTED];
     const subs = events.map((evt) => DeviceEventEmitter.addListener(evt, () => fetchSessions('silent')));
     return () => subs.forEach((s) => s.remove());
   }, [fetchSessions]);
@@ -135,7 +136,7 @@ export default function ActiveSessionsScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
-        <PageHeader title="Live Sessions" />
+        <PageHeader title="Live Sessions"  onBack={() => router.replace('/(my-spaces)')} />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={C.primary} />
         </View>
@@ -146,7 +147,7 @@ export default function ActiveSessionsScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
-      <PageHeader title="Live Sessions" />
+      <PageHeader title="Live Sessions"  onBack={() => router.replace('/(my-spaces)')} />
 
       <ScrollView
         style={styles.container}
@@ -167,6 +168,12 @@ export default function ActiveSessionsScreen() {
               <View style={styles.cardHeader}>
                 <View style={styles.headerDot} />
                 <Text style={styles.headerText}>ACTIVE PARKING SESSION</Text>
+                {/* Parker tapped "I've paid" — confirm receipt in your own UPI app. */}
+                {session.markedPaid && (
+                  <View style={styles.paidBadge}>
+                    <Text style={styles.paidBadgeText}>✓ PARKER MARKED PAID</Text>
+                  </View>
+                )}
               </View>
 
               <View style={styles.detailsGrid}>
@@ -254,6 +261,8 @@ const makeStyles = ({ colors: C }: AppTheme) => StyleSheet.create({
   cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.screenH },
   headerDot: { width: 8, height: 8, borderRadius: BorderRadius.xs, backgroundColor: C.successAlt, marginRight: Spacing.md },  // 4 = xs ✓
   headerText: { fontSize: FontSize.sm, fontWeight: FontWeight.extrabold, color: C.successAlt, letterSpacing: 1 },  // 12 = sm ✓
+  paidBadge: { marginLeft: 'auto', backgroundColor: C.successBg, borderRadius: BorderRadius.badge, paddingHorizontal: Spacing.md, paddingVertical: 3 },
+  paidBadgeText: { fontSize: FontSize.micro, fontWeight: FontWeight.extrabold, color: C.success, letterSpacing: 0.3 },
   detailsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing['3xl'] },
   detailItem: { width: '45%' },
   detailLabel: { fontSize: FontSize.sm, color: C.textSecondary, marginBottom: Spacing.xs },  // 12 = sm ✓

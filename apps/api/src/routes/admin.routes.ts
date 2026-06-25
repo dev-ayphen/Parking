@@ -11,6 +11,7 @@ import {
   suspendUserSchema,
   banUserSchema,
   deleteUserSchema,
+  notifyUserSchema,
   rejectSpaceSchema,
   blockSpaceSchema,
   verifyDocumentSchema,
@@ -37,10 +38,12 @@ router.put('/users/:id/suspend', validate(suspendUserSchema), adminController.su
 router.put('/users/:id/unsuspend', adminController.unsuspendUser);
 router.put('/users/:id/ban', validate(banUserSchema), adminController.banUser);
 router.delete('/users/:id', validate(deleteUserSchema), adminController.deleteUser);
+router.post('/users/:id/notify', validate(notifyUserSchema), adminController.notifyUser);
 
 // ─── Spaces ──────────────────────────────────────────────────────────
 router.get('/spaces', adminController.listSpaces);
 router.get('/spaces/:id', adminController.getSpaceForAdmin);
+router.put('/spaces/:id', adminController.updateSpace);
 router.put('/spaces/:id/approve', adminController.approveSpace);
 router.put('/spaces/:id/reject', validate(rejectSpaceSchema), adminController.rejectSpace);
 router.put('/spaces/:id/request-document', adminController.requestSpaceDocument);
@@ -53,6 +56,7 @@ router.put('/spaces/:id/documents/:docId/verify', validate(verifyDocumentSchema)
 router.get('/bookings', adminController.listBookings);
 router.get('/bookings/export', adminController.exportBookings); // before :id
 router.get('/bookings/:id', adminController.getBookingDetails);
+router.post('/bookings/:id/dispute', adminController.createBookingDispute);
 
 // ─── Subscriptions (ParkSwift's only revenue source) ────────────────
 router.get('/subscriptions/analytics', adminController.getSubscriptionAnalytics);
@@ -114,6 +118,8 @@ router.get('/vehicles/:id/rcbook-url', vehicleController.getRcBookUrl);
 // ─── System & legal ──────────────────────────────────────────────────
 router.get('/system-logs', adminController.listSystemLogs);
 router.get('/system-logs/export', adminController.exportLogs);
+router.get('/audit-logs/export', adminController.exportAuditLogs); // before any param routes
+router.get('/audit-logs', adminController.listAuditLogs);
 router.get('/legal/documents', adminController.listLegalDocuments);
 router.put('/legal/documents/:slug', adminController.upsertLegalDocument);
 router.get('/legal/compliance', adminController.listComplianceLogs);

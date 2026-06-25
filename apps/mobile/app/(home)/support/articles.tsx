@@ -83,7 +83,7 @@ export default function ArticlesScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <PageHeader title="Articles" onBack={() => router.back()} />
+      <PageHeader title="Articles" onBack={() => router.replace('/(home)/help-support')} />
 
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.searchContainer}>

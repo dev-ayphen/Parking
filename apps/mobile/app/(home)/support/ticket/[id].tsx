@@ -245,7 +245,7 @@ export default function TicketDetailScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" />
-        <PageHeader title="Ticket Details" onBack={() => router.back()} />
+        <PageHeader title="Ticket Details" onBack={() => router.replace('/(home)/support/tickets')} />
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator size="large" color={Colors.primary} />
         </View>
@@ -257,7 +257,7 @@ export default function TicketDetailScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" />
-        <PageHeader title="Ticket Details" onBack={() => router.back()} />
+        <PageHeader title="Ticket Details" onBack={() => router.replace('/(home)/support/tickets')} />
         <View style={{ flex: 1, padding: Spacing['4xl'], alignItems: 'center', justifyContent: 'center' }}>
           <Text style={{ color: Colors.textSecondary, fontSize: FontSize.md, textAlign: 'center' }}>
             {error || 'Ticket not found.'}
@@ -281,7 +281,7 @@ export default function TicketDetailScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <PageHeader title={ticket.ticketNumber} onBack={() => router.back()} />
+      <PageHeader title={ticket.ticketNumber} onBack={() => router.replace('/(home)/support/tickets')} />
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView ref={scrollRef} contentContainerStyle={styles.content}>

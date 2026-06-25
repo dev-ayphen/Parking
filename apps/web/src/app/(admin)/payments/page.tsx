@@ -1,16 +1,18 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { io as createSocket } from 'socket.io-client';
 import {
   Loader2, Search, TrendingUp, TrendingDown, Banknote, RefreshCw, Download,
-  ChevronLeft, ChevronRight, X, Check, ArrowDownLeft, ArrowUpRight,
+  ChevronLeft, ChevronRight, X, Check, ArrowDownLeft, ArrowUpRight, Plus, Eye, Filter,
 } from 'lucide-react';
 import { adminApi } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
 import { SOCKET_URL } from '@/lib/config';
 import type { AdminTransactionListItem } from '@/types/api';
+import { ExportRangeModal } from '@/components/ExportRangeModal';
 
 const errMsg = (e: any, fallback: string) =>
   e?.response?.data?.error || e?.message || fallback;
@@ -30,6 +32,7 @@ interface Overview {
 }
 
 export default function PaymentsPage() {
+  const router = useRouter();
   const [overview, setOverview] = useState<Overview | null>(null);
   const [txns, setTxns] = useState<AdminTransactionListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,14 +43,30 @@ export default function PaymentsPage() {
   const [limit] = useState(20);
 
   const [payingOut, setPayingOut] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  const [showExport, setShowExport] = useState(false);
   // User-visible error for failed mutating actions (payouts/refund/status/export).
   const [actionError, setActionError] = useState('');
 
   // Refund modal
   const [refundTxn, setRefundTxn] = useState<AdminTransactionListItem | null>(null);
   const [refundReason, setRefundReason] = useState('');
+  const [refundAmount, setRefundAmount] = useState('');
   const [refunding, setRefunding] = useState(false);
+
+  // Manual payout modal
+  const [showPayoutModal, setShowPayoutModal] = useState(false);
+  const [payoutUserId, setPayoutUserId] = useState('');
+  const [payoutEntityLabel, setPayoutEntityLabel] = useState('');
+  const [payoutAmount, setPayoutAmount] = useState('');
+  const [creatingPayout, setCreatingPayout] = useState(false);
+
+  // Transaction details modal
+  const [detailsTxn, setDetailsTxn] = useState<any>(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+
+  // Filters
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
 
   const pages = Math.max(1, Math.ceil(total / limit));
 
@@ -109,39 +128,79 @@ export default function PaymentsPage() {
     }
   };
 
-  const handleExport = async () => {
-    try {
-      setExporting(true);
-      setActionError('');
-      const blob = await adminApi.exportTransactionsCsv();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `parkswift-transactions-${new Date().toISOString().slice(0, 10)}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (e) {
-      setActionError(errMsg(e, 'Failed to export transactions.'));
-    } finally {
-      setExporting(false);
-    }
-  };
 
   const handleRefund = async () => {
     if (!refundTxn) return;
     try {
       setRefunding(true);
       setActionError('');
-      await adminApi.refundTransaction(refundTxn.rawId, { reason: refundReason || undefined });
+      const payload: any = { reason: refundReason || undefined };
+      if (refundAmount) {
+        payload.amount = Number(refundAmount);
+      }
+      await adminApi.refundTransaction(refundTxn.rawId, payload);
       setRefundTxn(null);
       setRefundReason('');
+      setRefundAmount('');
       await Promise.all([fetchOverview(), fetchTransactions()]);
     } catch (e) {
       setActionError(errMsg(e, 'Failed to issue refund.'));
     } finally {
       setRefunding(false);
+    }
+  };
+
+  const handleCreatePayout = async () => {
+    if (!payoutAmount) {
+      setActionError('Amount is required.');
+      return;
+    }
+    if (!payoutUserId && !payoutEntityLabel) {
+      setActionError('User ID or Entity Label is required.');
+      return;
+    }
+    try {
+      setCreatingPayout(true);
+      setActionError('');
+      await adminApi.createPayout({
+        userId: payoutUserId ? Number(payoutUserId) : undefined,
+        entityLabel: payoutEntityLabel || undefined,
+        amount: Number(payoutAmount),
+      });
+      setShowPayoutModal(false);
+      setPayoutUserId('');
+      setPayoutEntityLabel('');
+      setPayoutAmount('');
+      await Promise.all([fetchOverview(), fetchTransactions()]);
+    } catch (e) {
+      setActionError(errMsg(e, 'Failed to create payout.'));
+    } finally {
+      setCreatingPayout(false);
+    }
+  };
+
+  const handleViewDetails = async (txn: AdminTransactionListItem) => {
+    try {
+      setLoadingDetails(true);
+      const res = await adminApi.getTransactionDetails(txn.rawId);
+      if (res.success) {
+        setDetailsTxn(res.transaction);
+      }
+    } catch (e) {
+      setActionError(errMsg(e, 'Failed to load transaction details.'));
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
+
+  const handleRevertToPending = async (txn: AdminTransactionListItem) => {
+    if (!window.confirm(`Revert transaction ${txn.id} to PENDING status? This allows re-processing.`)) return;
+    try {
+      setActionError('');
+      await adminApi.updateTransactionStatus(txn.rawId, 'PENDING');
+      await Promise.all([fetchOverview(), fetchTransactions()]);
+    } catch (e) {
+      setActionError(errMsg(e, 'Failed to update transaction status.'));
     }
   };
 
@@ -175,9 +234,13 @@ export default function PaymentsPage() {
           <p className="text-gray-500 mt-1">Transactions, refunds, and owner payouts.</p>
         </div>
         <div className="flex gap-3">
-          <button onClick={handleExport} disabled={exporting}
+          <button onClick={() => setShowExport(true)}
             className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">
-            {exporting ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />} Export CSV
+            <Download size={15} /> Export CSV
+          </button>
+          <button onClick={() => setShowPayoutModal(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50">
+            <Plus size={15} /> Manual Payout
           </button>
           <button onClick={handleProcessPayouts} disabled={payingOut}
             className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold disabled:opacity-50">
@@ -211,8 +274,8 @@ export default function PaymentsPage() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-4 flex flex-wrap gap-3 items-center">
-        <div className="flex gap-2 flex-wrap">
+      <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-3">
+        <div className="flex flex-wrap gap-2 items-center">
           {TYPE_FILTERS.map((f) => (
             <button key={f} onClick={() => { setTypeFilter(f); setPage(1); }}
               className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
@@ -222,11 +285,28 @@ export default function PaymentsPage() {
             </button>
           ))}
         </div>
-        <div className="relative flex-1 min-w-[220px]">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            placeholder="Search by txn ID, user, or description..."
-            className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="relative flex-1 min-w-[220px]">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              placeholder="Search by txn ID, user, amount, method..."
+              className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+          </div>
+          <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+            className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
+            <option value="">All Statuses</option>
+            <option value="SUCCESS">Completed</option>
+            <option value="PENDING">Pending</option>
+            <option value="FAILED">Failed</option>
+          </select>
+          <select value={paymentMethodFilter} onChange={(e) => { setPaymentMethodFilter(e.target.value); setPage(1); }}
+            className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
+            <option value="">All Methods</option>
+            <option value="Card">Card</option>
+            <option value="UPI">UPI</option>
+            <option value="Bank Transfer">Bank Transfer</option>
+            <option value="Wallet">Wallet</option>
+          </select>
         </div>
       </div>
 
@@ -242,8 +322,10 @@ export default function PaymentsPage() {
               <thead>
                 <tr className="bg-gray-50/50 text-gray-500 text-xs uppercase tracking-wider border-b border-gray-100">
                   <th className="px-5 py-3.5 font-semibold">Transaction</th>
+                  <th className="px-5 py-3.5 font-semibold">Type</th>
                   <th className="px-5 py-3.5 font-semibold">User</th>
                   <th className="px-5 py-3.5 font-semibold">Amount</th>
+                  <th className="px-5 py-3.5 font-semibold">Method</th>
                   <th className="px-5 py-3.5 font-semibold">Status</th>
                   <th className="px-5 py-3.5 font-semibold">Date</th>
                   <th className="px-5 py-3.5 font-semibold">Action</th>
@@ -263,29 +345,42 @@ export default function PaymentsPage() {
                         </div>
                       </div>
                     </td>
+                    <td className="px-5 py-4">
+                      <span className="inline-flex px-2 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-semibold">{t.type}</span>
+                    </td>
                     <td className="px-5 py-4 text-sm text-gray-700">{t.user}</td>
                     <td className="px-5 py-4">
                       <span className={`text-sm font-bold ${t.isInflow ? 'text-emerald-700' : 'text-rose-700'}`}>{t.amountDisplay}</span>
                     </td>
+                    <td className="px-5 py-4 text-sm text-gray-700">{t.method || '—'}</td>
                     <td className="px-5 py-4">
                       <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_STYLE[t.status] || 'bg-gray-100 text-gray-600'}`}>{t.status}</span>
                     </td>
                     <td className="px-5 py-4 text-sm text-gray-500">{t.date}</td>
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2">
+                        <button onClick={() => handleViewDetails(t)} disabled={loadingDetails}
+                          className="text-indigo-600 hover:text-indigo-700 text-xs font-semibold disabled:opacity-50">
+                          <Eye size={14} />
+                        </button>
                         {/* Refund only inflows that succeeded */}
                         {t.isInflow && t.status === 'SUCCESS' && (
-                          <button onClick={() => { setRefundTxn(t); setRefundReason(''); }}
+                          <button onClick={() => { setRefundTxn(t); setRefundReason(''); setRefundAmount(''); }}
                             className="text-rose-600 hover:text-rose-700 text-xs font-semibold">Refund</button>
                         )}
                         {/* Pending → mark success/failed */}
                         {t.status === 'PENDING' && (
                           <>
                             <button onClick={() => markStatus(t, 'SUCCESS')}
-                              className="text-emerald-600 hover:text-emerald-700 text-xs font-semibold">Mark Paid</button>
+                              className="text-emerald-600 hover:text-emerald-700 text-xs font-semibold">Paid</button>
                             <button onClick={() => markStatus(t, 'FAILED')}
                               className="text-gray-500 hover:text-gray-700 text-xs font-semibold">Fail</button>
                           </>
+                        )}
+                        {/* Revert FAILED to PENDING */}
+                        {t.status === 'FAILED' && (
+                          <button onClick={() => handleRevertToPending(t)}
+                            className="text-amber-600 hover:text-amber-700 text-xs font-semibold">Retry</button>
                         )}
                       </div>
                     </td>
@@ -321,6 +416,12 @@ export default function PaymentsPage() {
               <p className="text-gray-500 text-xs mt-0.5">{refundTxn.user} · {refundTxn.description}</p>
             </div>
             <div>
+              <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5 block">Amount (Optional - defaults to full)</label>
+              <input type="number" value={refundAmount} onChange={(e) => setRefundAmount(e.target.value)}
+                placeholder={`Full amount: ₹${Math.abs(refundTxn.amount).toLocaleString('en-IN')}`}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none" />
+            </div>
+            <div>
               <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5 block">Reason</label>
               <textarea value={refundReason} onChange={(e) => setRefundReason(e.target.value)} rows={3}
                 placeholder="Reason for the refund (visible in logs)..."
@@ -332,6 +433,119 @@ export default function PaymentsPage() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* Manual payout modal */}
+      {showPayoutModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-900">Create Manual Payout</h2>
+              <button onClick={() => setShowPayoutModal(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5 block">User ID (Optional)</label>
+              <input type="number" value={payoutUserId} onChange={(e) => setPayoutUserId(e.target.value)}
+                placeholder="Numeric user ID..."
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5 block">Entity Label (Optional)</label>
+              <input type="text" value={payoutEntityLabel} onChange={(e) => setPayoutEntityLabel(e.target.value)}
+                placeholder="Business name or identifier..."
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5 block">Amount (Required)</label>
+              <input type="number" step="0.01" value={payoutAmount} onChange={(e) => setPayoutAmount(e.target.value)}
+                placeholder="Amount in rupees..."
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none" />
+            </div>
+            <button onClick={handleCreatePayout} disabled={creatingPayout}
+              className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-semibold rounded-xl text-sm flex items-center justify-center gap-2">
+              {creatingPayout ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} Create Payout
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Transaction details modal */}
+      {detailsTxn && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-900">Transaction Details</h2>
+              <button onClick={() => setDetailsTxn(null)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+            </div>
+            {loadingDetails ? (
+              <div className="flex items-center justify-center py-8"><Loader2 className="animate-spin text-indigo-600" size={24} /></div>
+            ) : (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase">Transaction ID</p>
+                    <p className="text-sm font-mono text-gray-900">{detailsTxn.txnNumber}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase">Type</p>
+                    <p className="text-sm text-gray-900">{detailsTxn.type}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase">Amount</p>
+                    <p className="text-sm font-bold text-gray-900">₹{Math.abs(detailsTxn.amount).toLocaleString('en-IN')}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase">Status</p>
+                    <p className="text-sm text-gray-900">{detailsTxn.status}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase">Payment Method</p>
+                    <p className="text-sm text-gray-900">{detailsTxn.paymentMethod || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase">Date</p>
+                    <p className="text-sm text-gray-900">{new Date(detailsTxn.createdAt).toLocaleDateString('en-IN')}</p>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase">Description</p>
+                  <p className="text-sm text-gray-700 break-words">{detailsTxn.description || '—'}</p>
+                </div>
+                {detailsTxn.bookingId && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase">Booking</p>
+                    <button
+                      onClick={() => { setDetailsTxn(null); router.push(`/admin/bookings?focus=${detailsTxn.bookingId}`); }}
+                      className="text-sm font-mono text-indigo-600 underline hover:text-indigo-700 break-words"
+                    >
+                      {detailsTxn.bookingId}
+                    </button>
+                  </div>
+                )}
+                {detailsTxn.user && (
+                  <div className="border-t border-gray-200 pt-3">
+                    <p className="text-xs font-semibold text-gray-500 uppercase mb-2">User Info</p>
+                    <div className="space-y-1 text-sm">
+                      <p><span className="text-gray-500">Name:</span> {detailsTxn.user.name}</p>
+                      <p><span className="text-gray-500">Phone:</span> {detailsTxn.user.phone}</p>
+                      <p><span className="text-gray-500">Email:</span> {detailsTxn.user.email}</p>
+                      <p><span className="text-gray-500">Role:</span> {detailsTxn.user.role}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showExport && (
+        <ExportRangeModal
+          title="Export Transactions"
+          filenamePrefix="parkswift-transactions"
+          onExport={(startDate, endDate) => adminApi.exportTransactionsCsv({ startDate, endDate })}
+          onClose={() => setShowExport(false)}
+        />
       )}
     </div>
   );

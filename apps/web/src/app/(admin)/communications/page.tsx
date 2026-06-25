@@ -37,6 +37,43 @@ export default function CommunicationsPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  // ── Broadcast templates (localStorage-backed) ─────────────────────────
+  type Template = { id: number; name: string; title: string; body: string; audience: Audience; category: Category };
+  const TEMPLATE_KEY = 'parkswift.broadcastTemplates';
+  const [templates, setTemplates] = useState<Template[]>([]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(TEMPLATE_KEY);
+      if (raw) setTemplates(JSON.parse(raw));
+    } catch { /* ignore corrupt storage */ }
+  }, []);
+
+  const persistTemplates = useCallback((next: Template[]) => {
+    setTemplates(next);
+    try { localStorage.setItem(TEMPLATE_KEY, JSON.stringify(next)); } catch { /* quota */ }
+  }, []);
+
+  const saveTemplate = useCallback(() => {
+    if (!messageTitle.trim() || !messageBody.trim()) { setError('Add a title and message before saving a template.'); return; }
+    const name = window.prompt('Template name:', messageTitle.trim().slice(0, 40));
+    if (!name) return;
+    const next: Template = { id: Date.now(), name: name.trim(), title: messageTitle.trim(), body: messageBody.trim(), audience, category };
+    persistTemplates([next, ...templates]);
+    setSuccess('Template saved.');
+  }, [messageTitle, messageBody, audience, category, templates, persistTemplates]);
+
+  const loadTemplate = useCallback((t: Template) => {
+    setMessageTitle(t.title);
+    setMessageBody(t.body);
+    setAudience(t.audience);
+    setCategory(t.category);
+  }, []);
+
+  const deleteTemplate = useCallback((id: number) => {
+    persistTemplates(templates.filter((t) => t.id !== id));
+  }, [templates, persistTemplates]);
+
   const fetchHistory = useCallback(async () => {
     try {
       setError('');
@@ -133,7 +170,32 @@ export default function CommunicationsPage() {
           transition={{ delay: 0.1 }}
           className="lg:col-span-2 bg-white rounded-3xl border border-gray-100 shadow-sm p-6"
         >
-          <h2 className="text-lg font-bold text-gray-900 mb-6">Compose Message</h2>
+          <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
+            <h2 className="text-lg font-bold text-gray-900">Compose Message</h2>
+            <div className="flex items-center gap-2">
+              {templates.length > 0 && (
+                <div className="relative group">
+                  <button className="px-3 py-1.5 text-xs font-semibold text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors">
+                    Load Template ({templates.length})
+                  </button>
+                  <div className="absolute right-0 mt-1 w-64 bg-white border border-gray-200 rounded-xl shadow-lg z-20 hidden group-hover:block max-h-72 overflow-y-auto">
+                    {templates.map((t) => (
+                      <div key={t.id} className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-gray-50 border-b border-gray-50 last:border-0">
+                        <button onClick={() => loadTemplate(t)} className="flex-1 text-left">
+                          <p className="text-sm font-semibold text-gray-800 truncate">{t.name}</p>
+                          <p className="text-xs text-gray-400 truncate">{t.title}</p>
+                        </button>
+                        <button onClick={() => deleteTemplate(t.id)} className="text-rose-400 hover:text-rose-600 text-xs shrink-0">Delete</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <button onClick={saveTemplate} className="px-3 py-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
+                Save as Template
+              </button>
+            </div>
+          </div>
 
           <div className="space-y-6">
             <div>

@@ -58,14 +58,19 @@ export default function MyBookingsScreen() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('Upcoming');
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [total, setTotal] = useState(0);
+  const [skip, setSkip] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const LIMIT = 50;
 
   const fetchBookings = useCallback(async (isRefresh = false) => {
     try {
       isRefresh ? setRefreshing(true) : setLoading(true);
-      const json = await api.get('/bookings/my?limit=50');
+      const json = await api.get(`/bookings/my?limit=${LIMIT}&skip=0`);
       if (json.success) {
         const mapped: Booking[] = (json.bookings || []).map((b: any) => ({
           id: String(b.id),
@@ -78,16 +83,43 @@ export default function MyBookingsScreen() {
           price: `₹${b.totalAmount || 0}`,
         }));
         setBookings(mapped);
+        setTotal(json.total || 0);
+        setSkip(LIMIT);
       }
       setError(null);
     } catch (e) {
       if (__DEV__) console.log('[MY_BOOKINGS] error', e);
-      // Distinguish "load failed" from "loaded but empty" — show retry, not "No bookings".
       setError((e as Error)?.message || 'Could not load your bookings.');
     } finally {
       isRefresh ? setRefreshing(false) : setLoading(false);
     }
   }, []);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || skip >= total) return;
+    try {
+      setLoadingMore(true);
+      const json = await api.get(`/bookings/my?limit=${LIMIT}&skip=${skip}`);
+      if (json.success) {
+        const mapped: Booking[] = (json.bookings || []).map((b: any) => ({
+          id: String(b.id),
+          spaceName: b.space?.name || 'Unknown Space',
+          address: b.space?.address || '',
+          date: formatDate(b.createdAt),
+          time: `${b.duration || 1}h`,
+          status: STATUS_MAP[b.status] || b.status,
+          rawStatus: b.status,
+          price: `₹${b.totalAmount || 0}`,
+        }));
+        setBookings((prev) => [...prev, ...mapped]);
+        setSkip((prev) => prev + LIMIT);
+      }
+    } catch (e) {
+      if (__DEV__) console.log('[MY_BOOKINGS] loadMore error', e);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [skip, total, loadingMore]);
 
   useEffect(() => { fetchBookings(); }, [fetchBookings]);
 
@@ -144,7 +176,7 @@ export default function MyBookingsScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <PageHeader title="My Bookings" onBack={() => router.back()} />
+      <PageHeader title="My Bookings" onBack={() => router.replace('/(home)')} />
 
       <View style={styles.tabsContainer}>
         {['Upcoming', 'Completed', 'Cancelled'].map((tab) => (
@@ -181,6 +213,8 @@ export default function MyBookingsScreen() {
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={() => fetchBookings(true)} tintColor={Colors.primary} />
           }
+          onEndReached={() => loadMore()}
+          onEndReachedThreshold={0.3}
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <Calendar size={64} color={Colors.borderMuted} />
@@ -189,6 +223,14 @@ export default function MyBookingsScreen() {
                 You don't have any {activeTab.toLowerCase()} parking bookings yet.
               </Text>
             </View>
+          }
+          ListFooterComponent={
+            loadingMore ? (
+              <View style={styles.loadingMoreContainer}>
+                <ActivityIndicator size="small" color={Colors.primary} />
+                <Text style={styles.loadingMoreText}>Loading more bookings...</Text>
+              </View>
+            ) : null
           }
         />
       )}
@@ -230,4 +272,6 @@ const styles = StyleSheet.create({
   emptyStateDesc: { fontSize: FontSize.md, color: Colors.textSecondary, textAlign: 'center' },  // 14 = md ✓
   retryBtn: { marginTop: Spacing['3xl'], paddingHorizontal: Spacing['4xl'], paddingVertical: Spacing.lg, backgroundColor: Colors.primaryBg, borderRadius: BorderRadius.lg },
   retryBtnText: { color: Colors.primary, fontWeight: FontWeight.bold, fontSize: FontSize.md },
+  loadingMoreContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing['3xl'], gap: Spacing.md },
+  loadingMoreText: { fontSize: FontSize.md, color: Colors.textSecondary, marginLeft: Spacing.md },
 });

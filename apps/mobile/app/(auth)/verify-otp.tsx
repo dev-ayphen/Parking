@@ -78,12 +78,8 @@ const VerifyOtpScreen = () => {
     try {
       const data = await api.post('/auth/verify-otp', { phone, otp });
 
-      // Save token + user + expiry + refresh token BEFORE navigating so every
-      // screen finds auth ready and token refresh can work later.
       await setSession(data.token, data.user, data.expiresIn, data.refreshToken);
 
-      // Record T&C acceptance if user hasn't accepted current version yet.
-      // This fires once on first login and again only when T&C version changes.
       const CURRENT_TC_VERSION = '1.0.0';
       if (data.user?.acceptedTermsVersion !== CURRENT_TC_VERSION) {
         try {
@@ -91,20 +87,12 @@ const VerifyOtpScreen = () => {
             termsVersion: CURRENT_TC_VERSION,
             platform: Platform.OS,
           });
-        } catch (_) {
-          // Non-blocking — don't fail login if this fails
-        }
+        } catch (_) {}
       }
 
       setLoading(false);
 
-      // Gate on isProfileComplete — the actual source of truth — NOT isNewUser.
-      // A returning user who abandoned profile setup also has no name/email, and
-      // must finish it before using the app (name + phone are mandatory). Using
-      // isNewUser let such users slip into Home with a null name.
       if (!data.user.isProfileComplete) {
-        // replace (not push) so the user can't swipe back past this gate into the
-        // app — profile completion is mandatory before anything else.
         router.replace({
           pathname: '/(auth)/complete-profile',
           params: { token: data.token, userId: data.user.id, expiresIn: data.expiresIn, refreshToken: data.refreshToken },
@@ -136,14 +124,13 @@ const VerifyOtpScreen = () => {
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={[styles.container, { backgroundColor: Colors.white }]}>
         <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
 
-        {/* Decorative Top Background Circles */}
         <View style={styles.topCircle} />
         <View style={styles.smallCircle} />
 
-        <PageHeader title="" onBack={() => router.back()} />
+        <PageHeader title="" onBack={() => router.replace('/(auth)/login')} />
 
         <Animated.View
           style={[
@@ -154,7 +141,6 @@ const VerifyOtpScreen = () => {
             },
           ]}
         >
-          {/* Header Section */}
           <View style={styles.headerContainer}>
             <View style={styles.iconRow}>
               <View style={styles.shieldIcon}>
@@ -170,8 +156,7 @@ const VerifyOtpScreen = () => {
 
           <View style={styles.mainContainer}>
             <Text style={styles.label}>OTP Code</Text>
-            
-            {/* Hidden Input wrapped in a visual 6-box UI */}
+
             <View style={styles.otpWrapper}>
               <TextInput
                 ref={inputRef}
@@ -179,11 +164,12 @@ const VerifyOtpScreen = () => {
                 onChangeText={(val) => { setOtp(val.replace(/[^0-9]/g, '')); setError(''); }}
                 maxLength={OTP_LENGTH}
                 keyboardType="number-pad"
+                textContentType="oneTimeCode"
                 style={styles.hiddenInput}
                 caretHidden={true}
                 editable={!loading}
               />
-              
+
               <TouchableOpacity
                 activeOpacity={1}
                 onPress={() => inputRef.current?.focus()}
@@ -253,6 +239,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.white,
+    paddingHorizontal: 0,
   },
   topCircle: {
     width: width * 1.2,

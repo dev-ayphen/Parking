@@ -16,7 +16,7 @@ const BookingTermsScreen = () => {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
 
-      <PageHeader title="Terms & Conditions" onBack={() => router.back()} />
+      <PageHeader title="Terms & Conditions" onBack={() => router.replace('/(find-space)')} />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>

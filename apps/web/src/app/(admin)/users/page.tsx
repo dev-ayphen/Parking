@@ -16,6 +16,7 @@ import { SOCKET_URL } from '@/lib/config';
 import { exportCsv } from '@/lib/download';
 import { TableSkeleton } from '@/components/Skeleton';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import { useToast } from '@/components/Toast';
 import {
   SuspendUserModal,
   BanUserModal,
@@ -27,6 +28,7 @@ import type { AdminUser, UserDetails } from './_components/types';
 const tabs = ['All Users', 'Active', 'Inactive', 'Suspended', 'Banned'] as const;
 
 export default function UsersPage() {
+  const toast = useToast();
   const searchParams = useSearchParams();
   const focusId = searchParams.get('focus');
   const focusHandledRef = useRef(false);
@@ -41,6 +43,42 @@ export default function UsersPage() {
   const [actionError, setActionError] = useState('');
   const [exporting, setExporting] = useState(false);
   const [menuOpenFor, setMenuOpenFor] = useState<number | null>(null);
+
+  // ── Bulk selection ────────────────────────────────────────────────────
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const toggleSelect = (id: number) => setSelected((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const toggleSelectAll = () => setSelected((prev) =>
+    prev.size === users.length ? new Set() : new Set(users.map((u) => u.id)));
+
+  const runBulk = async (action: 'suspend' | 'ban') => {
+    if (selected.size === 0) return;
+    const ids = [...selected];
+    let reason = '';
+    if (action === 'suspend') {
+      reason = window.prompt(`Suspend ${ids.length} user(s). Reason:`, 'Policy violation') || '';
+      if (!reason) return;
+    } else {
+      if (!window.confirm(`Permanently ban ${ids.length} user(s)? This cannot be undone.`)) return;
+      reason = 'Bulk admin ban';
+    }
+    setBulkBusy(true);
+    const results = await Promise.allSettled(ids.map((id) =>
+      action === 'suspend'
+        ? adminApi.suspendUser(id, { reason, durationDays: 7 })
+        : adminApi.banUser(id, { reason })));
+    setBulkBusy(false);
+    const ok = results.filter((r) => r.status === 'fulfilled').length;
+    const failed = results.length - ok;
+    setSelected(new Set());
+    await fetchUsers();
+    if (failed === 0) toast.success(`${ok} user(s) ${action === 'suspend' ? 'suspended' : 'banned'}`);
+    else toast.error(`${ok} succeeded, ${failed} failed`);
+  };
 
   const handleExport = async () => {
     setExporting(true);
@@ -133,8 +171,11 @@ export default function UsersPage() {
       setActionError('');
       await adminApi.unsuspendUser(user.id);
       await fetchUsers();
+      toast.success(`${user.name} reinstated`);
     } catch (e: any) {
-      setActionError(e?.response?.data?.error || e?.message || 'Failed to reinstate');
+      const msg = e?.response?.data?.error || e?.message || 'Failed to reinstate';
+      setActionError(msg);
+      toast.error(msg);
     } finally {
       setActionLoading(false);
     }
@@ -182,15 +223,15 @@ export default function UsersPage() {
         className="bg-white border border-gray-100 rounded-3xl shadow-sm overflow-visible"
       >
         <div className="p-4 border-b border-gray-100 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="flex items-center gap-1 bg-gray-50 p-1 rounded-xl w-fit border border-gray-200/60 overflow-x-auto">
+          <div className="flex items-center gap-2 overflow-x-auto">
             {tabs.map((tab) => (
               <button
                 key={tab}
                 onClick={() => { setActiveTab(tab); setPage(1); }}
                 className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all whitespace-nowrap ${
                   activeTab === tab
-                    ? 'bg-white text-indigo-600 shadow-sm border border-gray-200/50'
-                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100/50'
+                    ? 'bg-indigo-50 text-indigo-600 border border-indigo-200'
+                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50 border border-transparent'
                 }`}
               >
                 {tab}
@@ -213,7 +254,29 @@ export default function UsersPage() {
         </div>
 
         {error && (
-          <div className="m-4 p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-sm">{error}</div>
+          <div className="m-4 p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-sm flex items-center justify-between gap-3">
+            <span>{error}</span>
+            <button onClick={() => fetchUsers()} className="px-3 py-1.5 bg-white border border-rose-300 rounded-lg text-xs font-bold text-rose-700 hover:bg-rose-100 transition-colors shrink-0">Try Again</button>
+          </div>
+        )}
+
+        {selected.size > 0 && (
+          <div className="mx-4 mt-4 p-3 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-between gap-3">
+            <span className="text-sm font-semibold text-indigo-800">{selected.size} selected</span>
+            <div className="flex items-center gap-2">
+              <button onClick={() => runBulk('suspend')} disabled={bulkBusy}
+                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg disabled:opacity-50 flex items-center gap-1.5">
+                {bulkBusy && <Loader2 size={12} className="animate-spin" />} Suspend Selected
+              </button>
+              <button onClick={() => runBulk('ban')} disabled={bulkBusy}
+                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg disabled:opacity-50">
+                Ban Selected
+              </button>
+              <button onClick={() => setSelected(new Set())} className="px-3 py-1.5 bg-white border border-gray-200 text-gray-600 text-xs font-bold rounded-lg hover:bg-gray-50">
+                Clear
+              </button>
+            </div>
+          </div>
         )}
 
         <div className="overflow-x-auto overflow-y-visible">
@@ -225,6 +288,11 @@ export default function UsersPage() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50/50">
+                  <th className="px-4 py-4 border-b border-gray-100 w-10">
+                    <input type="checkbox" checked={users.length > 0 && selected.size === users.length}
+                      onChange={toggleSelectAll}
+                      className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer" />
+                  </th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 border-b border-gray-100">User</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 border-b border-gray-100">Contact Info</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 border-b border-gray-100">Type</th>
@@ -235,9 +303,13 @@ export default function UsersPage() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {users.length === 0 ? (
-                  <tr><td colSpan={6} className="px-6 py-16 text-center text-sm text-gray-400">No users found</td></tr>
+                  <tr><td colSpan={7} className="px-6 py-16 text-center text-sm text-gray-400">No users found</td></tr>
                 ) : users.map((user) => (
-                  <tr key={user.id} className="hover:bg-gray-50/50 transition-colors group">
+                  <tr key={user.id} className={`hover:bg-gray-50/50 transition-colors group ${selected.has(user.id) ? 'bg-indigo-50/40' : ''}`}>
+                    <td className="px-4 py-4">
+                      <input type="checkbox" checked={selected.has(user.id)} onChange={() => toggleSelect(user.id)}
+                        className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer" />
+                    </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-sm overflow-hidden">
@@ -335,21 +407,21 @@ export default function UsersPage() {
           <SuspendUserModal
             user={suspendingUser}
             onClose={() => setSuspendingUser(null)}
-            onSuccess={() => { setSuspendingUser(null); fetchUsers(); }}
+            onSuccess={() => { toast.success(`${suspendingUser.name} suspended`); setSuspendingUser(null); fetchUsers(); }}
           />
         )}
         {banningUser && (
           <BanUserModal
             user={banningUser}
             onClose={() => setBanningUser(null)}
-            onSuccess={() => { setBanningUser(null); fetchUsers(); }}
+            onSuccess={() => { toast.success(`${banningUser.name} banned`); setBanningUser(null); fetchUsers(); }}
           />
         )}
         {deletingUser && (
           <DeleteUserModal
             user={deletingUser}
             onClose={() => setDeletingUser(null)}
-            onSuccess={() => { setDeletingUser(null); fetchUsers(); }}
+            onSuccess={() => { toast.success(`${deletingUser.name} deleted`); setDeletingUser(null); fetchUsers(); }}
           />
         )}
       </AnimatePresence>

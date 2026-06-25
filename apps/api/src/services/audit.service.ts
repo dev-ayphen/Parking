@@ -18,6 +18,7 @@ export type BookingEvent =
   | 'PARKER_ARRIVED'
   | 'ETA_UPDATED'
   | 'OTP_GENERATED'
+  | 'PARKER_MARKED_PAID'
   | 'BOOKING_EXPIRED';
 
 export type ActorRole = 'PARKER' | 'OWNER' | 'ADMIN' | 'SYSTEM';
@@ -29,6 +30,8 @@ export type AdminAction =
   | 'SPACE_BLOCKED'
   | 'SPACE_UNBLOCKED'
   | 'SPACE_DELETED'
+  | 'SPACE_UPDATED'
+  | 'USER_MESSAGED'
   | 'USER_SUSPENDED'
   | 'USER_UNSUSPENDED'
   | 'USER_BANNED'
@@ -36,6 +39,8 @@ export type AdminAction =
   | 'DOC_VERIFIED'
   | 'DOC_REJECTED'
   | 'REFUND_ISSUED'
+  | 'PAYOUTS_PROCESSED'
+  | 'PAYOUT_CREATED'
   | 'ABUSE_ACTIONED'
   | 'REVIEW_HIDDEN'
   | 'REVIEW_RESTORED'
@@ -45,7 +50,9 @@ export type AdminAction =
   | 'SUBSCRIPTION_SUSPENDED'
   | 'SUBSCRIPTION_REACTIVATED'
   | 'SUBSCRIPTION_EXTENDED'
-  | 'SUBSCRIPTION_FORCE_CANCELLED';
+  | 'SUBSCRIPTION_FORCE_CANCELLED'
+  | 'BOOKING_FORCE_CANCELLED'
+  | 'BOOKING_DISPUTE';
 
 export type TargetType =
   | 'USER'
@@ -57,6 +64,7 @@ export type TargetType =
   | 'RATING'
   | 'SUBSCRIPTION_PLAN'
   | 'SUBSCRIPTION'
+  | 'PAYOUT'
   | 'BROADCAST';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

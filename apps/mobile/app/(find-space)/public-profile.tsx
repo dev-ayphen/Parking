@@ -53,7 +53,7 @@ export default function PublicProfileScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <PageHeader title="Profile" onBack={() => router.back()} />
+        <PageHeader title="Profile" onBack={() => router.replace('/(find-space)')} />
         <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>
       </SafeAreaView>
     );
@@ -62,7 +62,7 @@ export default function PublicProfileScreen() {
   if (error || !profile) {
     return (
       <SafeAreaView style={styles.container}>
-        <PageHeader title="Profile" onBack={() => router.back()} />
+        <PageHeader title="Profile" onBack={() => router.replace('/(find-space)')} />
         <View style={styles.center}>
           <AlertTriangle size={40} color={Colors.error} strokeWidth={1.5} />
           <Text style={styles.errorText}>{error || 'Profile not found'}</Text>
@@ -81,7 +81,7 @@ export default function PublicProfileScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <PageHeader title="Profile" onBack={() => router.back()} />
+      <PageHeader title="Profile" onBack={() => router.replace('/(find-space)')} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>

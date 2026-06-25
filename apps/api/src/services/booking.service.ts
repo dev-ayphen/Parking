@@ -183,7 +183,7 @@ export const bookingService = {
     return booking;
   },
 
-  getMyBookings: async (parkerId: number, limit = 10) => {
+  getMyBookings: async (parkerId: number, limit = 10, skip = 0) => {
     const bookings = await db.booking.findMany({
       where: { parkerId },
       include: {
@@ -195,13 +195,17 @@ export const bookingService = {
       },
       orderBy: { createdAt: 'desc' },
       take: limit,
+      skip: skip,
     });
+    // Count total bookings for pagination awareness
+    const total = await db.booking.count({ where: { parkerId } });
     // Flatten the PARKER's own rating to `rating` so the mobile contract is
     // unchanged (it reads booking.rating to decide if a review is still pending).
-    return (bookings as any[]).map((b) => ({
+    const mapped = (bookings as any[]).map((b) => ({
       ...b,
       rating: b.ratings?.find((r: any) => r.raterId === parkerId) ?? null,
     }));
+    return { bookings: mapped, total };
   },
 
   getLiveSessions: async (ownerId: number) => {
@@ -259,6 +263,8 @@ export const bookingService = {
         leftAt: b.sessionEndedAt
           ? new Date(b.sessionEndedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
           : null,
+        // Parker self-declared "I've paid" (still confirm in your own UPI app).
+        markedPaid: !!b.parkerMarkedPaidAt,
       };
     });
   },
@@ -270,7 +276,7 @@ export const bookingService = {
         space: {
           select: {
             id: true, name: true, address: true, ownerId: true, hourlyRate: true, lat: true, lng: true,
-            owner: { select: { id: true, firstName: true, lastName: true, phone: true } },
+            owner: { select: { id: true, firstName: true, lastName: true, phone: true, upiId: true } },
           },
         },
         vehicle: { select: { id: true, licensePlate: true, vehicleType: true, brandModel: true, frontPhotoUrl: true } },
@@ -321,9 +327,44 @@ export const bookingService = {
         id: ownerRaw.id,
         name: [ownerRaw.firstName, ownerRaw.lastName].filter(Boolean).join(' ') || null,
         phoneNumber: ownerRaw.phone || null,
+        // Owner's UPI ID — the parker's active-session screen builds a pay QR from
+        // this so they can pay the owner directly (app never handles the money).
+        upiId: ownerRaw.upiId || null,
       };
     }
     return { success: true, booking };
+  },
+
+  // Parker self-declares "I've paid" after scanning the owner's UPI QR. This only
+  // stamps a marker — the app does NOT process money, so the owner still confirms
+  // receipt in their own UPI app. Returns the owner id so the controller can
+  // notify the owner that the parker marked payment done.
+  markBookingPaid: async (bookingId: string, parkerId: number, req?: Request) => {
+    const booking = await db.booking.findUnique({
+      where: { id: bookingId },
+      include: { space: { select: { ownerId: true, name: true } }, parker: { select: { firstName: true, lastName: true } } },
+    });
+    if (!booking) throw Object.assign(new Error('Booking not found'), { statusCode: 404 });
+    if (booking.parkerId !== parkerId) throw Object.assign(new Error('Not your booking'), { statusCode: 403 });
+
+    const updated = await db.booking.update({
+      where: { id: bookingId },
+      data: { parkerMarkedPaidAt: new Date() },
+    });
+    await auditService.logBookingEvent({
+      bookingId, event: 'PARKER_MARKED_PAID', fromStatus: booking.status, toStatus: booking.status,
+      actorId: parkerId, actorRole: 'PARKER', req,
+    });
+    const parkerName = booking.parker?.firstName
+      ? `${booking.parker.firstName} ${booking.parker.lastName || ''}`.trim()
+      : 'The parker';
+    return {
+      success: true,
+      booking: updated,
+      ownerId: (booking.space as any)?.ownerId ?? null,
+      spaceName: (booking.space as any)?.name ?? null,
+      parkerName,
+    };
   },
 
   acceptBooking: async (bookingId: string, ownerId: number, req?: Request) => {

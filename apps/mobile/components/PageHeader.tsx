@@ -1,6 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, StatusBar } from 'react-native';
-import { useRouter } from 'expo-router';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { ChevronLeft, MapPin, Menu } from 'lucide-react-native';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../theme';
 
@@ -21,15 +20,15 @@ const PageHeader: React.FC<PageHeaderProps> = ({
   right,
   backgroundColor = Colors.white,
 }) => {
-  const router = useRouter();
   return (
     <View style={[styles.header, { backgroundColor }]}>
       <View style={styles.row}>
         {/* Left button — hamburger (home) or back chevron (all other screens) */}
         <TouchableOpacity
           style={styles.backButton}
-          onPress={onMenu ?? onBack ?? (() => router.back())}
+          onPress={onMenu ?? onBack}
           activeOpacity={0.7}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
           {onMenu
             ? <Menu size={18} color={Colors.textDark} strokeWidth={2.5} />
@@ -47,9 +46,11 @@ const PageHeader: React.FC<PageHeaderProps> = ({
             </Text>
           </View>
         ) : (
-          <Text style={styles.titleAbsolute} numberOfLines={1} pointerEvents="none">
-            {title}
-          </Text>
+          <View style={styles.centerAbsolute} pointerEvents="none">
+            <Text style={styles.titleText} numberOfLines={1}>
+              {title}
+            </Text>
+          </View>
         )}
 
         {/* Right slot — fixed width matches back button to keep center balanced */}
@@ -64,14 +65,15 @@ const PageHeader: React.FC<PageHeaderProps> = ({
 const styles = StyleSheet.create({
   header: {
     paddingHorizontal: Spacing.screenH,
-    paddingVertical: Spacing.md,
-    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) + Spacing.xs : Spacing.md,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.sm,
     backgroundColor: Colors.white,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    height: 46,
   },
   backButton: {
     width: 36,
@@ -92,12 +94,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
+    top: 0,
+    bottom: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    height: 36,
-    pointerEvents: 'none',
   },
   logoText: {
     fontSize: FontSize['2xl'],
@@ -105,17 +107,11 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     letterSpacing: -0.6,
   },
-  titleAbsolute: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
+  titleText: {
     textAlign: 'center',
     fontSize: FontSize['2xl'],
     fontWeight: FontWeight.bold,
     color: Colors.textPrimary,
-    height: 36,
-    lineHeight: 36,
-    textAlignVertical: 'center',
   },
   right: {
     minWidth: 36,

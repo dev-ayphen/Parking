@@ -23,6 +23,12 @@ const completeProfileSchema = z.object({
       /^[a-zA-Z0-9._%-]+@[a-zA-Z0-9.-]+\.(com|co|in|org|net|edu|gov|io|uk|us|de|fr|au|ca|es|it|mx|br|jp|cn|ru|nl)$/i,
       'Please use a valid email address with a recognized domain'
     ),
+  upiId: z
+    .string()
+    .regex(/^[a-z0-9.\-_]{2,256}@[a-z]{2,64}$/, 'Enter a valid UPI ID (e.g. name@okhdfcbank)')
+    .optional()
+    .nullable()
+    .or(z.literal('')),
 });
 
 const updateProfileSchema = completeProfileSchema.partial().extend({
@@ -198,14 +204,20 @@ export const userService = {
         throw error;
       }
 
+      // Build the update payload — upiId is optional, so only set it if provided and non-empty.
+      const updateData: any = {
+        firstName: validatedData.firstName,
+        lastName: validatedData.lastName,
+        email: validatedData.email,
+        isProfileComplete: true,
+      };
+      if (validatedData.upiId) {
+        updateData.upiId = validatedData.upiId.trim().toLowerCase();
+      }
+
       const user = await db.user.update({
         where: { id: userId },
-        data: {
-          firstName: validatedData.firstName,
-          lastName: validatedData.lastName,
-          email: validatedData.email,
-          isProfileComplete: true,
-        },
+        data: updateData,
         include: {
           parkerProfile: true,
           ownerProfile: true,
@@ -244,7 +256,7 @@ export const userService = {
       where: { id: userId },
       select: {
         firstName: true, lastName: true, email: true,
-        billingName: true, billingEmail: true, billingAddress: true, gstin: true,
+        billingName: true, billingEmail: true, billingAddress: true, gstin: true, upiId: true,
       },
     });
     if (!user) throw Object.assign(new Error('User not found'), { statusCode: 404 });
@@ -256,17 +268,22 @@ export const userService = {
         billingEmail: user.billingEmail ?? user.email ?? '',
         billingAddress: user.billingAddress ?? '',
         gstin: user.gstin ?? '',
+        // UPI ID — owners receive payments from parkers; parkers use for refunds/personal receipts.
+        upiId: user.upiId ?? '',
       },
     };
   },
 
-  /** Save the user's billing profile. Basic validation; GSTIN is optional. */
+  /** Save the user's billing profile. Basic validation; GSTIN + UPI ID optional. */
   updateBillingProfile: async (userId: number, data: {
-    billingName?: string; billingEmail?: string; billingAddress?: string; gstin?: string;
+    billingName?: string; billingEmail?: string; billingAddress?: string; gstin?: string; upiId?: string;
   }) => {
     const name = (data.billingName || '').trim();
     const email = (data.billingEmail || '').trim();
-    if (!name) throw Object.assign(new Error('Billing name is required'), { statusCode: 400 });
+    // Only require billingName if it's being updated alongside other billing details.
+    // If ONLY upiId is being updated (e.g., from the active-session modal), skip this check.
+    const isFullBillingUpdate = data.billingName || data.billingEmail || data.billingAddress || data.gstin;
+    if (isFullBillingUpdate && !name) throw Object.assign(new Error('Billing name is required'), { statusCode: 400 });
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       throw Object.assign(new Error('Enter a valid billing email'), { statusCode: 400 });
     }
@@ -275,6 +292,11 @@ export const userService = {
     if (gstin && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[0-9A-Z]{1}[Z]{1}[0-9A-Z]{1}$/.test(gstin)) {
       throw Object.assign(new Error('Enter a valid 15-character GSTIN'), { statusCode: 400 });
     }
+    // UPI ID format: handle@bank (e.g. name@okhdfcbank, user-123@okaxis). Optional.
+    const upiId = (data.upiId || '').trim().toLowerCase();
+    if (upiId && !/^[a-z0-9.\-_]{2,256}@[a-z]{2,64}$/.test(upiId)) {
+      throw Object.assign(new Error('Enter a valid UPI ID (e.g. name@okhdfcbank)'), { statusCode: 400 });
+    }
     await db.user.update({
       where: { id: userId },
       data: {
@@ -282,6 +304,7 @@ export const userService = {
         billingEmail: email || null,
         billingAddress: (data.billingAddress || '').trim() || null,
         gstin: gstin || null,
+        upiId: upiId || null,
       },
     });
     return { success: true, message: 'Billing details saved.' };

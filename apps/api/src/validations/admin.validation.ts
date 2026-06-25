@@ -14,6 +14,12 @@ export const deleteUserSchema = z.object({
   reason: z.string().trim().max(500).optional(),
 });
 
+// Direct message to a single user (admin → user push/notification)
+export const notifyUserSchema = z.object({
+  title: z.string().trim().min(1).max(50),
+  body: z.string().trim().min(1).max(200),
+});
+
 // ─── Space moderation ───────────────────────────────────────────────
 export const rejectSpaceSchema = z.object({
   reason: z.string().trim().min(3).max(500).optional(),

@@ -80,7 +80,8 @@ export interface AdminUserDetails {
   };
   spaces: Array<{ id: number; name: string; status: string; hourlyRate: number }>;
   vehicles: Array<{ id: number; brandModel: string; licensePlate: string; vehicleType: string }>;
-  recentBookings: Array<{ id: string; space: string; status: string; amount: number; date: string }>;
+  recentBookings: Array<{ id: string; space: string; status: string; amount: number; duration?: number; date: string }>;
+  recentTransactions?: Array<{ id: number; txnNumber: string; type: string; amount: number; status: string; description: string | null; date: string }>;
   subscriptions: Array<{ id: number; planName: string | null; price: number; status: string; renewalDate: string }>;
 }
 

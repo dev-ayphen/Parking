@@ -173,7 +173,7 @@ export default function CreateTicketScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <PageHeader title="Create Ticket" onBack={() => router.back()} />
+      <PageHeader title="Create Ticket" onBack={() => router.replace('/(home)/help-support')} />
 
       <KeyboardAvoidingView
         style={{ flex: 1 }} 

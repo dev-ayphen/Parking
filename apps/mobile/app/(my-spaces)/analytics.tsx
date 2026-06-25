@@ -81,7 +81,7 @@ const AnalyticsScreen = () => {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <PageHeader title="Analytics" onBack={() => router.back()} />
+        <PageHeader title="Analytics" onBack={() => router.replace('/(my-spaces)')} />
         <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>
       </SafeAreaView>
     );
@@ -90,7 +90,7 @@ const AnalyticsScreen = () => {
   if (error || !data) {
     return (
       <SafeAreaView style={styles.container}>
-        <PageHeader title="Analytics" onBack={() => router.back()} />
+        <PageHeader title="Analytics" onBack={() => router.replace('/(my-spaces)')} />
         <View style={styles.center}>
           <Text style={styles.errorText}>Couldn&apos;t load analytics.</Text>
           <TouchableOpacity style={styles.retryBtn} onPress={() => fetchAnalytics()}>
@@ -106,7 +106,7 @@ const AnalyticsScreen = () => {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <PageHeader title="Analytics" onBack={() => router.back()} />
+      <PageHeader title="Analytics" onBack={() => router.replace('/(my-spaces)')} />
 
       <ScrollView
         contentContainerStyle={styles.content}

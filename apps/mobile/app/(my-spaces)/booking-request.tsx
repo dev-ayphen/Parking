@@ -113,7 +113,7 @@ export default function BookingRequestScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <PageHeader title="Booking Request" onBack={() => router.back()} />
+        <PageHeader title="Booking Request" onBack={() => router.replace('/(my-spaces)')} />
         <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>
       </SafeAreaView>
     );
@@ -122,7 +122,7 @@ export default function BookingRequestScreen() {
   if (!booking) {
     return (
       <SafeAreaView style={styles.container}>
-        <PageHeader title="Booking Request" onBack={() => router.back()} />
+        <PageHeader title="Booking Request" onBack={() => router.replace('/(my-spaces)')} />
         <View style={styles.center}><Text style={styles.errText}>Booking not found</Text></View>
       </SafeAreaView>
     );
@@ -160,7 +160,7 @@ export default function BookingRequestScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" />
-        <PageHeader title="Approved Booking" onBack={() => router.back()} />
+        <PageHeader title="Approved Booking" onBack={() => router.replace('/(my-spaces)')} />
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {/* Status banner */}
           <View style={[styles.approvedBanner, atGate && styles.approvedBannerGate]}>
@@ -227,7 +227,7 @@ export default function BookingRequestScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" />
-        <PageHeader title="Booking Request" onBack={() => router.back()} />
+        <PageHeader title="Booking Request" onBack={() => router.replace('/(my-spaces)')} />
         <View style={styles.resultWrap}>
           <View style={styles.resultBody}>
             {/* Layered icon badge — faint outer halo ring + solid soft inner circle */}
@@ -254,7 +254,7 @@ export default function BookingRequestScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <PageHeader title="Booking Request" onBack={() => router.back()} />
+      <PageHeader title="Booking Request" onBack={() => router.replace('/(my-spaces)')} />
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Countdown pill */}

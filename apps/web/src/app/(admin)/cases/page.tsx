@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import {
   Search,
@@ -27,8 +28,8 @@ interface CaseRow {
   shortId: string;
   status: string;
   createdAt: string;
-  parker: { firstName: string | null; lastName: string | null; phone: string | null } | null;
-  owner: { firstName: string | null; lastName: string | null } | null;
+  parker: { id?: number; firstName: string | null; lastName: string | null; phone: string | null } | null;
+  owner: { id?: number; firstName: string | null; lastName: string | null } | null;
   space: { name: string | null; address: string | null };
   vehicle: { licensePlate: string | null } | null;
   flags: { flagged: boolean; incidentCount: number; abuseCount: number; roadsideAcks: number };
@@ -68,6 +69,7 @@ const StatusBadge = ({ status }: { status: string }) => {
 };
 
 export default function CasesPage() {
+  const router = useRouter();
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, 400);
 
@@ -241,10 +243,28 @@ export default function CasesPage() {
 
                     {/* Parties */}
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <span className="text-sm font-bold text-gray-900">{fmtName(c.parker)}</span>
+                      {c.parker?.id ? (
+                        <button
+                          onClick={() => router.push(`/admin/users?focus=${c.parker!.id}`)}
+                          className="text-sm font-bold text-indigo-600 hover:underline"
+                        >
+                          {fmtName(c.parker)}
+                        </button>
+                      ) : (
+                        <span className="text-sm font-bold text-gray-900">{fmtName(c.parker)}</span>
+                      )}
                       <span className="text-xs text-gray-400">(P)</span>
                       <ArrowRight size={12} className="text-gray-400" />
-                      <span className="text-sm text-gray-700">{fmtName(c.owner)}</span>
+                      {c.owner?.id ? (
+                        <button
+                          onClick={() => router.push(`/admin/users?focus=${c.owner!.id}`)}
+                          className="text-sm text-indigo-600 hover:underline"
+                        >
+                          {fmtName(c.owner)}
+                        </button>
+                      ) : (
+                        <span className="text-sm text-gray-700">{fmtName(c.owner)}</span>
+                      )}
                       <span className="text-xs text-gray-400">(O)</span>
                     </div>
 

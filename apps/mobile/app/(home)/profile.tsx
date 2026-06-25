@@ -18,7 +18,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { pickMedia } from '../../utils/pickMedia';
-import { User, Phone, Mail, Camera, ShieldAlert, X } from 'lucide-react-native';
+import { User, Phone, Mail, Camera, ShieldAlert, X, QrCode } from 'lucide-react-native';
 import { api } from '../../services/api';
 import { PageHeader, ScreenLoader } from '../../components';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
@@ -43,6 +43,7 @@ const ProfileScreen = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [photoUploading, setPhotoUploading] = useState(false);
+  const [upiId, setUpiId] = useState<string | null>(null);
 
   // ── Edit modal state ────────────────────────────────────────────
   const [modalVisible, setModalVisible] = useState(false);
@@ -51,6 +52,7 @@ const ProfileScreen = () => {
   const [email, setEmail] = useState('');
   const [emergencyContactName, setEmergencyContactName] = useState('');
   const [emergencyContactPhone, setEmergencyContactPhone] = useState('');
+  const [upiIdInput, setUpiIdInput] = useState('');
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -67,6 +69,13 @@ const ProfileScreen = () => {
       const data = await api.get('/users/me');
       if (data.success && data.user) {
         setUser(data.user);
+      }
+      // UPI ID lives in the billing profile (shared owner-receive / parker-refund field)
+      try {
+        const billing = await api.get('/users/me/billing');
+        setUpiId(billing?.billing?.upiId || null);
+      } catch {
+        // non-fatal — UPI row just shows "Not set"
       }
       const elapsed = Date.now() - startTime;
       if (elapsed < 300) await new Promise(r => setTimeout(r, 300 - elapsed));
@@ -111,6 +120,7 @@ const ProfileScreen = () => {
     setEmail(user.email || '');
     setEmergencyContactName(user.emergencyContactName || '');
     setEmergencyContactPhone(user.emergencyContactPhone || '');
+    setUpiIdInput(upiId || '');
     setErrors({});
     setModalVisible(true);
   };
@@ -135,6 +145,10 @@ const ProfileScreen = () => {
     if (emergencyContactPhone.trim() && !/^[6-9]\d{9}$/.test(emergencyContactPhone.replace(/^\+91/, ''))) {
       e.emergencyContactPhone = 'Enter a valid 10-digit number';
     }
+
+    if (upiIdInput.trim() && !/^[a-z0-9.\-_]{2,256}@[a-z]{2,64}$/i.test(upiIdInput.trim())) {
+      e.upiId = 'Enter a valid UPI ID (e.g. name@okhdfcbank)';
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -150,6 +164,11 @@ const ProfileScreen = () => {
         emergencyContactName: emergencyContactName.trim() || null,
         emergencyContactPhone: emergencyContactPhone.trim() || null,
       });
+      // UPI ID lives in the billing profile — save it separately, only when changed.
+      const trimmedUpi = upiIdInput.trim().toLowerCase();
+      if (trimmedUpi !== (upiId || '').toLowerCase()) {
+        await api.put('/users/me/billing', { upiId: trimmedUpi });
+      }
       if (data.success) {
         closeModal();
         await loadProfile();
@@ -171,7 +190,7 @@ const ProfileScreen = () => {
   if (loading) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: Colors.screenBg }]}>
-        <PageHeader title="My Profile" />
+        <PageHeader title="My Profile"  onBack={() => router.replace('/(home)')} />
         <ScreenLoader />
       </SafeAreaView>
     );
@@ -180,7 +199,7 @@ const ProfileScreen = () => {
   if (!user) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: Colors.white }]}>
-        <PageHeader title="My Profile" />
+        <PageHeader title="My Profile"  onBack={() => router.replace('/(home)')} />
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <Text style={{ color: Colors.textSecondary }}>Failed to load profile</Text>
         </View>
@@ -191,7 +210,7 @@ const ProfileScreen = () => {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: Colors.white }]}>
       <StatusBar barStyle="dark-content" />
-      <PageHeader title="My Profile" />
+      <PageHeader title="My Profile"  onBack={() => router.replace('/(home)')} />
 
       <ScrollView style={[styles.content, { backgroundColor: Colors.screenBg }]} showsVerticalScrollIndicator={false}>
         <View style={styles.detailsCard}>
@@ -264,6 +283,24 @@ const ProfileScreen = () => {
                   {user.emergencyContactName || '—'}
                   {user.emergencyContactPhone ? ` • ${user.emergencyContactPhone}` : ''}
                 </Text>
+              ) : (
+                <Text style={[styles.fieldValue, { color: Colors.textMuted, fontWeight: FontWeight.medium }]}>
+                  Not set — tap Edit Profile to add
+                </Text>
+              )}
+            </View>
+          </View>
+          <View style={styles.divider} />
+
+          {/* UPI ID */}
+          <View style={styles.field}>
+            <View style={[styles.fieldIconBox, { backgroundColor: Colors.primaryBg }]}>
+              <QrCode size={16} color={Colors.primary} strokeWidth={2.5} />
+            </View>
+            <View style={styles.fieldTextContainer}>
+              <Text style={styles.fieldLabel}>UPI ID</Text>
+              {upiId ? (
+                <Text style={styles.fieldValue}>{upiId}</Text>
               ) : (
                 <Text style={[styles.fieldValue, { color: Colors.textMuted, fontWeight: FontWeight.medium }]}>
                   Not set — tap Edit Profile to add
@@ -387,6 +424,27 @@ const ProfileScreen = () => {
                     editable={!saving}
                   />
                   {errors.emergencyContactPhone ? <Text style={styles.errorText}>{errors.emergencyContactPhone}</Text> : null}
+                </View>
+
+                {/* UPI section */}
+                <View style={styles.sectionDivider}>
+                  <Text style={styles.sectionTitle}>UPI ID</Text>
+                  <Text style={styles.sectionSubtitle}>Used to receive parking payments & refunds (optional)</Text>
+                </View>
+
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.label}>UPI ID</Text>
+                  <TextInput
+                    style={[styles.input, errors.upiId ? styles.inputError : null]}
+                    placeholder="e.g. name@okhdfcbank"
+                    placeholderTextColor={Colors.textMuted}
+                    value={upiIdInput}
+                    onChangeText={t => { setUpiIdInput(t.replace(/\s/g, '')); setErrors(p => ({ ...p, upiId: '' })); }}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    editable={!saving}
+                  />
+                  {errors.upiId ? <Text style={styles.errorText}>{errors.upiId}</Text> : null}
                 </View>
 
                 {/* Save */}

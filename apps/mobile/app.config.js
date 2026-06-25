@@ -52,6 +52,9 @@ module.exports = {
         NSPhotoLibraryUsageDescription:
           'ParkSwift needs photo library access to upload parking space photos and videos.',
       },
+      // iOS OTP autofill — tells the system this field expects a one-time code
+      // from SMS so it offers the "123456 from Messages" keyboard suggestion.
+      usesNonExemptEncryption: false,
     },
     android: {
       adaptiveIcon: {
@@ -66,6 +69,7 @@ module.exports = {
         'CAMERA',
         'READ_EXTERNAL_STORAGE',
         'WRITE_EXTERNAL_STORAGE',
+        'RECEIVE_SMS',
       ],
     },
     web: {

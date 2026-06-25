@@ -6,13 +6,15 @@ import {
   Calendar, Search, Eye, Download,
   Clock, CheckCircle2, XCircle, ChevronLeft, ChevronRight,
   Car, Loader2, X, MapPin, Phone, Mail, User, Bell, Shield, AlertCircle,
+  Ban, AlertTriangle, ChevronDown,
 } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
 import { io as createSocket } from 'socket.io-client';
 import { adminApi } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
 import { SOCKET_URL } from '@/lib/config';
-import { exportCsv } from '@/lib/download';
 import { TableSkeleton } from '@/components/Skeleton';
+import { ExportRangeModal } from '@/components/ExportRangeModal';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import Link from 'next/link';
 
@@ -79,6 +81,7 @@ interface Toast {
   id: number;
   message: string;
   space: string;
+  type?: 'info' | 'success' | 'error';
 }
 
 const tabs = [
@@ -88,19 +91,36 @@ const tabs = [
   { key: 'Cancelled', status: 'cancelled' },
 ] as const;
 
+const DISPUTE_ISSUE_TYPES = [
+  { value: 'FAKER_BOOKING', label: 'Fake / Fraudulent Booking' },
+  { value: 'DAMAGING_PROPERTY', label: 'Property Damage' },
+  { value: 'REPEATED_CANCELLATION', label: 'Repeated Cancellations' },
+  { value: 'ILLEGAL_PARKING', label: 'Illegal Parking' },
+  { value: 'HARASSMENT', label: 'Harassment' },
+  { value: 'FAKE_SPACE', label: 'Fake Space Listing' },
+  { value: 'UNSAFE_AREA', label: 'Unsafe Area' },
+  { value: 'OFFLINE_PAYMENT_DEMAND', label: 'Offline Payment Demand' },
+  { value: 'MISLEADING_LISTING', label: 'Misleading Listing' },
+  { value: 'OTHER', label: 'Other' },
+];
+
+const DISPUTE_ACTIONS = [
+  { value: 'warn_parker', label: 'Warn Parker', color: 'amber' },
+  { value: 'warn_owner', label: 'Warn Owner', color: 'amber' },
+  { value: 'refund', label: 'Issue Refund', color: 'emerald' },
+  { value: 'escalate', label: 'Escalate for Review', color: 'rose' },
+] as const;
+
 export default function BookingsPage() {
+  const searchParams = useSearchParams();
+  const focusId = searchParams.get('focus');
+  const focusHandledRef = useRef(false);
   const [activeTab, setActiveTab] = useState<typeof tabs[number]>(tabs[0]);
   const [bookings, setBookings] = useState<AdminBooking[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
-  const [exporting, setExporting] = useState(false);
-
-  const handleExport = async () => {
-    setExporting(true);
-    await exportCsv(adminApi.exportBookingsCsv, 'bookings');
-    setExporting(false);
-  };
+  const [showExport, setShowExport] = useState(false);
   const debouncedSearch = useDebouncedValue(search, 400);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -110,6 +130,14 @@ export default function BookingsPage() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const toastIdRef = useRef(0);
   const limit = 20;
+
+  const pushToast = useCallback((message: string, space: string, type: Toast['type'] = 'info') => {
+    const id = ++toastIdRef.current;
+    setToasts((prev) => [...prev, { id, message, space, type }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 5000);
+  }, []);
 
   const fetchBookings = useCallback(async () => {
     try {
@@ -138,25 +166,16 @@ export default function BookingsPage() {
     socket.on('connect', () => socket.emit('admin:join'));
 
     socket.on('booking:new', (payload: any) => {
-      // Refresh bookings list
       fetchBookings();
+      pushToast('New booking received!', payload?.space || 'Unknown space', 'info');
+    });
 
-      // Show toast notification
-      const id = ++toastIdRef.current;
-      setToasts((prev) => [...prev, {
-        id,
-        message: 'New booking received!',
-        space: payload?.space || 'Unknown space',
-      }]);
-
-      // Auto-dismiss after 5 seconds
-      setTimeout(() => {
-        setToasts((prev) => prev.filter((t) => t.id !== id));
-      }, 5000);
+    socket.on('booking:update', () => {
+      fetchBookings();
     });
 
     return () => { socket.disconnect(); };
-  }, [fetchBookings]);
+  }, [fetchBookings, pushToast]);
 
   const handleViewBooking = async (rawId: string) => {
     setLoadingDetails(true);
@@ -169,6 +188,26 @@ export default function BookingsPage() {
     } finally {
       setLoadingDetails(false);
     }
+  };
+
+  // Auto-open a booking's details when arriving via /bookings?focus=<rawId>
+  // (e.g. from a transaction in Payments). Runs once after the first load.
+  useEffect(() => {
+    if (!focusId || focusHandledRef.current || loading) return;
+    focusHandledRef.current = true;
+    handleViewBooking(focusId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusId, loading]);
+
+  const handleBookingCancelled = (bookingId: string) => {
+    // Close modal and refresh list
+    setViewingBooking(null);
+    fetchBookings();
+    pushToast('Booking cancelled successfully', bookingId, 'success');
+  };
+
+  const handleDisputeCreated = () => {
+    pushToast('Dispute action recorded successfully', '', 'success');
   };
 
   const dismissToast = (id: number) => {
@@ -192,11 +231,10 @@ export default function BookingsPage() {
             Live Updates
           </span>
           <button
-            onClick={handleExport}
-            disabled={exporting}
+            onClick={() => setShowExport(true)}
             className="inline-flex items-center gap-2 bg-primary hover:bg-primaryDark text-white px-5 py-2.5 rounded-xl font-medium transition-colors shadow-lg shadow-primary/20 disabled:opacity-60"
           >
-            {exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Export CSV
+            <Download size={16} /> Export CSV
           </button>
         </div>
       </div>
@@ -378,6 +416,8 @@ export default function BookingsPage() {
           <BookingDetailsModal
             booking={viewingBooking}
             onClose={() => setViewingBooking(null)}
+            onCancelled={handleBookingCancelled}
+            onDisputeCreated={handleDisputeCreated}
           />
         )}
       </AnimatePresence>
@@ -392,14 +432,26 @@ export default function BookingsPage() {
               animate={{ opacity: 1, x: 0, scale: 1 }}
               exit={{ opacity: 0, x: 100, scale: 0.9 }}
               transition={{ type: 'spring', damping: 20, stiffness: 300 }}
-              className="flex items-center gap-3 bg-white border border-indigo-200 shadow-xl rounded-2xl px-5 py-4 min-w-[320px]"
+              className={`flex items-center gap-3 bg-white shadow-xl rounded-2xl px-5 py-4 min-w-[320px] border ${
+                toast.type === 'success'
+                  ? 'border-emerald-200'
+                  : toast.type === 'error'
+                  ? 'border-rose-200'
+                  : 'border-indigo-200'
+              }`}
             >
-              <div className="p-2.5 rounded-xl bg-indigo-100 text-indigo-600">
-                <Bell size={18} />
+              <div className={`p-2.5 rounded-xl ${
+                toast.type === 'success'
+                  ? 'bg-emerald-100 text-emerald-600'
+                  : toast.type === 'error'
+                  ? 'bg-rose-100 text-rose-600'
+                  : 'bg-indigo-100 text-indigo-600'
+              }`}>
+                {toast.type === 'success' ? <CheckCircle2 size={18} /> : toast.type === 'error' ? <AlertCircle size={18} /> : <Bell size={18} />}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold text-gray-900">{toast.message}</p>
-                <p className="text-xs text-gray-500 truncate">{toast.space}</p>
+                {toast.space && <p className="text-xs text-gray-500 truncate">{toast.space}</p>}
               </div>
               <button
                 onClick={() => dismissToast(toast.id)}
@@ -411,6 +463,17 @@ export default function BookingsPage() {
           ))}
         </AnimatePresence>
       </div>
+
+      <AnimatePresence>
+        {showExport && (
+          <ExportRangeModal
+            title="Export Bookings"
+            filenamePrefix="bookings"
+            onExport={(startDate, endDate) => adminApi.exportBookingsCsv({ startDate, endDate })}
+            onClose={() => setShowExport(false)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -432,17 +495,36 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 // ──────────────────── Booking Details Modal ────────────────────
-function BookingDetailsModal({ booking, onClose }: { booking: BookingDetails; onClose: () => void }) {
+function BookingDetailsModal({
+  booking,
+  onClose,
+  onCancelled,
+  onDisputeCreated,
+}: {
+  booking: BookingDetails;
+  onClose: () => void;
+  onCancelled: (bookingId: string) => void;
+  onDisputeCreated: () => void;
+}) {
   const [consent, setConsent] = useState<BookingConsent | null>(booking.consent || null);
   const [loadingConsent, setLoadingConsent] = useState(!booking.consent);
+
+  // Force cancel state
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState('');
+
+  // Dispute state
+  const [showDisputeModal, setShowDisputeModal] = useState(false);
 
   const formatDate = (d?: string | null) =>
     d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
 
+  const isCancellable = ['Active', 'Upcoming', 'Pending'].includes(booking.status);
+
   useEffect(() => {
     if (!booking.consent && loadingConsent) {
-      // Fetch via the authenticated client, keyed on the booking's cuid (booking.id),
-      // not the human display id. Fail gracefully if there's no consent record.
       adminApi.getBookingConsent(String(booking.id))
         .then((d) => {
           if (d?.success && d.consent) setConsent(d.consent);
@@ -452,12 +534,329 @@ function BookingDetailsModal({ booking, onClose }: { booking: BookingDetails; on
     }
   }, [booking, loadingConsent]);
 
+  const handleForceCancel = async () => {
+    if (!cancelReason.trim()) {
+      setCancelError('Please provide a reason for cancellation.');
+      return;
+    }
+    setCancelling(true);
+    setCancelError('');
+    try {
+      await adminApi.forceCancelBooking(booking.id, cancelReason.trim());
+      onCancelled(booking.id);
+    } catch (e: any) {
+      setCancelError(e?.response?.data?.error || e?.message || 'Failed to cancel booking');
+      setCancelling(false);
+    }
+  };
+
+  return (
+    <>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+        onClick={onClose}
+      >
+        <motion.div
+          initial={{ scale: 0.95, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          exit={{ scale: 0.95, opacity: 0 }}
+          onClick={(e) => e.stopPropagation()}
+          className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto"
+        >
+          {/* Header */}
+          <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between rounded-t-3xl z-10">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-indigo-50">
+                <Car size={20} className="text-indigo-600" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Booking Details</h2>
+                <p className="text-xs font-mono text-gray-400">{booking.displayId}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <StatusBadge status={booking.status} />
+              <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg"><X size={18} /></button>
+            </div>
+          </div>
+
+          <div className="p-6 space-y-6">
+            {/* Quick Stats Row */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <QuickStat label="Amount" value={`₹${booking.totalAmount}`} />
+              <QuickStat label="Duration" value={`${booking.duration} hr${booking.duration > 1 ? 's' : ''}`} />
+              <QuickStat label="Payment" value={booking.paymentMode?.replace(/_/g, ' ') || '—'} />
+              <QuickStat label="Booked On" value={new Date(booking.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} />
+            </div>
+
+            {/* Parker & Owner Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Parker */}
+              <div className="border border-gray-100 rounded-2xl p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center">
+                    <User size={14} />
+                  </div>
+                  <span className="text-xs font-bold uppercase text-gray-500 tracking-wide">Parker</span>
+                </div>
+                {booking.parker ? (
+                  <div className="space-y-2">
+                    <p className="text-sm font-bold text-gray-900">{booking.parker.name}</p>
+                    <div className="flex items-center gap-2 text-xs text-gray-600">
+                      <Phone size={12} className="text-gray-400" /> {booking.parker.phone}
+                    </div>
+                    {booking.parker.email && (
+                      <div className="flex items-center gap-2 text-xs text-gray-600">
+                        <Mail size={12} className="text-gray-400" /> {booking.parker.email}
+                      </div>
+                    )}
+                    <p className="text-xs text-gray-400 font-mono">ID #{booking.parker.id}</p>
+                  </div>
+                ) : <p className="text-sm text-gray-400">No parker data</p>}
+              </div>
+
+              {/* Owner */}
+              <div className="border border-gray-100 rounded-2xl p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                    <User size={14} />
+                  </div>
+                  <span className="text-xs font-bold uppercase text-gray-500 tracking-wide">Space Owner</span>
+                </div>
+                {booking.owner ? (
+                  <div className="space-y-2">
+                    <p className="text-sm font-bold text-gray-900">{booking.owner.name}</p>
+                    <div className="flex items-center gap-2 text-xs text-gray-600">
+                      <Phone size={12} className="text-gray-400" /> {booking.owner.phone}
+                    </div>
+                    {booking.owner.email && (
+                      <div className="flex items-center gap-2 text-xs text-gray-600">
+                        <Mail size={12} className="text-gray-400" /> {booking.owner.email}
+                      </div>
+                    )}
+                    <p className="text-xs text-gray-400 font-mono">ID #{booking.owner.id}</p>
+                  </div>
+                ) : <p className="text-sm text-gray-400">No owner data</p>}
+              </div>
+            </div>
+
+            {/* Space Details */}
+            {booking.space && (
+              <div className="border border-gray-100 rounded-2xl p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <MapPin size={16} className="text-indigo-500" />
+                  <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Space Details</h3>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <InfoItem label="Space Name" value={booking.space.name} />
+                  <InfoItem label="Type" value={booking.space.spaceType} />
+                  <InfoItem label="Address" value={booking.space.address} full />
+                  {booking.space.landmark && (
+                    <InfoItem label="Landmark" value={booking.space.landmark} />
+                  )}
+                  <InfoItem label="Hourly Rate" value={`₹${booking.space.hourlyRate}/hr`} />
+                  <InfoItem label="Capacity" value={`${booking.space.capacity} slot${booking.space.capacity > 1 ? 's' : ''}`} />
+                </div>
+              </div>
+            )}
+
+            {/* Vehicle Details */}
+            {booking.vehicle && (
+              <div className="border border-gray-100 rounded-2xl p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Car size={16} className="text-amber-500" />
+                  <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Vehicle</h3>
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <InfoItem label="Brand/Model" value={booking.vehicle.brandModel} />
+                  <InfoItem label="Registration" value={booking.vehicle.licensePlate} />
+                  <InfoItem label="Type" value={booking.vehicle.vehicleType} />
+                </div>
+              </div>
+            )}
+
+            {/* Timeline */}
+            <div className="border border-gray-100 rounded-2xl p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Clock size={16} className="text-gray-500" />
+                <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Timeline</h3>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <InfoItem label="Booking Created" value={formatDate(booking.createdAt)} />
+                <InfoItem label="ETA / Arrived" value={formatDate(booking.eta)} />
+                <InfoItem label="Session Started" value={formatDate(booking.sessionStartedAt)} />
+                <InfoItem label="Session Ended / Completed" value={formatDate(booking.sessionEndedAt)} />
+                <InfoItem label="Last Updated" value={formatDate(booking.updatedAt)} />
+              </div>
+            </div>
+
+            {/* Legal Consent Section */}
+            <div className="border border-blue-200 bg-blue-50 rounded-2xl p-4">
+              <div className="flex items-center gap-2 mb-4">
+                <Shield size={16} className="text-blue-600" />
+                <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Parker Legal Acceptance</h3>
+              </div>
+              {loadingConsent ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="animate-spin text-blue-600" size={18} />
+                </div>
+              ) : consent ? (
+                <div className="space-y-3">
+                  <ConsentCheckItem label="Verified Surroundings" desc="User confirmed surrounding safety before parking" checked={consent.verifiedSurroundings} />
+                  <ConsentCheckItem label="Local Parking Rules" desc="User accepts responsibility for local regulations" checked={consent.acceptLocalParkingRules} />
+                  <ConsentCheckItem label="Fine/Towing Responsibility" desc="User accepts responsibility for fines and towing charges" checked={consent.acceptFineResponsibility} />
+                  <ConsentCheckItem label="Platform Disclaimer" desc="User understands ParkSwift only coordinates parking" checked={consent.acceptPlatformDisclaimer} />
+                  <ConsentCheckItem label="Parking Terms & Conditions" desc="User agrees to ParkSwift parking terms" checked={consent.acceptParkingTerms} />
+                  <div className="bg-gray-50 rounded-xl p-3 border border-gray-200 flex items-start gap-3 mt-4">
+                    <AlertCircle size={14} className="text-gray-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-xs font-medium text-gray-700">Accepted On</p>
+                      <p className="text-xs text-gray-600 mt-1">{formatDate(consent.acceptedAt)}</p>
+                      {consent.platform && <p className="text-xs text-gray-500 mt-1">Platform: {consent.platform} | App: v{consent.appVersion || '—'}</p>}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-4">
+                  <AlertCircle className="mx-auto text-gray-400 mb-2" size={20} />
+                  <p className="text-sm text-gray-500">No consent record found</p>
+                </div>
+              )}
+            </div>
+
+            {/* Force Cancel section — only for cancellable statuses */}
+            {isCancellable && (
+              <div className="border border-rose-200 bg-rose-50 rounded-2xl p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Ban size={16} className="text-rose-600" />
+                  <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Admin Actions</h3>
+                </div>
+
+                {!showCancelConfirm ? (
+                  <button
+                    onClick={() => setShowCancelConfirm(true)}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-sm font-semibold rounded-xl transition-colors"
+                  >
+                    <Ban size={14} /> Force Cancel Booking
+                  </button>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-sm text-rose-700 font-medium">This action is irreversible. Provide a reason:</p>
+                    <textarea
+                      value={cancelReason}
+                      onChange={(e) => setCancelReason(e.target.value)}
+                      placeholder="Enter cancellation reason (e.g., Fraudulent booking, Policy violation)..."
+                      rows={3}
+                      className="w-full px-3 py-2 text-sm border border-rose-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-rose-400/30 resize-none"
+                    />
+                    {cancelError && (
+                      <p className="text-xs text-rose-600 flex items-center gap-1.5">
+                        <AlertCircle size={12} /> {cancelError}
+                      </p>
+                    )}
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={handleForceCancel}
+                        disabled={cancelling}
+                        className="flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-60"
+                      >
+                        {cancelling ? <Loader2 size={14} className="animate-spin" /> : <Ban size={14} />}
+                        {cancelling ? 'Cancelling...' : 'Confirm Cancel'}
+                      </button>
+                      <button
+                        onClick={() => { setShowCancelConfirm(false); setCancelReason(''); setCancelError(''); }}
+                        disabled={cancelling}
+                        className="px-4 py-2 text-sm font-semibold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl transition-colors disabled:opacity-60"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex items-center justify-between rounded-b-3xl">
+            <button
+              onClick={() => setShowDisputeModal(true)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-sm font-semibold rounded-xl transition-colors"
+            >
+              <AlertTriangle size={14} /> Open Dispute
+            </button>
+            <button
+              onClick={onClose}
+              className="px-5 py-2.5 bg-indigo-600 hover:bg-primaryDark text-white text-sm font-semibold rounded-xl transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </motion.div>
+      </motion.div>
+
+      {/* Dispute Resolution Modal */}
+      <AnimatePresence>
+        {showDisputeModal && (
+          <DisputeModal
+            booking={booking}
+            onClose={() => setShowDisputeModal(false)}
+            onSuccess={() => {
+              setShowDisputeModal(false);
+              onDisputeCreated();
+            }}
+          />
+        )}
+      </AnimatePresence>
+    </>
+  );
+}
+
+// ──────────────────── Dispute Resolution Modal ────────────────────
+function DisputeModal({
+  booking,
+  onClose,
+  onSuccess,
+}: {
+  booking: BookingDetails;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [issueType, setIssueType] = useState('');
+  const [adminNotes, setAdminNotes] = useState('');
+  const [action, setAction] = useState<'warn_parker' | 'warn_owner' | 'refund' | 'escalate' | ''>('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async () => {
+    if (!issueType) { setError('Please select an issue type.'); return; }
+    if (!adminNotes.trim()) { setError('Please provide admin notes describing the issue.'); return; }
+    if (!action) { setError('Please select an action to take.'); return; }
+
+    setSubmitting(true);
+    setError('');
+    try {
+      await adminApi.createBookingDispute(booking.id, {
+        issueType,
+        adminNotes: adminNotes.trim(),
+        action: action as any,
+      });
+      onSuccess();
+    } catch (e: any) {
+      setError(e?.response?.data?.error || e?.message || 'Failed to create dispute');
+      setSubmitting(false);
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4"
       onClick={onClose}
     >
       <motion.div
@@ -465,175 +864,111 @@ function BookingDetailsModal({ booking, onClose }: { booking: BookingDetails; on
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         onClick={(e) => e.stopPropagation()}
-        className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto"
+        className="bg-white rounded-3xl shadow-2xl w-full max-w-lg"
       >
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between rounded-t-3xl">
+        <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-indigo-50">
-              <Car size={20} className="text-indigo-600" />
+            <div className="p-2 rounded-xl bg-amber-50">
+              <AlertTriangle size={20} className="text-amber-600" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-gray-900">Booking Details</h2>
-              <p className="text-xs font-mono text-gray-400">{booking.displayId}</p>
+              <h2 className="text-lg font-bold text-gray-900">Dispute Resolution</h2>
+              <p className="text-xs text-gray-400 font-mono">{booking.displayId}</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <StatusBadge status={booking.status} />
-            <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg"><X size={18} /></button>
-          </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg text-gray-400">
+            <X size={18} />
+          </button>
         </div>
 
-        <div className="p-6 space-y-6">
-          {/* Quick Stats Row */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <QuickStat label="Amount" value={`₹${booking.totalAmount}`} />
-            <QuickStat label="Duration" value={`${booking.duration} hr${booking.duration > 1 ? 's' : ''}`} />
-            <QuickStat label="Payment" value={booking.paymentMode?.replace(/_/g, ' ') || '—'} />
-            <QuickStat label="Booked On" value={new Date(booking.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} />
-          </div>
-
-          {/* Parker & Owner Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Parker */}
-            <div className="border border-gray-100 rounded-2xl p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center">
-                  <User size={14} />
-                </div>
-                <span className="text-xs font-bold uppercase text-gray-500 tracking-wide">Parker</span>
-              </div>
-              {booking.parker ? (
-                <div className="space-y-2">
-                  <p className="text-sm font-bold text-gray-900">{booking.parker.name}</p>
-                  <div className="flex items-center gap-2 text-xs text-gray-600">
-                    <Phone size={12} className="text-gray-400" /> {booking.parker.phone}
-                  </div>
-                  {booking.parker.email && (
-                    <div className="flex items-center gap-2 text-xs text-gray-600">
-                      <Mail size={12} className="text-gray-400" /> {booking.parker.email}
-                    </div>
-                  )}
-                </div>
-              ) : <p className="text-sm text-gray-400">No parker data</p>}
-            </div>
-
-            {/* Owner */}
-            <div className="border border-gray-100 rounded-2xl p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
-                  <User size={14} />
-                </div>
-                <span className="text-xs font-bold uppercase text-gray-500 tracking-wide">Space Owner</span>
-              </div>
-              {booking.owner ? (
-                <div className="space-y-2">
-                  <p className="text-sm font-bold text-gray-900">{booking.owner.name}</p>
-                  <div className="flex items-center gap-2 text-xs text-gray-600">
-                    <Phone size={12} className="text-gray-400" /> {booking.owner.phone}
-                  </div>
-                  {booking.owner.email && (
-                    <div className="flex items-center gap-2 text-xs text-gray-600">
-                      <Mail size={12} className="text-gray-400" /> {booking.owner.email}
-                    </div>
-                  )}
-                </div>
-              ) : <p className="text-sm text-gray-400">No owner data</p>}
+        <div className="p-6 space-y-5">
+          {/* Issue type */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Issue Type</label>
+            <div className="relative">
+              <select
+                value={issueType}
+                onChange={(e) => setIssueType(e.target.value)}
+                className="w-full appearance-none px-4 py-2.5 pr-10 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400 transition-all"
+              >
+                <option value="">Select issue type...</option>
+                {DISPUTE_ISSUE_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
+              <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
             </div>
           </div>
 
-          {/* Space Details */}
-          {booking.space && (
-            <div className="border border-gray-100 rounded-2xl p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <MapPin size={16} className="text-indigo-500" />
-                <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Space Details</h3>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <InfoItem label="Space Name" value={booking.space.name} />
-                <InfoItem label="Type" value={booking.space.spaceType} />
-                <InfoItem label="Address" value={booking.space.address} full />
-                {booking.space.landmark && (
-                  <InfoItem label="Landmark" value={booking.space.landmark} />
-                )}
-                <InfoItem label="Hourly Rate" value={`₹${booking.space.hourlyRate}/hr`} />
-                <InfoItem label="Capacity" value={`${booking.space.capacity} slot${booking.space.capacity > 1 ? 's' : ''}`} />
-              </div>
+          {/* Admin notes */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Admin Notes</label>
+            <textarea
+              value={adminNotes}
+              onChange={(e) => setAdminNotes(e.target.value)}
+              placeholder="Describe the issue, evidence reviewed, and recommended resolution..."
+              rows={4}
+              className="w-full px-4 py-3 text-sm border border-gray-200 bg-gray-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400 resize-none transition-all"
+            />
+          </div>
+
+          {/* Action selector */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">Action to Take</label>
+            <div className="grid grid-cols-2 gap-2">
+              {DISPUTE_ACTIONS.map((a) => (
+                <button
+                  key={a.value}
+                  onClick={() => setAction(a.value)}
+                  className={`flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold border transition-all text-left ${
+                    action === a.value
+                      ? a.color === 'amber'
+                        ? 'bg-amber-50 border-amber-400 text-amber-700'
+                        : a.color === 'emerald'
+                        ? 'bg-emerald-50 border-emerald-400 text-emerald-700'
+                        : 'bg-rose-50 border-rose-400 text-rose-700'
+                      : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                    action === a.value
+                      ? a.color === 'amber'
+                        ? 'bg-amber-500'
+                        : a.color === 'emerald'
+                        ? 'bg-emerald-500'
+                        : 'bg-rose-500'
+                      : 'bg-gray-300'
+                  }`} />
+                  {a.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {error && (
+            <div className="flex items-center gap-2 text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3">
+              <AlertCircle size={14} className="flex-shrink-0" /> {error}
             </div>
           )}
-
-          {/* Vehicle Details */}
-          {booking.vehicle && (
-            <div className="border border-gray-100 rounded-2xl p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Car size={16} className="text-amber-500" />
-                <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Vehicle</h3>
-              </div>
-              <div className="grid grid-cols-3 gap-4">
-                <InfoItem label="Brand/Model" value={booking.vehicle.brandModel} />
-                <InfoItem label="Registration" value={booking.vehicle.licensePlate} />
-                <InfoItem label="Type" value={booking.vehicle.vehicleType} />
-              </div>
-            </div>
-          )}
-
-          {/* Timeline */}
-          <div className="border border-gray-100 rounded-2xl p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <Clock size={16} className="text-gray-500" />
-              <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Timeline</h3>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <InfoItem label="Booking Created" value={formatDate(booking.createdAt)} />
-              <InfoItem label="ETA" value={formatDate(booking.eta)} />
-              <InfoItem label="Session Started" value={formatDate(booking.sessionStartedAt)} />
-              <InfoItem label="Session Ended" value={formatDate(booking.sessionEndedAt)} />
-              <InfoItem label="Last Updated" value={formatDate(booking.updatedAt)} />
-            </div>
-          </div>
-
-          {/* Legal Consent Section */}
-          <div className="border border-blue-200 bg-blue-50 rounded-2xl p-4">
-            <div className="flex items-center gap-2 mb-4">
-              <Shield size={16} className="text-blue-600" />
-              <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Parker Legal Acceptance</h3>
-            </div>
-            {loadingConsent ? (
-              <div className="flex items-center justify-center py-4">
-                <Loader2 className="animate-spin text-blue-600" size={18} />
-              </div>
-            ) : consent ? (
-              <div className="space-y-3">
-                <ConsentCheckItem label="Verified Surroundings" desc="User confirmed surrounding safety before parking" checked={consent.verifiedSurroundings} />
-                <ConsentCheckItem label="Local Parking Rules" desc="User accepts responsibility for local regulations" checked={consent.acceptLocalParkingRules} />
-                <ConsentCheckItem label="Fine/Towing Responsibility" desc="User accepts responsibility for fines and towing charges" checked={consent.acceptFineResponsibility} />
-                <ConsentCheckItem label="Platform Disclaimer" desc="User understands ParkSwift only coordinates parking" checked={consent.acceptPlatformDisclaimer} />
-                <ConsentCheckItem label="Parking Terms & Conditions" desc="User agrees to ParkSwift parking terms" checked={consent.acceptParkingTerms} />
-                <div className="bg-gray-50 rounded-xl p-3 border border-gray-200 flex items-start gap-3 mt-4">
-                  <AlertCircle size={14} className="text-gray-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-xs font-medium text-gray-700">Accepted On</p>
-                    <p className="text-xs text-gray-600 mt-1">{formatDate(consent.acceptedAt)}</p>
-                    {consent.platform && <p className="text-xs text-gray-500 mt-1">Platform: {consent.platform} | App: v{consent.appVersion || '—'}</p>}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-4">
-                <AlertCircle className="mx-auto text-gray-400 mb-2" size={20} />
-                <p className="text-sm text-gray-500">No consent record found</p>
-              </div>
-            )}
-          </div>
         </div>
 
         {/* Footer */}
-        <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex items-center justify-end rounded-b-3xl">
+        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-3">
           <button
             onClick={onClose}
-            className="px-5 py-2.5 bg-indigo-600 hover:bg-primaryDark text-white text-sm font-semibold rounded-xl transition-colors"
+            disabled={submitting}
+            className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl transition-colors disabled:opacity-60"
           >
-            Close
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="flex items-center gap-2 px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-60"
+          >
+            {submitting ? <Loader2 size={14} className="animate-spin" /> : <AlertTriangle size={14} />}
+            {submitting ? 'Submitting...' : 'Submit Dispute Action'}
           </button>
         </div>
       </motion.div>

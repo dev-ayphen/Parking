@@ -279,6 +279,7 @@ const NotificationsScreen = () => {
 
       <PageHeader
         title="Notifications"
+        onBack={() => router.replace('/(home)')}
         right={
           // Always MOUNT the button so the header's right slot keeps a constant
           // width — marking all read just makes it invisible/non-interactive, so

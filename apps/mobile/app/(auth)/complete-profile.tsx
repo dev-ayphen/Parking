@@ -24,8 +24,9 @@ const CompleteProfileScreen = () => {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
+  const [upiId, setUpiId] = useState('');
   const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState<{ firstName?: string; lastName?: string; email?: string; general?: string }>({});
+  const [errors, setErrors] = useState<{ firstName?: string; lastName?: string; email?: string; upiId?: string; general?: string }>({});
 
   // First + last name are mandatory to submit (email validated on submit).
   const canSubmit = firstName.trim().length > 0 && lastName.trim().length > 0 && !loading;
@@ -66,6 +67,7 @@ const CompleteProfileScreen = () => {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         email: email.trim(),
+        upiId: upiId.trim() || undefined, // send undefined if empty so the backend doesn't store it
       });
       await setSession(
         String(token),
@@ -138,6 +140,30 @@ const CompleteProfileScreen = () => {
               editable={!loading}
             />
             {!!errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
+          </View>
+
+          {/* UPI ID — optional, for owners who want instant scan-to-pay QR for parkers.
+              Can be set now or skipped and added later in Manage Billing. */}
+          <View style={styles.inputContainer}>
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
+              <Text style={styles.label}>UPI ID (Optional)</Text>
+              <Text style={styles.labelHint}>For payment QR</Text>
+            </View>
+            <TextInput
+              placeholder="name@okhdfcbank"
+              placeholderTextColor={Colors.textMuted}
+              autoCapitalize="none"
+              style={[styles.input, !!errors.upiId && styles.inputError]}
+              value={upiId}
+              onChangeText={(v) => { setUpiId(v); setErrors((e) => ({ ...e, upiId: undefined })); }}
+              editable={!loading}
+            />
+            {!!errors.upiId && <Text style={styles.errorText}>{errors.upiId}</Text>}
+            {!errors.upiId && (
+              <Text style={styles.helperText}>
+                Your UPI ID (e.g. yourname@okhdfcbank). Parkers can scan a QR to pay you directly.
+              </Text>
+            )}
           </View>
 
           {!!errors.general && <Text style={[styles.errorText, { marginBottom: Spacing['3xl'] }]}>{errors.general}</Text>}
@@ -267,5 +293,16 @@ const styles = StyleSheet.create({
     color: Colors.error,
     fontSize: FontSize.sm,
     marginTop: Spacing.sm,
+  },
+  labelHint: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    fontWeight: FontWeight.medium,
+  },
+  helperText: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    marginTop: Spacing.sm,
+    lineHeight: 14,
   },
 });

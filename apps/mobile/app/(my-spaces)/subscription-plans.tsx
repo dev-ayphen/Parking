@@ -150,7 +150,7 @@ export default function SubscriptionPlansScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         <StatusBar barStyle="dark-content" />
-        <PageHeader title="Choose a Plan" />
+        <PageHeader title="Choose a Plan"  onBack={() => router.replace('/(my-spaces)')} />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.primary} />
           <Text style={styles.loadingText}>Loading plans...</Text>
@@ -163,7 +163,7 @@ export default function SubscriptionPlansScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         <StatusBar barStyle="dark-content" />
-        <PageHeader title="Choose a Plan" />
+        <PageHeader title="Choose a Plan"  onBack={() => router.replace('/(my-spaces)')} />
         <View style={styles.emptyContainer}>
           <Zap size={56} color={Colors.borderMuted} />
           <Text style={styles.emptyTitle}>No Plans Available</Text>
@@ -178,7 +178,7 @@ export default function SubscriptionPlansScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
-      <PageHeader title="Choose a Plan" />
+      <PageHeader title="Choose a Plan"  onBack={() => router.replace('/(my-spaces)')} />
 
       <ScrollView
         style={styles.scrollView}

@@ -6,6 +6,7 @@ import {
   UserX, Ban, Trash2, X, AlertTriangle, Loader2,
   Mail, Phone, Calendar, Star, CheckCircle2, Car,
   MapPin as MapPinIcon, ShieldAlert, FileText,
+  Receipt, Clock, Send, MessageSquare, LogIn, UserPlus,
 } from 'lucide-react';
 import { adminApi } from '@/services/api';
 import type { AdminUser, UserDetails } from './types';
@@ -313,6 +314,8 @@ function RcBookButton({ vehicleId }: { vehicleId: number }) {
 }
 
 export function UserDetailsModal({ user, onClose }: { user: UserDetails; onClose: () => void }) {
+  const [tab, setTab] = useState<'overview' | 'activity'>('overview');
+  const [composing, setComposing] = useState(false);
   const formatDate = (d?: string | null) =>
     d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
 
@@ -335,14 +338,45 @@ export function UserDetailsModal({ user, onClose }: { user: UserDetails; onClose
             <span className="flex items-center gap-1"><Phone size={12} /> {user.phone}</span>
           </div>
         </div>
-        <div className={`px-3 py-1.5 rounded-full text-xs font-bold ${
-          user.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700' :
-          user.status === 'SUSPENDED' ? 'bg-amber-50 text-amber-700' :
-          user.status === 'BANNED' ? 'bg-gray-900 text-white' :
-          'bg-gray-100 text-gray-700'
-        }`}>{user.status}</div>
+        <div className="flex flex-col items-end gap-2">
+          <div className={`px-3 py-1.5 rounded-full text-xs font-bold ${
+            user.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700' :
+            user.status === 'SUSPENDED' ? 'bg-amber-50 text-amber-700' :
+            user.status === 'BANNED' ? 'bg-gray-900 text-white' :
+            'bg-gray-100 text-gray-700'
+          }`}>{user.status}</div>
+          <button
+            onClick={() => setComposing(true)}
+            className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-white bg-indigo-50 hover:bg-indigo-600 px-3 py-1.5 rounded-lg transition-colors"
+          >
+            <MessageSquare size={13} /> Message
+          </button>
+        </div>
       </div>
 
+      {/* Tab switcher */}
+      <div className="flex items-center gap-2 mb-5">
+        {(['overview', 'activity'] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all capitalize ${
+              tab === t ? 'bg-indigo-50 text-indigo-600 border border-indigo-200' : 'text-gray-500 hover:bg-gray-50 border border-transparent'
+            }`}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {composing && (
+        <MessageUserModal user={user} onClose={() => setComposing(false)} />
+      )}
+
+      {tab === 'activity' ? (
+        <UserActivityView user={user} formatDate={formatDate} />
+      ) : (
+      <>
       {user.status === 'SUSPENDED' && (
         <div className="p-3 mb-5 bg-amber-50 border border-amber-200 rounded-xl text-sm">
           <p className="font-bold text-amber-800 flex items-center gap-2"><UserX size={14} /> Suspended</p>
@@ -395,16 +429,17 @@ export function UserDetailsModal({ user, onClose }: { user: UserDetails; onClose
         </div>
       )}
 
-      {user.billing && (user.billing.billingName || user.billing.gstin || user.billing.billingAddress) && (
+      {user.billing && (user.billing.billingName || user.billing.gstin || user.billing.billingAddress || user.billing.upiId) && (
         <div className="mb-6 p-4 rounded-2xl bg-indigo-50 border border-indigo-100">
           <div className="flex items-center gap-2 mb-2">
             <FileText size={16} className="text-indigo-600" />
-            <h4 className="text-sm font-bold text-indigo-900 uppercase tracking-wide">Billing Details</h4>
+            <h4 className="text-sm font-bold text-indigo-900 uppercase tracking-wide">Billing & Payment Details</h4>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
             <div><span className="text-xs text-indigo-600 font-medium">Name:</span>{' '}<span className="font-semibold text-gray-900">{user.billing.billingName || '—'}</span></div>
             <div><span className="text-xs text-indigo-600 font-medium">Email:</span>{' '}<span className="font-semibold text-gray-900">{user.billing.billingEmail || '—'}</span></div>
             <div><span className="text-xs text-indigo-600 font-medium">GSTIN:</span>{' '}<span className="font-semibold text-gray-900 font-mono">{user.billing.gstin || '—'}</span></div>
+            <div><span className="text-xs text-indigo-600 font-medium">UPI ID:</span>{' '}<span className="font-semibold text-gray-900 font-mono">{user.billing.upiId || '—'}</span></div>
             <div className="sm:col-span-2"><span className="text-xs text-indigo-600 font-medium">Address:</span>{' '}<span className="font-semibold text-gray-900">{user.billing.billingAddress || '—'}</span></div>
           </div>
         </div>
@@ -466,7 +501,43 @@ export function UserDetailsModal({ user, onClose }: { user: UserDetails; onClose
         </Section>
       )}
 
-      {user.recentBookings.length > 0 && (
+      </>
+      )}
+
+      <ModalFooter>
+        <button onClick={onClose} className="px-5 py-2.5 bg-indigo-600 hover:bg-primaryDark text-white text-sm font-semibold rounded-xl transition-colors">Close</button>
+      </ModalFooter>
+    </ModalShell>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────
+// Activity tab — bookings, transactions, account timeline
+// ───────────────────────────────────────────────────────────────────────
+
+function UserActivityView({ user, formatDate }: { user: UserDetails; formatDate: (d?: string | null) => string }) {
+  const events: Array<{ icon: React.ReactNode; label: string; date: string | null; tone: string }> = [
+    { icon: <UserPlus size={14} />, label: 'Account created', date: user.createdAt, tone: 'text-emerald-600' },
+    { icon: <LogIn size={14} />, label: 'Last login', date: user.lastLoginAt, tone: 'text-indigo-600' },
+  ];
+  if (user.status === 'SUSPENDED') events.push({ icon: <UserX size={14} />, label: `Suspended — ${user.suspendReason || 'no reason'}`, date: user.suspendedAt, tone: 'text-amber-600' });
+  if (user.status === 'BANNED') events.push({ icon: <Ban size={14} />, label: `Banned — ${user.banReason || 'no reason'}`, date: user.bannedAt, tone: 'text-rose-600' });
+
+  return (
+    <div>
+      {/* Account timeline */}
+      <Section title="Account Timeline" icon={<Clock size={14} className="text-gray-500" />}>
+        {events.map((e, i) => (
+          <div key={i} className="flex items-center gap-3 py-2.5 border-b border-gray-100 last:border-0">
+            <span className={e.tone}>{e.icon}</span>
+            <p className="text-sm font-medium text-gray-800 flex-1">{e.label}</p>
+            <span className="text-xs text-gray-400">{formatDate(e.date)}</span>
+          </div>
+        ))}
+      </Section>
+
+      {/* Recent bookings */}
+      {user.recentBookings.length > 0 ? (
         <Section title={`Recent Bookings (last ${user.recentBookings.length})`} icon={<Calendar size={14} className="text-gray-500" />}>
           {user.recentBookings.map((b) => (
             <div key={b.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
@@ -486,11 +557,100 @@ export function UserDetailsModal({ user, onClose }: { user: UserDetails; onClose
             </div>
           ))}
         </Section>
+      ) : (
+        <p className="text-sm text-gray-400 py-3">No bookings yet.</p>
       )}
 
-      <ModalFooter>
-        <button onClick={onClose} className="px-5 py-2.5 bg-indigo-600 hover:bg-primaryDark text-white text-sm font-semibold rounded-xl transition-colors">Close</button>
-      </ModalFooter>
+      {/* Recent transactions */}
+      {user.recentTransactions && user.recentTransactions.length > 0 && (
+        <Section title={`Recent Transactions (last ${user.recentTransactions.length})`} icon={<Receipt size={14} className="text-gray-500" />}>
+          {user.recentTransactions.map((t) => (
+            <div key={t.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+              <div>
+                <p className="text-sm font-semibold text-gray-900">{t.description || t.type}</p>
+                <p className="text-xs text-gray-500 font-mono">{t.txnNumber} · {formatDate(t.date)}</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className={`text-xs font-bold px-2 py-1 rounded ${
+                  t.status === 'SUCCESS' ? 'bg-emerald-50 text-emerald-700' :
+                  t.status === 'FAILED' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700'
+                }`}>{t.status}</span>
+                <span className="text-sm font-bold text-gray-900">₹{t.amount.toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+          ))}
+        </Section>
+      )}
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────
+// Message user — push notification to a single user
+// ───────────────────────────────────────────────────────────────────────
+
+function MessageUserModal({ user, onClose }: { user: UserDetails; onClose: () => void }) {
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [sending, setSending] = useState(false);
+  const [err, setErr] = useState('');
+  const [sent, setSent] = useState(false);
+
+  const handleSend = async () => {
+    if (!title.trim() || !body.trim()) { setErr('Title and message are required'); return; }
+    try {
+      setSending(true);
+      setErr('');
+      await adminApi.notifyUser(user.id, { title: title.trim(), body: body.trim() });
+      setSent(true);
+      setTimeout(onClose, 1200);
+    } catch (e: any) {
+      setErr(e?.response?.data?.error || e?.message || 'Failed to send');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <ModalShell title="Message User" icon={<Send size={20} className="text-indigo-600" />} onClose={onClose}>
+      {sent ? (
+        <div className="py-8 text-center">
+          <CheckCircle2 size={40} className="text-emerald-500 mx-auto mb-3" />
+          <p className="text-sm font-semibold text-gray-800">Notification sent to {user.name}</p>
+        </div>
+      ) : (
+        <>
+          <div className="mb-4 text-sm text-gray-600">
+            To: <span className="font-semibold text-gray-900">{user.name}</span> ({user.phone})
+          </div>
+          {err && <div className="p-3 mb-4 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-sm">{err}</div>}
+          <div className="flex gap-2 mb-4">
+            <button className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-200">Push Notification</button>
+            <button disabled className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-50 text-gray-400 border border-gray-200 cursor-not-allowed">Email (soon)</button>
+            <button disabled className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-50 text-gray-400 border border-gray-200 cursor-not-allowed">SMS (soon)</button>
+          </div>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wide text-gray-700 mb-2">Title <span className="text-gray-400">({title.length}/50)</span></label>
+              <input type="text" value={title} maxLength={50} onChange={(e) => setTitle(e.target.value)} placeholder="Notification title"
+                className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wide text-gray-700 mb-2">Message <span className="text-gray-400">({body.length}/200)</span></label>
+              <textarea value={body} maxLength={200} rows={3} onChange={(e) => setBody(e.target.value)} placeholder="Message body..."
+                className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 resize-none" />
+            </div>
+          </div>
+          <ModalFooter>
+            <button onClick={onClose} className="px-5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-100 rounded-xl transition-colors">Cancel</button>
+            <button onClick={handleSend} disabled={sending}
+              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2">
+              {sending && <Loader2 size={14} className="animate-spin" />}
+              Send
+            </button>
+          </ModalFooter>
+        </>
+      )}
     </ModalShell>
   );
 }

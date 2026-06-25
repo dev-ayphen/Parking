@@ -106,11 +106,61 @@ export const adminController = {
     }
   },
 
+  // Direct message to a single user. Reuses notifyUser (DB row + push) and
+  // emits a socket event so an open app refreshes its inbox immediately.
+  notifyUser: async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.id);
+      const title = String(req.body?.title || '').trim();
+      const body = String(req.body?.body || '').trim();
+
+      const user = await db.user.findUnique({ where: { id: userId }, select: { id: true } });
+      if (!user) return sendError(res, NotFound('User not found', ErrorCode.USER_NOT_FOUND));
+
+      const notification = await adminService.notifyUser(userId, {
+        title,
+        message: body,
+        category: 'GENERAL',
+        metadata: { source: 'admin_direct_message' },
+      });
+      // Live-refresh the user's inbox if their app is open.
+      emitToUser(userId, 'notification:new', { title, message: body });
+
+      await logEvent('INFO', 'admin', `Direct message sent to user ${userId}`, { title }, req.user?.id);
+      if (req.user?.id) await auditService.logAdminAction({
+        adminId: req.user.id, action: 'USER_MESSAGED', targetType: 'USER', targetId: userId,
+        payload: { title }, req,
+      });
+      res.json({ success: true, notificationId: (notification as any)?.id ?? null });
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
   listSpaces: async (req: Request, res: Response) => {
     try {
       const result = await adminService.listSpaces(req.query);
       res.json(result);
     } catch (error) {
+      sendError(res, error);
+    }
+  },
+
+  updateSpace: async (req: Request, res: Response) => {
+    try {
+      const spaceId = parseInt(req.params.id);
+      const { name, address, hourlyRate, description, capacity } = req.body ?? {};
+      const result = await adminService.updateSpace(spaceId, { name, address, hourlyRate, description, capacity });
+      emitToAdmin('spaces', 'space:updated', { spaceId });
+      await logEvent('INFO', 'spaces', `Space ${spaceId} edited by admin`, { name, address, hourlyRate, capacity }, req.user?.id);
+      if (req.user?.id) await auditService.logAdminAction({
+        adminId: req.user.id, action: 'SPACE_UPDATED', targetType: 'SPACE', targetId: spaceId,
+        payload: { name, address, hourlyRate, capacity }, req,
+      });
+      res.json(result);
+    } catch (error) {
+      const msg = (error as Error).message;
+      if (msg === 'Space not found') return sendError(res, NotFound(msg, ErrorCode.SPACE_NOT_FOUND));
       sendError(res, error);
     }
   },
@@ -235,6 +285,69 @@ export const adminController = {
     } catch (error) {
       const msg = (error as Error).message;
       if (msg === 'Booking not found') return sendError(res, NotFound(msg, ErrorCode.BOOKING_NOT_FOUND));
+      sendError(res, error);
+    }
+  },
+
+  createBookingDispute: async (req: Request, res: Response) => {
+    try {
+      const { issueType, adminNotes, action } = req.body;
+      const bookingId = req.params.id;
+
+      if (!issueType || !adminNotes || !action) {
+        return res.status(400).json({ success: false, error: 'issueType, adminNotes, and action are required' });
+      }
+
+      const validActions = ['warn_parker', 'warn_owner', 'refund', 'escalate'];
+      if (!validActions.includes(action)) {
+        return res.status(400).json({ success: false, error: `action must be one of: ${validActions.join(', ')}` });
+      }
+
+      // Verify booking exists
+      const booking = await db.booking.findUnique({
+        where: { id: bookingId },
+        select: {
+          id: true,
+          parkerId: true,
+        },
+      });
+      if (!booking) {
+        return res.status(404).json({ success: false, error: 'Booking not found' });
+      }
+
+      // Map dispute action to AbuseReport status
+      const statusMap: Record<string, string> = {
+        warn_parker: 'WARNING_ISSUED',
+        warn_owner: 'WARNING_ISSUED',
+        refund: 'RESOLVED',
+        escalate: 'INVESTIGATING',
+      };
+
+      // Create an abuse report record tied to the booking's parker
+      const report = await db.abuseReport.create({
+        data: {
+          reportedUserId: booking.parkerId,
+          reportedByUserId: (req as any).user?.id ?? null,
+          abuseType: issueType,
+          description: `[Admin Dispute — Booking ${bookingId}] ${adminNotes}`,
+          evidenceUrls: [],
+          status: statusMap[action] ?? 'INVESTIGATING',
+          adminAction: `${action.toUpperCase()} — ${adminNotes}`,
+        },
+      });
+
+      await auditService.logAdminAction({
+        adminId: (req as any).user?.id,
+        action: 'BOOKING_DISPUTE',
+        targetType: 'BOOKING',
+        targetId: booking.id,
+        reason: `${action}: ${adminNotes}`,
+        payload: { issueType, action },
+        req,
+      });
+
+      res.json({ success: true, report });
+    } catch (error) {
       sendError(res, error);
     }
   },
@@ -451,6 +564,10 @@ export const adminController = {
       userIds.forEach((uid) => emitToUser(uid, 'transaction:update', { event: 'payout_processed' }));
       emitToAdmin('payments', 'payments:updated', { event: 'payouts_processed', count: (result as any).processed });
       await logEvent('SUCCESS', 'payments', `Processed ${(result as any).processed} payouts`, {}, req.user?.id);
+      if (req.user?.id) await auditService.logAdminAction({
+        adminId: req.user.id, action: 'PAYOUTS_PROCESSED', targetType: 'PAYOUT', targetId: 'batch',
+        payload: { processed: (result as any).processed, userIds }, req,
+      });
       res.json(result);
     } catch (error) {
       sendError(res, error);
@@ -463,6 +580,11 @@ export const adminController = {
       if (req.body?.userId) emitToUser(req.body.userId, 'transaction:update', { event: 'payout_created', transaction: (result as any).transaction });
       emitToAdmin('payments', 'payments:updated', { event: 'payout_created' });
       await logEvent('INFO', 'payments', 'Manual payout created', { amount: req.body?.amount, userId: req.body?.userId }, req.user?.id);
+      if (req.user?.id) await auditService.logAdminAction({
+        adminId: req.user.id, action: 'PAYOUT_CREATED', targetType: 'PAYOUT',
+        targetId: req.body?.userId ?? 'inline',
+        payload: { amount: req.body?.amount, userId: req.body?.userId }, req,
+      });
       res.json(result);
     } catch (error) {
       sendError(res, error);
@@ -531,9 +653,12 @@ export const adminController = {
     }
   },
 
-  exportTransactions: async (_req: Request, res: Response) => {
+  exportTransactions: async (req: Request, res: Response) => {
     try {
-      const csv = await adminService.exportTransactionsCsv();
+      const csv = await adminService.exportTransactionsCsv({
+        startDate: req.query.startDate as string,
+        endDate: req.query.endDate as string,
+      });
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="transactions-${new Date().toISOString().slice(0, 10)}.csv"`);
       res.send(csv);
@@ -553,9 +678,12 @@ export const adminController = {
     }
   },
 
-  exportBookings: async (_req: Request, res: Response) => {
+  exportBookings: async (req: Request, res: Response) => {
     try {
-      const csv = await adminExportService.bookingsCsv();
+      const csv = await adminExportService.bookingsCsv({
+        startDate: req.query.startDate as string,
+        endDate: req.query.endDate as string,
+      });
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="bookings-${new Date().toISOString().slice(0, 10)}.csv"`);
       res.send(csv);
@@ -673,6 +801,61 @@ export const adminController = {
     try {
       const result = await adminService.listSystemLogs(req.query);
       res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
+  // ── Admin audit logs ──────────────────────────────────────────────
+  listAuditLogs: async (req: Request, res: Response) => {
+    try {
+      const result = await adminService.listAuditLogs({
+        action: req.query.action as string,
+        targetType: req.query.targetType as string,
+        search: req.query.search as string,
+        from: (req.query.startDate ?? req.query.from) as string,
+        to: (req.query.endDate ?? req.query.to) as string,
+        page: req.query.page ? Number(req.query.page) : undefined,
+        limit: req.query.limit ? Number(req.query.limit) : undefined,
+      });
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
+  exportAuditLogs: async (req: Request, res: Response) => {
+    try {
+      const { logs } = await adminService.listAuditLogs({
+        action: req.query.action as string,
+        targetType: req.query.targetType as string,
+        search: req.query.search as string,
+        from: (req.query.startDate ?? req.query.from) as string,
+        to: (req.query.endDate ?? req.query.to) as string,
+        page: 1,
+        limit: 10000,
+      });
+      const esc = (v: any) => {
+        const s = v === null || v === undefined ? '' : String(v);
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+      const header = ['id', 'timestamp', 'adminId', 'adminEmail', 'action', 'targetType', 'targetId', 'reason', 'metadata', 'ipAddress'];
+      const rows = (logs as any[]).map((l) => [
+        l.id,
+        l.timestamp instanceof Date ? l.timestamp.toISOString() : l.timestamp,
+        l.adminId ?? '',
+        l.admin?.email ?? '',
+        l.action,
+        l.targetType,
+        l.targetId,
+        l.reason ?? '',
+        l.payload ? JSON.stringify(l.payload) : '',
+        l.ipAddress ?? '',
+      ].map(esc).join(','));
+      const csv = [header.join(','), ...rows].join('\n');
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="admin-audit-logs-${new Date().toISOString().slice(0, 10)}.csv"`);
+      res.send(csv);
     } catch (error) {
       sendError(res, error);
     }

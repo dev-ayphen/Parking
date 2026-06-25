@@ -109,7 +109,7 @@ export default function RecentRequestsScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <PageHeader title="All Recent Requests" onBack={() => router.back()} />
+      <PageHeader title="All Recent Requests" onBack={() => router.replace('/(my-spaces)')} />
 
       {loading ? (
         <View style={styles.center}>

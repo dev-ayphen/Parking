@@ -158,7 +158,7 @@ const VehicleSelectScreen = () => {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <PageHeader title="Select Vehicle" onBack={() => router.back()} />
+        <PageHeader title="Select Vehicle" onBack={() => router.replace('/(find-space)')} />
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <ActivityIndicator size="large" color={Colors.primary} />
         </View>
@@ -170,7 +170,7 @@ const VehicleSelectScreen = () => {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
 
-      <PageHeader title="Select Vehicle" onBack={() => router.back()} />
+      <PageHeader title="Select Vehicle" onBack={() => router.replace('/(find-space)')} />
 
       <ScrollView
         style={styles.content}

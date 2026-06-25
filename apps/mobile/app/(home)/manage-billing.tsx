@@ -25,6 +25,7 @@ interface Billing {
   billingEmail: string;
   billingAddress: string;
   gstin: string;
+  upiId: string;
 }
 
 export default function ManageBillingScreen() {
@@ -35,6 +36,7 @@ export default function ManageBillingScreen() {
   const [billingEmail, setBillingEmail] = useState('');
   const [billingAddress, setBillingAddress] = useState('');
   const [gstin, setGstin] = useState('');
+  const [upiId, setUpiId] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -45,6 +47,7 @@ export default function ManageBillingScreen() {
       setBillingEmail(b.billingEmail || '');
       setBillingAddress(b.billingAddress || '');
       setGstin(b.gstin || '');
+      setUpiId(b.upiId || '');
     } catch {
       toast.error('Could not load billing details.');
     } finally {
@@ -67,6 +70,7 @@ export default function ManageBillingScreen() {
         billingEmail: billingEmail.trim(),
         billingAddress: billingAddress.trim(),
         gstin: gstin.trim().toUpperCase(),
+        upiId: upiId.trim().toLowerCase(),
       });
       toast.success('Billing details saved.');
       router.back();
@@ -80,7 +84,7 @@ export default function ManageBillingScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <PageHeader title="Billing Details" onBack={() => router.back()} />
+        <PageHeader title="Billing Details" onBack={() => router.replace('/(home)')} />
         <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>
       </SafeAreaView>
     );
@@ -89,7 +93,7 @@ export default function ManageBillingScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <PageHeader title="Billing Details" onBack={() => router.back()} />
+      <PageHeader title="Billing Details" onBack={() => router.replace('/(home)')} />
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -143,6 +147,24 @@ export default function ManageBillingScreen() {
           <View style={styles.hintRow}>
             <Info size={12} color={Colors.textMuted} />
             <Text style={styles.hint}>Add your GSTIN to claim input tax credit on subscription payments.</Text>
+          </View>
+
+          {/* UPI ID — so parkers can pay you directly. We generate a QR from this on
+              the parker's screen; ParkSwift never holds or processes the money. */}
+          <Text style={styles.label}>UPI ID for payments <Text style={styles.optional}>(optional)</Text></Text>
+          <TextInput
+            style={styles.input}
+            placeholder="e.g. name@okhdfcbank"
+            placeholderTextColor={Colors.textMuted}
+            value={upiId}
+            onChangeText={(t) => setUpiId(t.toLowerCase().trim())}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
+          />
+          <View style={styles.hintRow}>
+            <Info size={12} color={Colors.textMuted} />
+            <Text style={styles.hint}>Parkers scan a QR built from this to pay you directly via any UPI app. ParkSwift never holds the money.</Text>
           </View>
         </ScrollView>
 

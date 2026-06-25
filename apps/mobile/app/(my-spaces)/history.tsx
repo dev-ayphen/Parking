@@ -116,7 +116,7 @@ export default function HistoryScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         <StatusBar barStyle="dark-content" />
-        <PageHeader title="Earnings & History" />
+        <PageHeader title="Earnings & History"  onBack={() => router.replace('/(my-spaces)')} />
         <View style={styles.loadingBox}>
           <ActivityIndicator size="large" color={Colors.primary} />
         </View>
@@ -127,7 +127,7 @@ export default function HistoryScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
-      <PageHeader title="Earnings & History" />
+      <PageHeader title="Earnings & History"  onBack={() => router.replace('/(my-spaces)')} />
 
       <ScrollView
         style={styles.container}

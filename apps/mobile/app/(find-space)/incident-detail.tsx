@@ -94,7 +94,7 @@ export default function IncidentDetailScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <PageHeader title="Incident Report" onBack={() => router.back()} />
+        <PageHeader title="Incident Report" onBack={() => router.replace('/(find-space)')} />
         <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>
       </SafeAreaView>
     );
@@ -103,7 +103,7 @@ export default function IncidentDetailScreen() {
   if (error || !report) {
     return (
       <SafeAreaView style={styles.container}>
-        <PageHeader title="Incident Report" onBack={() => router.back()} />
+        <PageHeader title="Incident Report" onBack={() => router.replace('/(find-space)')} />
         <View style={styles.center}>
           <AlertTriangle size={40} color={Colors.error} strokeWidth={1.5} />
           <Text style={styles.errorText}>{error || 'Report not found'}</Text>
@@ -123,7 +123,7 @@ export default function IncidentDetailScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <PageHeader title="Incident Report" onBack={() => router.back()} />
+      <PageHeader title="Incident Report" onBack={() => router.replace('/(find-space)')} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Status hero */}
         <View style={[styles.statusHero, { backgroundColor: meta.bg }]}>

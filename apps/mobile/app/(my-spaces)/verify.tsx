@@ -353,7 +353,7 @@ export default function VerifyScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         <StatusBar barStyle="dark-content" />
-        <PageHeader title="Verify Session" />
+        <PageHeader title="Verify Session"  onBack={() => router.replace('/(my-spaces)')} />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.primary} />
         </View>
@@ -366,7 +366,7 @@ export default function VerifyScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
-      <PageHeader title="Verify Session" />
+      <PageHeader title="Verify Session"  onBack={() => router.replace('/(my-spaces)')} />
 
       <ScrollView
         style={styles.container}

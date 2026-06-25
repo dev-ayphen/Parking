@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import {
   Settings2, Shield, Bell, DollarSign,
   Globe, Save, Lock, Loader2, AlertCircle, CheckCircle2,
+  Eye, EyeOff,
 } from 'lucide-react';
 import { adminApi } from '@/services/api';
 
@@ -15,11 +16,14 @@ interface PlatformSettings {
   supportPhone: string | null;
   defaultCurrency: string;
   defaultLocale: string;
+  timezone: string;
   maintenanceMode: boolean;
   maintenanceMessage: string | null;
   // Pricing & Fees
   minHourlyRate: number;
   maxHourlyRate: number;
+  platformFeePercent: number;
+  cancellationFeePercent: number;
   cancellationPolicy: string;
   refundPolicy: string;
   discountCodesEnabled: boolean;
@@ -38,12 +42,14 @@ interface PlatformSettings {
   marketingEmailsEnabled: boolean;
   bookingNotifications: boolean;
   paymentNotifications: boolean;
+  supportTicketNotifications: boolean;
   systemAlerts: boolean;
   // API
   razorpayEnabled: boolean;
   razorpayKeyId: string | null;
   msg91Enabled: boolean;
   fcmEnabled: boolean;
+  fcmServerKey: string | null;
   googleMapsApiKey: string | null;
   webhookUrl: string | null;
   apiRateLimit: number;
@@ -182,6 +188,22 @@ export default function SettingsPage() {
                 <Field label="Default Locale">
                   <Select value={settings.defaultLocale} onChange={(v) => updateField('defaultLocale', v)} options={['en-IN', 'en-US', 'hi-IN']} />
                 </Field>
+                <Field label="Timezone">
+                  <Select
+                    value={settings.timezone ?? 'Asia/Kolkata'}
+                    onChange={(v) => updateField('timezone', v)}
+                    options={[
+                      { value: 'Asia/Kolkata', label: 'Asia/Kolkata (IST, UTC+5:30)' },
+                      { value: 'Asia/Dubai', label: 'Asia/Dubai (GST, UTC+4)' },
+                      { value: 'Asia/Singapore', label: 'Asia/Singapore (SGT, UTC+8)' },
+                      { value: 'Europe/London', label: 'Europe/London (GMT, UTC+0)' },
+                      { value: 'Europe/Paris', label: 'Europe/Paris (CET, UTC+1)' },
+                      { value: 'America/New_York', label: 'America/New_York (EST, UTC-5)' },
+                      { value: 'America/Los_Angeles', label: 'America/Los_Angeles (PST, UTC-8)' },
+                      { value: 'UTC', label: 'UTC (UTC+0)' },
+                    ]}
+                  />
+                </Field>
               </FormGrid>
 
               <SectionDivider />
@@ -296,6 +318,12 @@ export default function SettingsPage() {
                 onChange={(v) => updateField('paymentNotifications', v)}
               />
               <ToggleRow
+                title="Support Ticket Notifications"
+                description="Notify users and admins when a support ticket is opened, updated, or resolved."
+                value={settings.supportTicketNotifications ?? false}
+                onChange={(v) => updateField('supportTicketNotifications', v)}
+              />
+              <ToggleRow
                 title="System Alerts"
                 description="Send critical system/security alerts to admins."
                 value={settings.systemAlerts}
@@ -316,11 +344,31 @@ export default function SettingsPage() {
               </div>
 
               <InlineRow
+                title="Platform Fee (%)"
+                description="Percentage charged by ParkSwift on subscription plan revenue."
+              >
+                <div className="relative">
+                  <NumberInput value={settings.platformFeePercent ?? 0} onChange={(v) => updateField('platformFeePercent', v)} step={0.5} min={0} max={50} className="w-24 text-right pr-8" />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 font-medium pointer-events-none">%</span>
+                </div>
+              </InlineRow>
+
+              <InlineRow
                 title="GST Rate (%)"
                 description="Tax applied to subscription plans and platform services."
               >
                 <div className="relative">
                   <NumberInput value={settings.gstRate} onChange={(v) => updateField('gstRate', v)} step={0.5} min={0} max={100} className="w-24 text-right pr-8" />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 font-medium pointer-events-none">%</span>
+                </div>
+              </InlineRow>
+
+              <InlineRow
+                title="Cancellation Fee (%)"
+                description="Fee retained when a subscription is cancelled within the restricted window."
+              >
+                <div className="relative">
+                  <NumberInput value={settings.cancellationFeePercent ?? 0} onChange={(v) => updateField('cancellationFeePercent', v)} step={0.5} min={0} max={100} className="w-24 text-right pr-8" />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 font-medium pointer-events-none">%</span>
                 </div>
               </InlineRow>
@@ -378,6 +426,13 @@ export default function SettingsPage() {
           {/* ============ API & INTEGRATIONS ============ */}
           {activeTab === 'API & Integrations' && (
             <Card title="External Services" icon={<Globe size={20} className="text-indigo-500" />}>
+              <div className="mb-2 p-4 bg-amber-50 border border-amber-100 rounded-xl">
+                <p className="text-sm text-amber-900 font-medium">API keys are sensitive credentials</p>
+                <p className="text-xs text-amber-700 mt-1 leading-relaxed">
+                  Keys are masked by default. Click Reveal to view the full key. Changes are encrypted at rest.
+                </p>
+              </div>
+
               <ToggleRow
                 title="Razorpay (Subscriptions)"
                 description="Enable Razorpay for subscription payments."
@@ -385,10 +440,10 @@ export default function SettingsPage() {
                 onChange={(v) => updateField('razorpayEnabled', v)}
               />
               <Field label="Razorpay Key ID">
-                <TextInput
+                <MaskedKeyInput
                   value={settings.razorpayKeyId ?? ''}
                   onChange={(v) => updateField('razorpayKeyId', v || null)}
-                  placeholder="rzp_live_XXXXXXX"
+                  placeholder="rzp_live_XXXXXXXXXXXXXXXX"
                 />
               </Field>
 
@@ -402,19 +457,26 @@ export default function SettingsPage() {
               />
 
               <ToggleRow
-                title="FCM (Push)"
-                description="Enable Firebase Cloud Messaging for push."
+                title="FCM (Push Notifications)"
+                description="Enable Firebase Cloud Messaging for mobile push."
                 value={settings.fcmEnabled}
                 onChange={(v) => updateField('fcmEnabled', v)}
               />
+              <Field label="FCM Server Key">
+                <MaskedKeyInput
+                  value={settings.fcmServerKey ?? ''}
+                  onChange={(v) => updateField('fcmServerKey', v || null)}
+                  placeholder="AAAA....:APA91b..."
+                />
+              </Field>
 
               <SectionDivider />
 
               <Field label="Google Maps API Key">
-                <TextInput
+                <MaskedKeyInput
                   value={settings.googleMapsApiKey ?? ''}
                   onChange={(v) => updateField('googleMapsApiKey', v || null)}
-                  placeholder="AIza..."
+                  placeholder="AIzaSy..."
                 />
               </Field>
               <Field label="Webhook URL">
@@ -551,6 +613,51 @@ function PrefixedInput({ prefix, value, onChange }: { prefix: string; value: num
         onChange={(e) => onChange(Number(e.target.value))}
         className="w-28 pl-7 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none font-medium"
       />
+    </div>
+  );
+}
+
+function MaskedKeyInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+  const [revealed, setRevealed] = useState(false);
+
+  const maskedDisplay = value
+    ? '••••••••••••••••' + value.slice(-4)
+    : '';
+
+  if (!revealed) {
+    return (
+      <div className="flex items-center gap-2">
+        <div className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-gray-500 font-mono text-sm tracking-widest select-none">
+          {value ? maskedDisplay : <span className="text-gray-300 tracking-normal font-sans">{placeholder ?? 'Not set'}</span>}
+        </div>
+        <button
+          type="button"
+          onClick={() => setRevealed(true)}
+          className="flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-xl hover:bg-indigo-100 transition-colors whitespace-nowrap"
+        >
+          <Eye size={15} /> Reveal
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        type="text"
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        autoFocus
+        className="flex-1 px-4 py-2.5 bg-gray-50 border border-indigo-300 rounded-xl text-gray-900 font-mono text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+      />
+      <button
+        type="button"
+        onClick={() => setRevealed(false)}
+        className="flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded-xl hover:bg-gray-200 transition-colors whitespace-nowrap"
+      >
+        <EyeOff size={15} /> Hide
+      </button>
     </div>
   );
 }

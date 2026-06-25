@@ -14,7 +14,7 @@ import {View,
   Alert} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../hooks/useTheme';
-import { CheckCircle, AlertCircle, ArrowRight, Activity, TrendingUp, MapPin, Clock, Star, Zap, XCircle, Lock } from 'lucide-react-native';
+import { CheckCircle, AlertCircle, ArrowRight, Activity, TrendingUp, MapPin, Clock, Star, Zap, XCircle, Lock, QrCode } from 'lucide-react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { PageHeader, LoadErrorState } from '../../components';
@@ -54,6 +54,7 @@ interface DashboardData {
   recentRequests: { id: string; parkerName: string; parkerPhotoUrl: string | null; spaceName: string; status: string; amount: number; createdAt: string }[];
   entitlements: Entitlements | null;
   usage: Usage | null;
+  hasUpiId: boolean;
 }
 
 // Status badge styling for retained recent requests
@@ -92,6 +93,7 @@ const EMPTY_DASHBOARD: DashboardData = {
   recentRequests: [],
   entitlements: null,
   usage: null,
+  hasUpiId: true, // assume set until the API says otherwise (avoid a flash of the nudge)
 };
 
 
@@ -170,6 +172,7 @@ export default function OwnerDashboardScreen() {
         })),
         entitlements: json.entitlements ?? null,
         usage: json.usage ?? null,
+        hasUpiId: json.hasUpiId !== false, // default to true unless API explicitly says false
       });
     } catch (e) {
       if (__DEV__) console.log('[OWNER_DASHBOARD] error', e);
@@ -313,7 +316,7 @@ export default function OwnerDashboardScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         <StatusBar barStyle="dark-content" />
-        <PageHeader title="Manage Spaces" />
+        <PageHeader title="Manage Spaces"  onBack={() => router.replace('/(home)')} />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.primary} />
         </View>
@@ -329,7 +332,7 @@ export default function OwnerDashboardScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         <StatusBar barStyle="dark-content" />
-        <PageHeader title="Manage Spaces" />
+        <PageHeader title="Manage Spaces"  onBack={() => router.replace('/(home)')} />
         <LoadErrorState onRetry={() => fetchDashboard()} />
       </SafeAreaView>
     );
@@ -338,7 +341,7 @@ export default function OwnerDashboardScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
-      <PageHeader title="Manage Spaces" />
+      <PageHeader title="Manage Spaces"  onBack={() => router.replace('/(home)')} />
       
       <ScrollView
         style={styles.container}
@@ -373,6 +376,28 @@ export default function OwnerDashboardScreen() {
               </Text>
             </TouchableOpacity>
           </View>
+        )}
+
+        {/* UPI nudge — without a UPI ID the parker's pay screen can only show the
+            cash fallback (no scan-to-pay QR). Prompt the owner to add it. Hidden
+            once set, and suppressed for owners who have no spaces yet. */}
+        {!dashboardData.hasUpiId && (
+          <TouchableOpacity
+            style={styles.upiBanner}
+            activeOpacity={0.85}
+            onPress={() => router.push('/(home)/manage-billing')}
+          >
+            <View style={styles.upiBannerIcon}>
+              <QrCode size={18} color={Colors.primary} />
+            </View>
+            <View style={styles.upiBannerBody}>
+              <Text style={styles.upiBannerTitle}>Add your UPI ID to get paid</Text>
+              <Text style={styles.upiBannerText}>
+                Parkers can scan a QR to pay you directly. Set it once in Billing.
+              </Text>
+            </View>
+            <ArrowRight size={18} color={Colors.primary} />
+          </TouchableOpacity>
         )}
 
         {/* Premium Banner - Floating Style */}
@@ -777,6 +802,39 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontWeight: FontWeight.bold,
     fontSize: FontSize.sm,                          // 12 = sm ✓
+  },
+
+  // UPI "add your UPI ID" nudge — softer (primary tint, tappable whole row).
+  upiBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primaryBg,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    padding: Spacing.xl,
+    marginBottom: Spacing.xl,
+  },
+  upiBannerIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.lg,
+  },
+  upiBannerBody: { flex: 1, marginRight: Spacing.md },
+  upiBannerTitle: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.bold,
+    color: Colors.primary,
+    marginBottom: 2,
+  },
+  upiBannerText: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 16,
   },
   heroBanner: {
     borderRadius: BorderRadius.circleXl,            // 20 = circleXl ✓

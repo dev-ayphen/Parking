@@ -194,6 +194,30 @@ export const spaceAdminService = {
     return { success: true, space };
   },
 
+  // Admin edits basic space fields (not photos/documents).
+  updateSpace: async (
+    spaceId: number,
+    fields: { name?: string; address?: string; hourlyRate?: number; description?: string; capacity?: number },
+  ) => {
+    const existing = await db.space.findUnique({ where: { id: spaceId }, select: { id: true } });
+    if (!existing) throw Object.assign(new Error('Space not found'), { statusCode: 404 });
+
+    const data: any = {};
+    if (fields.name !== undefined) data.name = String(fields.name).trim();
+    if (fields.address !== undefined) data.address = String(fields.address).trim();
+    if (fields.hourlyRate !== undefined && fields.hourlyRate !== null && !isNaN(Number(fields.hourlyRate))) {
+      data.hourlyRate = Number(fields.hourlyRate);
+    }
+    // Space has no dedicated description column; map "Description" to `landmark`.
+    if (fields.description !== undefined) data.landmark = String(fields.description).trim() || null;
+    if (fields.capacity !== undefined && fields.capacity !== null && !isNaN(Number(fields.capacity))) {
+      data.capacity = Math.max(1, Math.round(Number(fields.capacity)));
+    }
+
+    const space = await db.space.update({ where: { id: spaceId }, data });
+    return { success: true, space };
+  },
+
   approveSpace: async (spaceId: number) => {
     const space = await db.space.update({
       where: { id: spaceId },

@@ -17,6 +17,7 @@ import {
   User,
   ChevronRight,
   FileWarning,
+  AlertTriangle,
   Building2,
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -105,6 +106,15 @@ const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
       label: 'My Reports',
       onPress: () => {
         onMenuItemPress?.('my-reports');
+        onClose();
+      },
+    },
+    {
+      id: 'my-incidents',
+      icon: <AlertTriangle size={22} color={activeRoute === 'my-incidents' ? theme.colors.primary : standardIconColor} strokeWidth={2.5} />,
+      label: 'My Incidents',
+      onPress: () => {
+        onMenuItemPress?.('my-incidents');
         onClose();
       },
     },

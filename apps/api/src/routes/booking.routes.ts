@@ -40,6 +40,7 @@ router.get('/:id/otp', bookingController.generateSessionOtp);
 router.post('/:id/verify-otp', sessionOtpVerifyLimiter, bookingController.verifySessionOtp);
 router.put('/:id/leaving', bookingController.markLeavingSession);
 router.put('/:id/self-complete', bookingController.selfCompleteBooking);
+router.put('/:id/mark-paid', bookingController.markBookingPaid);
 router.put('/:id/release', bookingController.releaseSpace);
 router.post('/:id/verification', bookingController.submitVerification);
 router.get('/:id/verification', bookingController.getVerification);

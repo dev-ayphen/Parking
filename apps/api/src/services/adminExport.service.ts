@@ -35,8 +35,19 @@ export const adminExportService = {
     return toCsv(header, rows);
   },
 
-  bookingsCsv: async () => {
+  bookingsCsv: async (filters: { startDate?: string; endDate?: string } = {}) => {
+    const where: any = {};
+    if (filters.startDate || filters.endDate) {
+      where.createdAt = {};
+      if (filters.startDate) where.createdAt.gte = new Date(filters.startDate);
+      if (filters.endDate) {
+        const end = new Date(filters.endDate);
+        end.setHours(23, 59, 59, 999);
+        where.createdAt.lte = end;
+      }
+    }
     const bookings = await db.booking.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
       include: {
         parker: { select: { firstName: true, lastName: true, phone: true } },

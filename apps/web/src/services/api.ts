@@ -88,6 +88,12 @@ export const adminApi = {
     return res.data;
   },
 
+  // Direct push message to a single user.
+  notifyUser: async (userId: number, payload: { title: string; body: string }) => {
+    const res = await apiClient.post(`/admin/users/${userId}/notify`, payload);
+    return res.data;
+  },
+
   listSpaces: async (params?: { status?: string; search?: string; page?: number; limit?: number }): Promise<AdminSpaceListResponse> => {
     const res = await apiClient.get('/admin/spaces', { params });
     return res.data;
@@ -121,6 +127,11 @@ export const adminApi = {
 
   unblockSpace: async (spaceId: number) => {
     const res = await apiClient.put(`/admin/spaces/${spaceId}/unblock`);
+    return res.data;
+  },
+
+  updateSpace: async (spaceId: number, fields: { name?: string; address?: string; hourlyRate?: number; description?: string; capacity?: number }) => {
+    const res = await apiClient.put(`/admin/spaces/${spaceId}`, fields);
     return res.data;
   },
 
@@ -207,20 +218,43 @@ export const adminApi = {
     return res.data;
   },
 
-  exportTransactionsCsv: async () => {
-    const res = await apiClient.get('/admin/payments/export', { responseType: 'blob' });
+  exportTransactionsCsv: async (params?: { startDate?: string; endDate?: string }) => {
+    const res = await apiClient.get('/admin/payments/export', { params, responseType: 'blob' });
     return res.data as Blob;
   },
   exportUsersCsv: async () => {
     const res = await apiClient.get('/admin/users/export', { responseType: 'blob' });
     return res.data as Blob;
   },
-  exportBookingsCsv: async () => {
-    const res = await apiClient.get('/admin/bookings/export', { responseType: 'blob' });
+  exportBookingsCsv: async (params?: { startDate?: string; endDate?: string }) => {
+    const res = await apiClient.get('/admin/bookings/export', { params, responseType: 'blob' });
     return res.data as Blob;
   },
   exportLogsCsv: async (params?: { level?: string; source?: string; search?: string }) => {
     const res = await apiClient.get('/admin/system-logs/export', { params, responseType: 'blob' });
+    return res.data as Blob;
+  },
+
+  listAuditLogs: async (params?: {
+    action?: string;
+    targetType?: string;
+    search?: string;
+    startDate?: string;
+    endDate?: string;
+    page?: number;
+    limit?: number;
+  }) => {
+    const res = await apiClient.get('/admin/audit-logs', { params });
+    return res.data;
+  },
+  exportAuditLogsCsv: async (params?: {
+    action?: string;
+    targetType?: string;
+    search?: string;
+    startDate?: string;
+    endDate?: string;
+  }) => {
+    const res = await apiClient.get('/admin/audit-logs/export', { params, responseType: 'blob' });
     return res.data as Blob;
   },
 
@@ -333,6 +367,24 @@ export const adminApi = {
   },
   unhideReview: async (id: number) => {
     const res = await apiClient.put(`/admin/reviews/${id}/unhide`);
+    return res.data;
+  },
+
+  // Force cancel a booking (admin only — uses the shared /bookings/:id/cancel route
+  // which grants admin authority via req.user.role === 'ADMIN').
+  forceCancelBooking: async (bookingId: string, reason: string) => {
+    const res = await apiClient.put(`/bookings/${encodeURIComponent(bookingId)}/cancel`, { reason });
+    return res.data;
+  },
+
+  // Open a dispute resolution action against a booking
+  // Creates or updates an abuse report tied to this booking.
+  createBookingDispute: async (bookingId: string, data: {
+    issueType: string;
+    adminNotes: string;
+    action: 'warn_parker' | 'warn_owner' | 'refund' | 'escalate';
+  }) => {
+    const res = await apiClient.post(`/admin/bookings/${encodeURIComponent(bookingId)}/dispute`, data);
     return res.data;
   },
 

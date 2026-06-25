@@ -448,6 +448,8 @@ router.get('/owner-dashboard', authenticate, async (req: Request, res: Response)
             : 0,
           isExpired: !noSpaceEnt.isSubscribed,
         },
+        // No spaces yet → no parker can pay → suppress the UPI nudge for now.
+        hasUpiId: true,
         pendingRequests: [],
         liveSessions: [],
         awaitingArrival: [],
@@ -530,6 +532,12 @@ router.get('/owner-dashboard', authenticate, async (req: Request, res: Response)
 
     // Owner's effective entitlements (drives the usage meter + lock state).
     const ownerEntitlements = await entitlementService.getForUser(userId);
+
+    // Whether the owner has set a UPI ID. The dashboard shows a "add UPI to get
+    // paid" nudge when this is false, since without it parkers only see the cash
+    // fallback on the pay-QR card (no scan-to-pay).
+    const ownerUser = await db.user.findUnique({ where: { id: userId }, select: { upiId: true } });
+    const hasUpiId = !!ownerUser?.upiId;
 
     // Revenue
     const monthRevenue = monthBookings.reduce((acc, b) => acc + (b.totalAmount || 0), 0);
@@ -663,6 +671,7 @@ router.get('/owner-dashboard', authenticate, async (req: Request, res: Response)
           : 0,
         isExpired: !ownerEntitlements.isSubscribed,
       },
+      hasUpiId,
       pendingRequests,
       liveSessions,
       awaitingArrival,

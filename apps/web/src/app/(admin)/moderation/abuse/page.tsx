@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { io as createSocket } from 'socket.io-client';
 import { Flag, Loader2, Calendar, AlertCircle, ChevronLeft, ChevronRight, X, Check } from 'lucide-react';
@@ -20,6 +21,13 @@ interface AbuseReport {
   permanentlyBanned: boolean;
   suspendedUntil: string | null;
   createdAt: string;
+}
+
+interface AbuseReportDetail extends AbuseReport {
+  reportedUser: { id: number; firstName: string; lastName: string; phone: string; role?: string };
+  reportedByUser: { id?: number; firstName: string; lastName: string; phone?: string } | null;
+  evidenceUrls?: string[];
+  updatedAt?: string;
 }
 
 const ABUSE_TYPES: Record<string, { label: string; color: string }> = {
@@ -54,6 +62,7 @@ const ACTIONS = [
 ];
 
 export default function AbuseReportsPage() {
+  const router = useRouter();
   const [reports, setReports] = useState<AbuseReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -62,6 +71,27 @@ export default function AbuseReportsPage() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [pages, setPages] = useState(1);
+
+  // Detail modal
+  const [detailReport, setDetailReport] = useState<AbuseReportDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState('');
+
+  const openDetail = async (reportId: number) => {
+    setDetailLoading(true);
+    setDetailError('');
+    setDetailReport(null);
+    // open modal skeleton immediately
+    setDetailReport({ id: reportId } as AbuseReportDetail);
+    try {
+      const data = await adminApi.getAbuseReport(reportId);
+      if (data.success) setDetailReport(data.report);
+    } catch (e: any) {
+      setDetailError(e?.response?.data?.error || e?.message || 'Failed to load report details');
+    } finally {
+      setDetailLoading(false);
+    }
+  };
 
   // Action modal
   const [actionReport, setActionReport] = useState<AbuseReport | null>(null);
@@ -186,7 +216,7 @@ export default function AbuseReportsPage() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {reports.map(r => (
-                  <tr key={r.id} className="hover:bg-gray-50/50 transition-colors">
+                  <tr key={r.id} onClick={() => openDetail(r.id)} className="hover:bg-gray-50/50 transition-colors cursor-pointer">
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
                         <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm ${r.permanentlyBanned ? 'bg-red-600' : r.suspendedUntil ? 'bg-orange-500' : 'bg-gray-400'}`}>
@@ -226,7 +256,7 @@ export default function AbuseReportsPage() {
                     <td className="px-5 py-4 text-sm text-gray-600">{fmt(r.createdAt)}</td>
                     <td className="px-5 py-4">
                       {!['RESOLVED', 'DISMISSED', 'BANNED'].includes(r.status) && (
-                        <button onClick={() => { setActionReport(r); setActionValue('WARNING_ISSUED'); setAdminNote(''); setSuspendUntil(''); setBanConfirm(''); setActionError(''); }}
+                        <button onClick={(e) => { e.stopPropagation(); setActionReport(r); setActionValue('WARNING_ISSUED'); setAdminNote(''); setSuspendUntil(''); setBanConfirm(''); setActionError(''); }}
                           className="text-indigo-600 hover:text-indigo-700 font-semibold text-sm">
                           Take Action
                         </button>
@@ -252,6 +282,144 @@ export default function AbuseReportsPage() {
             className="p-2 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50">
             <ChevronRight size={16} />
           </button>
+        </div>
+      )}
+
+      {/* Detail Modal */}
+      {detailReport && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => { setDetailReport(null); setDetailError(''); }}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-6 space-y-5 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-900">Abuse Report #{detailReport.id}</h2>
+              <button onClick={() => { setDetailReport(null); setDetailError(''); }} className="text-gray-400 hover:text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+
+            {detailLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="animate-spin text-red-600" size={28} />
+              </div>
+            ) : detailError ? (
+              <div className="bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl text-sm">{detailError}</div>
+            ) : detailReport.abuseType ? (
+              <div className="space-y-5">
+                {/* Report type + status */}
+                <div className="flex flex-wrap gap-2">
+                  <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${ABUSE_TYPES[detailReport.abuseType]?.color || 'bg-gray-100 text-gray-700'}`}>
+                    {ABUSE_TYPES[detailReport.abuseType]?.label || detailReport.abuseType}
+                  </span>
+                  <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${STATUS_COLOR[detailReport.status] || 'bg-gray-100'}`}>
+                    {detailReport.status.replace(/_/g, ' ')}
+                  </span>
+                  {detailReport.permanentlyBanned && (
+                    <span className="inline-flex items-center gap-1 px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-semibold">
+                      <AlertCircle size={11} /> Permanently Banned
+                    </span>
+                  )}
+                </div>
+
+                {/* Reported user */}
+                <div className="bg-gray-50 rounded-xl p-4 space-y-1">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Reported User</p>
+                  {detailReport.reportedUser.id ? (
+                    <button
+                      onClick={() => { setDetailReport(null); setDetailError(''); router.push(`/admin/users?focus=${detailReport.reportedUser.id}`); }}
+                      className="font-semibold text-indigo-600 underline hover:text-indigo-700"
+                    >
+                      {detailReport.reportedUser.firstName} {detailReport.reportedUser.lastName}
+                    </button>
+                  ) : (
+                    <p className="font-semibold text-gray-900">{detailReport.reportedUser.firstName} {detailReport.reportedUser.lastName}</p>
+                  )}
+                  <p className="text-sm text-gray-600">{detailReport.reportedUser.phone}</p>
+                  {detailReport.reportedUser.role && (
+                    <span className="inline-flex px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-full text-xs font-semibold">{detailReport.reportedUser.role}</span>
+                  )}
+                  {detailReport.suspendedUntil && new Date(detailReport.suspendedUntil) > new Date() && (
+                    <p className="text-xs text-orange-600 font-medium mt-1">
+                      Suspended until {new Date(detailReport.suspendedUntil).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </p>
+                  )}
+                </div>
+
+                {/* Reporter info */}
+                {detailReport.reportedByUser && (
+                  <div className="bg-gray-50 rounded-xl p-4">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Reported By</p>
+                    <p className="font-semibold text-gray-900">{detailReport.reportedByUser.firstName} {detailReport.reportedByUser.lastName}</p>
+                    {detailReport.reportedByUser.phone && (
+                      <p className="text-sm text-gray-600">{detailReport.reportedByUser.phone}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Description */}
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Description</p>
+                  <p className="text-sm text-gray-800 bg-gray-50 rounded-xl p-4 leading-relaxed whitespace-pre-wrap">{detailReport.description || '—'}</p>
+                </div>
+
+                {/* Evidence URLs */}
+                {detailReport.evidenceUrls && detailReport.evidenceUrls.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Evidence ({detailReport.evidenceUrls.length})</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {detailReport.evidenceUrls.map((url, i) => (
+                        <a key={i} href={url} target="_blank" rel="noopener noreferrer"
+                          className="block bg-gray-50 rounded-xl overflow-hidden border border-gray-200 hover:border-indigo-300 transition-colors">
+                          {/\.(jpe?g|png|gif|webp)$/i.test(url) ? (
+                            <img src={url} alt={`Evidence ${i + 1}`} className="w-full h-32 object-cover" />
+                          ) : (
+                            <div className="p-3 flex items-center gap-2 text-sm text-indigo-600 font-medium">
+                              <Flag size={14} /> Evidence {i + 1}
+                            </div>
+                          )}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Admin action history */}
+                {detailReport.adminAction && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                    <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-2">Admin Action Note</p>
+                    <p className="text-sm text-amber-900 whitespace-pre-wrap">{detailReport.adminAction}</p>
+                  </div>
+                )}
+
+                {/* Dates */}
+                <div className="flex flex-wrap gap-4 text-xs text-gray-500 pt-1 border-t border-gray-100">
+                  <span>Reported: {fmt(detailReport.createdAt)}</span>
+                  {detailReport.updatedAt && detailReport.updatedAt !== detailReport.createdAt && (
+                    <span>Updated: {fmt(detailReport.updatedAt)}</span>
+                  )}
+                </div>
+
+                {/* Quick action shortcut */}
+                {!['RESOLVED', 'DISMISSED', 'BANNED'].includes(detailReport.status) && (
+                  <button
+                    onClick={() => {
+                      const r = reports.find(rep => rep.id === detailReport.id);
+                      if (r) {
+                        setDetailReport(null);
+                        setActionReport(r);
+                        setActionValue('WARNING_ISSUED');
+                        setAdminNote('');
+                        setSuspendUntil('');
+                        setBanConfirm('');
+                        setActionError('');
+                      }
+                    }}
+                    className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-sm flex items-center justify-center gap-2"
+                  >
+                    <Check size={16} /> Take Action on this Report
+                  </button>
+                )}
+              </div>
+            ) : null}
+          </div>
         </div>
       )}
 

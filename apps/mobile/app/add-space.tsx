@@ -261,6 +261,8 @@ export default function AddSpaceScreen() {
 
   const EMPTY_DEFAULTS = {
     spaceName: '',
+    spaceType: '',
+    parkingFor: '',
     capacity: 1,
     address: '',
     landmark: '',
@@ -269,12 +271,15 @@ export default function AddSpaceScreen() {
     hourlyPrice: '',
     dailyRate: '',
     monthlyRate: '',
+    availability: '',
     amenities: [] as string[],
     startTime: '',
     endTime: '',
     frontPhoto: false,
     areaPhoto: false,
     areaVideo: false,
+    visibility: '',
+    docType: '',
     acceptOwnerResponsibility: false,
     acceptLegalCompliance: false,
     acceptNonViolation: false,
@@ -303,7 +308,10 @@ export default function AddSpaceScreen() {
       setUploadedDocs([]);
       setLocationQuery('');
       setMarkerCoord({ latitude: 12.9716, longitude: 77.5946 });
-    }, [isEdit])
+      setFrontPhotoUri(null);
+      setAreaPhotoUri(null);
+      setAreaVideoUri(null);
+    }, [isEdit, reset])
   );
 
   // Edit mode: fetch the existing space and prefill the form once.
@@ -618,13 +626,14 @@ export default function AddSpaceScreen() {
     let fieldsToValidate: (keyof SpaceFormData)[] = [];
 
     if (step === 1) {
-      fieldsToValidate = ['spaceName', 'spaceType', 'parkingFor', 'capacity'];
+      fieldsToValidate = ['spaceName', 'parkingFor', 'capacity'];
     } else if (step === 2) {
       fieldsToValidate = ['address', 'latitude', 'longitude'];
     } else if (step === 3) {
       fieldsToValidate = ['hourlyPrice', 'availability'];
     } else if (step === 4) {
-      fieldsToValidate = ['frontPhoto'];
+      // Space Type now lives on Step 4 — validate it here alongside the front photo.
+      fieldsToValidate = ['spaceType', 'frontPhoto'];
       const isValid = await trigger(fieldsToValidate);
       if (isValid) {
         if (watch('spaceType') !== 'Open Frontage Area' && uploadedDocs.length === 0) {
@@ -987,8 +996,6 @@ export default function AddSpaceScreen() {
               errors={errors as any}
               watch={watch as any}
               setValue={setValue as any}
-              showSpaceTypeModal={showSpaceTypeModal}
-              setShowSpaceTypeModal={setShowSpaceTypeModal}
               showParkingForModal={showParkingForModal}
               setShowParkingForModal={setShowParkingForModal}
             />

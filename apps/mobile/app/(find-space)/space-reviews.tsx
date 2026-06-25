@@ -145,7 +145,7 @@ export default function SpaceReviewsScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <PageHeader title="Reviews" />
+      <PageHeader title="Reviews" onBack={() => router.dismiss()} />
 
       {/* White header section — space name + summary card */}
       <View style={styles.headerSection}>

@@ -262,6 +262,7 @@ export default function MySpacesListScreen() {
         <StatusBar barStyle="dark-content" />
         <PageHeader
           title="My Spaces"
+          onBack={() => router.replace('/(my-spaces)')}
           right={
             <TouchableOpacity style={styles.addBtn} onPress={() => router.push('/add-space')}>
               <Plus size={18} color={Colors.primary} strokeWidth={2.5} />
@@ -280,7 +281,7 @@ export default function MySpacesListScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         <StatusBar barStyle="dark-content" />
-        <PageHeader title="My Spaces" />
+        <PageHeader title="My Spaces"  onBack={() => router.replace('/(my-spaces)')} />
         <LoadErrorState message={error} onRetry={() => fetchSpaces()} />
       </SafeAreaView>
     );
@@ -305,6 +306,7 @@ export default function MySpacesListScreen() {
       <StatusBar barStyle="dark-content" />
       <PageHeader
         title="My Spaces"
+        onBack={() => router.replace('/(my-spaces)')}
         right={
           <TouchableOpacity style={styles.addBtn} onPress={() => router.push('/add-space')}>
             <Plus size={20} color={Colors.primary} strokeWidth={2.5} />

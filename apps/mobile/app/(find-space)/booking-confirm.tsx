@@ -220,7 +220,7 @@ const BookingConfirmScreen = () => {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
 
-      <PageHeader title="Confirm Booking" onBack={() => router.back()} />
+      <PageHeader title="Confirm Booking" onBack={() => router.replace('/(find-space)')} />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <Animated.View style={{ opacity: fadeAnim }}>

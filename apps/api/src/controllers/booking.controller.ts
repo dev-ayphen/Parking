@@ -43,9 +43,10 @@ export const bookingController = {
   getMyBookings: async (req: Request, res: Response) => {
     try {
       assertAuth(req);
-      const limit = parseInt(req.query.limit as string) || 10;
-      const bookings = await bookingService.getMyBookings(req.user.id, limit);
-      res.json({ success: true, bookings });
+      const limit = parseInt(req.query.limit as string) || 50;
+      const skip = parseInt(req.query.skip as string) || 0;
+      const result = await bookingService.getMyBookings(req.user.id, limit, skip);
+      res.json({ success: true, bookings: result.bookings, total: result.total });
     } catch (error) {
       sendError(res, error);
     }
@@ -232,6 +233,27 @@ export const bookingController = {
         await adminService.notifyUser(ownerId, {
           title: 'Session completed by parker',
           message: 'The parker completed the parking session because the exit wasn\'t confirmed in time. No action is needed.',
+          category: 'BOOKING',
+          metadata: { bookingId },
+        });
+      }
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
+  // Parker taps "I've paid" after scanning the owner's UPI QR. Notifies the owner.
+  markBookingPaid: async (req: Request, res: Response) => {
+    try {
+      assertAuth(req);
+      const result = await bookingService.markBookingPaid(req.params.id, req.user.id, req);
+      const bookingId = req.params.id;
+      if (result.ownerId) {
+        emitToUser(result.ownerId, 'booking:paid-marked', { bookingId });
+        await adminService.notifyUser(result.ownerId, {
+          title: 'Parker marked payment done',
+          message: `${result.parkerName} marked their payment as completed for ${result.spaceName}. Please confirm you received it in your UPI app.`,
           category: 'BOOKING',
           metadata: { bookingId },
         });

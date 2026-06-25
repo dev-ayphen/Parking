@@ -6,12 +6,13 @@ import { io as createSocket } from 'socket.io-client';
 import {
   Search, MoreVertical, MapPin, Phone,
   CheckCircle2, XCircle, Clock, ChevronLeft, ChevronRight, Loader2, Car,
-  FileText, ShieldCheck, AlertTriangle, ExternalLink, X, Eye, MapPinIcon, Users, Zap, DollarSign, Star,
+  FileText, ShieldCheck, AlertTriangle, ExternalLink, X, Eye, MapPinIcon, Users, Zap, DollarSign, Star, Pencil,
 } from 'lucide-react';
 import { adminApi } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { API_BASE, SOCKET_URL } from '@/lib/config';
+import { useToast } from '@/components/Toast';
 
 // Compact review count: 1200 → "1.2K", 1_500_000 → "1.5M".
 const fmtCount = (n: number) => {
@@ -112,6 +113,7 @@ const tabs = [
 ] as const;
 
 export default function SpacesPage() {
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState<typeof tabs[number]>(tabs[0]);
   const [spaces, setSpaces] = useState<AdminSpace[]>([]);
   const [tally, setTally] = useState<Tally>({ all: 0, pending: 0, verified: 0, rejected: 0, blocked: 0 });
@@ -137,6 +139,7 @@ export default function SpacesPage() {
   const [detailsSpaceId, setDetailsSpaceId] = useState<number | null>(null);
   const [detailsSpace, setDetailsSpace] = useState<AdminSpace | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
+  const [editingSpace, setEditingSpace] = useState<AdminSpace | null>(null);
 
   // Rejection modal state
   const [rejectingSpaceId, setRejectingSpaceId] = useState<number | null>(null);
@@ -264,8 +267,10 @@ export default function SpacesPage() {
       setError('');
       await adminApi.approveSpace(spaceId);
       await fetchSpaces();
+      toast.success('Space approved');
     } catch (e: any) {
-      setError(e?.response?.data?.error || e?.message || 'Failed to approve');
+      const msg = e?.response?.data?.error || e?.message || 'Failed to approve';
+      setError(msg); toast.error(msg);
     } finally {
       setActionId(null);
     }
@@ -284,8 +289,10 @@ export default function SpacesPage() {
       setError('');
       await adminApi.blockSpace(spaceId);
       await fetchSpaces();
+      toast.success('Space blocked');
     } catch (e: any) {
-      setError(e?.response?.data?.error || e?.message || 'Failed to block');
+      const msg = e?.response?.data?.error || e?.message || 'Failed to block';
+      setError(msg); toast.error(msg);
     } finally {
       setActionId(null);
     }
@@ -297,8 +304,10 @@ export default function SpacesPage() {
       setError('');
       await adminApi.unblockSpace(spaceId);
       await fetchSpaces();
+      toast.success('Space unblocked');
     } catch (e: any) {
-      setError(e?.response?.data?.error || e?.message || 'Failed to unblock');
+      const msg = e?.response?.data?.error || e?.message || 'Failed to unblock';
+      setError(msg); toast.error(msg);
     } finally {
       setActionId(null);
     }
@@ -314,8 +323,10 @@ export default function SpacesPage() {
       setSpaceRejectReason('');
       setRejectingSpace(null);
       await fetchSpaces();
+      toast.success('Space rejected');
     } catch (e: any) {
-      setError(e?.response?.data?.error || e?.message || 'Failed to reject');
+      const msg = e?.response?.data?.error || e?.message || 'Failed to reject';
+      setError(msg); toast.error(msg);
     } finally {
       setActionId(null);
     }
@@ -411,8 +422,9 @@ export default function SpacesPage() {
         </div>
 
         {error && (
-          <div className="m-4 p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-sm">
-            {error}
+          <div className="m-4 p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-sm flex items-center justify-between gap-3">
+            <span>{error}</span>
+            <button onClick={() => fetchSpaces()} className="px-3 py-1.5 bg-white border border-rose-300 rounded-lg text-xs font-bold text-rose-700 hover:bg-rose-100 transition-colors shrink-0">Try Again</button>
           </div>
         )}
 
@@ -686,9 +698,15 @@ export default function SpacesPage() {
                     <h2 className="text-2xl font-bold text-gray-900">{detailsSpace.name}</h2>
                     <p className="text-sm text-gray-500 mt-1 flex items-center gap-1"><MapPin size={14} /> {detailsSpace.address}</p>
                   </div>
-                  <button onClick={() => setDetailsSpaceId(null)} className="p-2 hover:bg-gray-200 rounded-lg transition-colors">
-                    <X size={20} />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setEditingSpace(detailsSpace)}
+                      className="flex items-center gap-1.5 text-sm font-semibold text-indigo-600 hover:text-white bg-white hover:bg-indigo-600 border border-indigo-200 px-3 py-1.5 rounded-lg transition-colors">
+                      <Pencil size={14} /> Edit
+                    </button>
+                    <button onClick={() => setDetailsSpaceId(null)} className="p-2 hover:bg-gray-200 rounded-lg transition-colors">
+                      <X size={20} />
+                    </button>
+                  </div>
                 </div>
 
                 {detailsLoading ? (
@@ -995,13 +1013,13 @@ export default function SpacesPage() {
                         {(() => {
                           // fileUrl is a full signed Supabase URL (legacy relative paths get the SOCKET_URL prefix).
                           const href = /^https?:\/\//.test(doc.fileUrl) ? doc.fileUrl : `${SOCKET_URL}${doc.fileUrl}`;
-                          // Decide if the uploaded file is an image we can preview inline.
+                          // Decide if the uploaded file is an image / PDF we can preview inline.
                           const isImage = /^image\//i.test(doc.fileType || '') || /\.(jpe?g|png|webp|gif)(\?|$)/i.test(doc.fileUrl || '');
+                          const isPdf = /pdf/i.test(doc.fileType || '') || /\.pdf(\?|$)/i.test(doc.fileUrl || '');
                           return (
                             <>
-                              {/* Show the actual uploaded photo inline so the admin SEES what
-                                  was submitted without leaving the panel. PDFs/other files
-                                  fall back to the View File link below. */}
+                              {/* Show the actual uploaded file inline so the admin SEES what
+                                  was submitted without leaving the panel. */}
                               {isImage && (
                                 <a href={href} target="_blank" rel="noopener noreferrer" className="block mt-2">
                                   <img
@@ -1011,13 +1029,22 @@ export default function SpacesPage() {
                                   />
                                 </a>
                               )}
+                              {isPdf && (
+                                <div className="mt-2 rounded-xl border border-gray-200 overflow-hidden bg-gray-50">
+                                  <iframe
+                                    src={`${href}#toolbar=0`}
+                                    title={doc.documentLabel}
+                                    className="w-full h-[420px] bg-white"
+                                  />
+                                </div>
+                              )}
                               <a
                                 href={href}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center gap-1 text-xs text-indigo-600 font-semibold mt-2 hover:text-indigo-800"
                               >
-                                <ExternalLink size={11} /> {isImage ? 'Open full size' : 'View File'}
+                                <ExternalLink size={11} /> {(isImage || isPdf) ? 'Open full screen' : 'View File'}
                               </a>
                             </>
                           );
@@ -1268,6 +1295,91 @@ export default function SpacesPage() {
           </>
         )}
       </AnimatePresence>
+
+      {editingSpace && (
+        <SpaceEditModal
+          space={editingSpace}
+          onClose={() => setEditingSpace(null)}
+          onSaved={() => { toast.success('Space updated'); setEditingSpace(null); setDetailsSpaceId(null); fetchSpaces(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────
+// Admin space editor — basic fields only (not photos/documents)
+// ───────────────────────────────────────────────────────────────────────
+
+function SpaceEditModal({
+  space, onClose, onSaved,
+}: { space: AdminSpace; onClose: () => void; onSaved: () => void }) {
+  const [name, setName] = useState(space.name);
+  const [address, setAddress] = useState(space.address);
+  const [hourlyRate, setHourlyRate] = useState(String(space.hourlyRate));
+  const [capacity, setCapacity] = useState(String(space.capacity));
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  const handleSave = async () => {
+    if (!name.trim() || !address.trim()) { setErr('Name and address are required'); return; }
+    try {
+      setSaving(true);
+      setErr('');
+      await adminApi.updateSpace(space.id, {
+        name: name.trim(),
+        address: address.trim(),
+        hourlyRate: Number(hourlyRate) || 0,
+        capacity: Number(capacity) || 1,
+      });
+      onSaved();
+    } catch (e: any) {
+      setErr(e?.response?.data?.error || e?.message || 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+        <div className="border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+          <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2"><Pencil size={18} className="text-indigo-600" /> Edit Space</h2>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg"><X size={18} /></button>
+        </div>
+        <div className="p-6 space-y-4">
+          {err && <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-sm">{err}</div>}
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wide text-gray-700 mb-2">Space Name</label>
+            <input value={name} onChange={(e) => setName(e.target.value)}
+              className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wide text-gray-700 mb-2">Address</label>
+            <textarea value={address} onChange={(e) => setAddress(e.target.value)} rows={2}
+              className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 resize-none" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wide text-gray-700 mb-2">Hourly Rate (₹)</label>
+              <input type="number" min={0} value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)}
+                className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wide text-gray-700 mb-2">Capacity</label>
+              <input type="number" min={1} value={capacity} onChange={(e) => setCapacity(e.target.value)}
+                className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" />
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <button onClick={onClose} className="px-5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-100 rounded-xl transition-colors">Cancel</button>
+            <button onClick={handleSave} disabled={saving}
+              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2">
+              {saving && <Loader2 size={14} className="animate-spin" />} Save Changes
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

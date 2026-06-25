@@ -112,7 +112,9 @@ export default function Step4Documents({
     <View style={styles.formCard}>
       <Text style={styles.stepTitle}>Photos & Documents</Text>
 
-      {/* Space Type dropdown (reconfirm for document context) */}
+      {/* Space Type dropdown — shows the type chosen on Step 1 and lets the user
+          re-confirm/change it here. It's NOT a default: it reflects the existing
+          spaceType value, which is blank for a brand-new space until selected. */}
       <View style={styles.formGroup}>
         <Controller
           control={control}
@@ -174,7 +176,8 @@ export default function Step4Documents({
                           ]}
                           onPress={() => {
                             onChange(item);
-                            setValue('docType', docReqs[item]?.[0] as any);
+                            // Clear docType — user must manually select the proof type
+                            setValue('docType', '');
                             setShowSpaceTypeModal(false);
                           }}
                         >

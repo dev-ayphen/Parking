@@ -26,14 +26,19 @@ export const billingAdminService = {
       if (types && types.length > 0) where.type = { in: types };
     }
     if (search) {
+      const searchStr = String(search);
       where.OR = [
-        { txnNumber: { contains: String(search), mode: 'insensitive' } },
-        { description: { contains: String(search), mode: 'insensitive' } },
-        { entityLabel: { contains: String(search), mode: 'insensitive' } },
-        { user: { firstName: { contains: String(search), mode: 'insensitive' } } },
-        { user: { lastName: { contains: String(search), mode: 'insensitive' } } },
-        { user: { phone: { contains: String(search) } } },
-      ];
+        { txnNumber: { contains: searchStr, mode: 'insensitive' } },
+        { description: { contains: searchStr, mode: 'insensitive' } },
+        { entityLabel: { contains: searchStr, mode: 'insensitive' } },
+        { user: { firstName: { contains: searchStr, mode: 'insensitive' } } },
+        { user: { lastName: { contains: searchStr, mode: 'insensitive' } } },
+        { user: { phone: { contains: searchStr } } },
+        // Search by amount (as string)
+        { amount: isNaN(Number(searchStr)) ? undefined : Number(searchStr) },
+        // Search by payment method
+        { paymentMethod: { contains: searchStr, mode: 'insensitive' } },
+      ].filter(Boolean);
     }
 
     const [items, total] = await Promise.all([
@@ -75,7 +80,7 @@ export const billingAdminService = {
   getPaymentsOverview: async () => {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000);
 
-    const [revenue30dAgg, pendingPayoutsAgg, refundsAgg, totalBookings] = await Promise.all([
+    const [revenue30dAgg, pendingPayoutsAgg, refundsAgg, totalBookings, refundCount] = await Promise.all([
       db.transaction.aggregate({
         _sum: { amount: true },
         where: {
@@ -93,18 +98,26 @@ export const billingAdminService = {
         where: { type: 'REFUND', status: 'SUCCESS' },
       }),
       db.booking.count(),
+      // Count actual refund transactions for refund rate calculation
+      db.transaction.count({
+        where: { type: 'REFUND', status: 'SUCCESS' },
+      }),
     ]);
 
     const revenue30d = revenue30dAgg._sum.amount ?? 0;
     const pendingPayoutAmount = Math.abs(
       (pendingPayoutsAgg as any[]).reduce((sum, p) => sum + p.amount, 0)
     );
+    // Count unique accounts, skipping null/undefined properly
     const pendingPayoutAccounts = new Set(
-      (pendingPayoutsAgg as any[]).map((p) => p.userId ?? p.entityLabel ?? 'unknown')
+      (pendingPayoutsAgg as any[])
+        .map((p) => p.userId ?? p.entityLabel)
+        .filter(Boolean)
     ).size;
     const refundsAmount = Math.abs(refundsAgg._sum.amount ?? 0);
+    // Refunds rate: (total refund count / total bookings * 100)
     const refundsRate = totalBookings > 0
-      ? Number(((refundsAmount > 0 ? (pendingPayoutsAgg as any[]).length : 0) / totalBookings * 100).toFixed(1))
+      ? Number((refundCount / totalBookings * 100).toFixed(1))
       : 0;
 
     const sixtyDaysAgo = new Date(Date.now() - 60 * 86400000);
@@ -159,6 +172,12 @@ export const billingAdminService = {
     if (pending.length === 0) {
       return { success: true, processed: 0, message: 'No pending payouts', userIds: [] };
     }
+
+    // TODO: Fetch owner bank details from database for each pending payout
+    // TODO: Call Razorpay API to create transfer using bank details
+    // TODO: Track payout ID in the transaction record (store Razorpay transfer ID)
+    // For now, mark transactions as SUCCESS; in production, only update after Razorpay confirms
+
     await db.transaction.updateMany({
       where: { id: { in: pending.map((p) => p.id) } },
       data: { status: 'SUCCESS' },
@@ -224,6 +243,7 @@ export const billingAdminService = {
         status: txn.status,
         paymentMethod: txn.paymentMethod,
         entityLabel: (txn as any).entityLabel,
+        bookingId: (txn as any).bookingId || null,
         createdAt: txn.createdAt,
         user: (txn as any).user ? {
           id: (txn as any).user.id,
@@ -292,11 +312,29 @@ export const billingAdminService = {
     return { success: true, transaction: updated };
   },
 
-  exportTransactionsCsv: async () => {
+  exportTransactionsCsv: async (filters: { startDate?: string; endDate?: string } = {}) => {
+    const where: any = {};
+    if (filters.startDate || filters.endDate) {
+      where.createdAt = {};
+      if (filters.startDate) where.createdAt.gte = new Date(filters.startDate);
+      if (filters.endDate) {
+        const end = new Date(filters.endDate);
+        end.setHours(23, 59, 59, 999);
+        where.createdAt.lte = end;
+      }
+    }
     const txns = await db.transaction.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
       include: { user: { select: { firstName: true, lastName: true, phone: true } } },
     });
+
+    // Map status codes to human-readable labels
+    const statusLabels: Record<string, string> = {
+      SUCCESS: 'Completed',
+      PENDING: 'Pending',
+      FAILED: 'Failed',
+    };
 
     const header = ['Transaction ID', 'Type', 'Description', 'User/Entity', 'Amount', 'Method', 'Status', 'Date'];
     const rows = (txns as any[]).map((t) => {
@@ -310,7 +348,7 @@ export const billingAdminService = {
         user.replace(/"/g, '""'),
         t.amount,
         t.paymentMethod,
-        t.status,
+        statusLabels[t.status] || t.status,
         t.createdAt.toISOString(),
       ];
     });

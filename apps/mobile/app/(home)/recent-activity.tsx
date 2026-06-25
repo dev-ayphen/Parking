@@ -199,7 +199,7 @@ const RecentActivityScreen = () => {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <PageHeader title="Recent Activity" />
+      <PageHeader title="Recent Activity" onBack={() => router.dismiss()} />
 
       {/* Filter Pills */}
       <View style={styles.filterContainer}>

@@ -227,7 +227,7 @@ export default function SessionCompleteScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <PageHeader title="Session Complete" />
+      <PageHeader title="Session Complete"  onBack={() => router.replace('/(home)')} />
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false} contentContainerStyle={styles.contentInner}>
         {/* Success Header */}
         <View style={styles.successHeader}>

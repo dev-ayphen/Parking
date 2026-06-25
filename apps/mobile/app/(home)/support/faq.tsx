@@ -82,7 +82,7 @@ export default function FAQScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <PageHeader title="FAQ" onBack={() => router.back()} />
+      <PageHeader title="FAQ" onBack={() => router.replace('/(home)/help-support')} />
 
       {loading ? (
         <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>

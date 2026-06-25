@@ -882,6 +882,85 @@ export const adminService = {
     return { success: true, logs, total, page, limit };
   },
 
+  // ── Admin audit logs ─────────────────────────────────────────────────
+  listAuditLogs: async (params: {
+    action?: string;
+    targetType?: string;
+    search?: string;
+    from?: string;
+    to?: string;
+    page?: number;
+    limit?: number;
+  } = {}) => {
+    const page = Number(params.page || 1);
+    const limit = Math.min(Number(params.limit || 50), 200);
+    const where: any = {};
+
+    if (params.action && params.action !== 'All') where.action = params.action;
+    if (params.targetType && params.targetType !== 'All') where.targetType = params.targetType;
+    if (params.from || params.to) {
+      where.timestamp = {};
+      if (params.from) where.timestamp.gte = new Date(params.from);
+      if (params.to) {
+        const to = new Date(params.to);
+        to.setHours(23, 59, 59, 999);
+        where.timestamp.lte = to;
+      }
+    }
+    if (params.search) {
+      const term = String(params.search);
+      const or: any[] = [
+        { targetId: { contains: term, mode: 'insensitive' } },
+        { reason: { contains: term, mode: 'insensitive' } },
+      ];
+      // adminId is an unlinked Int? (no Prisma relation), so resolve matching
+      // admin emails to ids first, then filter on adminId.
+      const matchingAdmins = await db.user.findMany({
+        where: { email: { contains: term, mode: 'insensitive' } },
+        select: { id: true },
+      });
+      if (matchingAdmins.length) {
+        or.push({ adminId: { in: matchingAdmins.map((a: any) => a.id) } });
+      }
+      where.OR = or;
+    }
+
+    const [rawLogs, total] = await Promise.all([
+      db.adminActionLog.findMany({
+        where,
+        orderBy: { timestamp: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      db.adminActionLog.count({ where }),
+    ]);
+
+    // Attach admin email/name without a Prisma relation (adminId is unlinked Int?)
+    const adminIds = [...new Set(rawLogs.map((l: any) => l.adminId).filter(Boolean))] as number[];
+    const admins = adminIds.length
+      ? await db.user.findMany({
+          where: { id: { in: adminIds } },
+          select: { id: true, firstName: true, lastName: true, email: true },
+        })
+      : [];
+    const adminMap = Object.fromEntries(admins.map((a: any) => [a.id, a]));
+
+    const logs = rawLogs.map((l: any) => {
+      const admin = l.adminId ? (adminMap[l.adminId] ?? null) : null;
+      const adminEmail = admin?.email ?? null;
+      return {
+        ...l,
+        admin,
+        adminEmail,
+        // Spec-facing aliases (UI consumes these names)
+        metadata: l.payload ?? null,
+        createdAt: l.timestamp,
+      };
+    });
+
+    return { success: true, logs, total, page, limit };
+  },
+
   // ── Legal documents ──────────────────────────────────────────────────
   listLegalDocuments: async () => {
     const docs = await db.legalDocument.findMany({ orderBy: { updatedAt: 'desc' } });

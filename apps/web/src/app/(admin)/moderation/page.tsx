@@ -67,6 +67,7 @@ export default function ModerationPage() {
   const [actioningId, setActioningId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -145,25 +146,44 @@ export default function ModerationPage() {
     return () => { socket.disconnect(); };
   }, [fetchAll]);
 
+  const showSuccess = (msg: string) => {
+    setSuccessMsg(msg);
+    setTimeout(() => setSuccessMsg(''), 4000);
+  };
+
+  const handleVerifyUser = async (userId: number) => {
+    if (!window.confirm('Verify and activate this user? They will be able to log in and use the platform.')) return;
+    try {
+      setError('');
+      await adminApi.unsuspendUser(userId);
+      showSuccess('User verified and activated successfully.');
+      await fetchAll();
+    } catch (e: any) {
+      setError(e?.response?.data?.error || e?.message || 'Failed to verify user');
+    }
+  };
+
   const handleReinstate = async (userId: number) => {
     if (!window.confirm('Reinstate this user? They will be able to log in and use the platform again.')) return;
     try {
       setError('');
       await adminApi.unsuspendUser(userId);
+      showSuccess('User reinstated successfully.');
       await fetchAll();
     } catch (e: any) {
       setError(e?.response?.data?.error || e?.message || 'Failed to reinstate');
     }
   };
 
-  const handleApproveSpace = async (spaceId: number) => {
-    if (!window.confirm('Unblock this space? It will be restored to the map and become bookable again.')) return;
+  const handleUnblockSpace = async (spaceId: number) => {
+    if (!window.confirm('Are you sure you want to unblock this space?')) return;
     try {
       setError('');
-      await adminApi.approveSpace(spaceId);
+      await adminApi.unblockSpace(spaceId);
+      showSuccess('Space unblocked successfully.');
       await fetchAll();
     } catch (e: any) {
-      setError(e?.response?.data?.error || e?.message || 'Failed to approve');
+      setError(e?.response?.data?.error || e?.message || 'Failed to unblock space');
     }
   };
 
@@ -214,6 +234,11 @@ export default function ModerationPage() {
 
       {error && (
         <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-sm">{error}</div>
+      )}
+      {successMsg && (
+        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 text-sm flex items-center gap-2">
+          <CheckCircle2 size={16} className="flex-shrink-0" />{successMsg}
+        </div>
       )}
 
       <motion.div key={activeTab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
@@ -266,6 +291,13 @@ export default function ModerationPage() {
                               <a href={`/users?focus=${user.id}`} className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="View Profile">
                                 <FileText size={18} />
                               </a>
+                              <button
+                                onClick={() => handleVerifyUser(user.id)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors border border-emerald-200"
+                                title="Verify & Activate"
+                              >
+                                <CheckCircle2 size={14} /> Verify
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -355,8 +387,11 @@ export default function ModerationPage() {
                             <td className="p-4 font-semibold text-gray-900">{s.name}</td>
                             <td className="p-4 text-sm text-gray-600">{s.ownerName}</td>
                             <td className="p-4 text-right">
-                              <button onClick={() => handleApproveSpace(s.id)} className="text-sm font-medium text-emerald-600 hover:text-emerald-800">
-                                <CheckCircle2 size={14} className="inline mr-1" /> Unblock
+                              <button
+                                onClick={() => handleUnblockSpace(s.id)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors border border-emerald-200"
+                              >
+                                <CheckCircle2 size={14} /> Unblock
                               </button>
                             </td>
                           </tr>

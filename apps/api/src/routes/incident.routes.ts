@@ -21,6 +21,28 @@ const resolveEvidenceUrls = async (urls: unknown): Promise<string[]> => {
   );
 };
 
+// Get my incidents (parker side — my reports)
+router.get('/my', authenticate, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const incidents = await db.incidentReport.findMany({
+      where: { reportedByUserId: userId },
+      include: { booking: { select: { id: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+    const withSigned = await Promise.all(
+      incidents.map(async (inc) => ({
+        ...inc,
+        evidenceUrls: await resolveEvidenceUrls(inc.evidenceUrls),
+      }))
+    );
+    res.json({ success: true, incidents: withSigned });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
 // Report an incident (parker side)
 router.post('/', authenticate, async (req, res) => {
   try {

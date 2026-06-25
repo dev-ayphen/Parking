@@ -6,32 +6,6 @@ import FormInput from '../FormInput';
 import { styles } from './addSpaceStyles';
 import { Colors } from '../../theme';
 
-const SPACE_TYPES = [
-  'Independent House',
-  'Rented House',
-  'Apartment Owner Slot',
-  'Apartment Tenant Slot',
-  'Gated Villa',
-  'Shop Front Parking',
-  'Office Parking',
-  'Vacant Private Land',
-  'Inside Compound',
-  'Open Frontage Area',
-];
-
-const SPACE_DOC_REQUIREMENTS: Record<string, string[]> = {
-  'Independent House': ['EB Bill', 'Property Tax', 'Water Bill'],
-  'Rented House': ['Rental Agreement', 'EB Bill'],
-  'Apartment Owner Slot': ['Maintenance Bill', 'Parking Allocation Photo'],
-  'Apartment Tenant Slot': ['Rental Agreement', 'Parking Permission'],
-  'Gated Villa': ['Property Tax', 'EB Bill'],
-  'Shop Front Parking': ['Shop License', 'GST Certificate', 'Rental Agreement'],
-  'Office Parking': ['Company ID', 'Parking Permission'],
-  'Vacant Private Land': ['Land Tax Receipt', 'Patta Copy'],
-  'Inside Compound': ['Address Proof', 'Compound Photos'],
-  'Open Frontage Area': [],
-};
-
 export type SpaceFormData = {
   spaceName: string;
   spaceType: string;
@@ -63,8 +37,6 @@ type Props = {
   errors: FieldErrors<SpaceFormData>;
   watch: UseFormWatch<SpaceFormData>;
   setValue: UseFormSetValue<SpaceFormData>;
-  showSpaceTypeModal: boolean;
-  setShowSpaceTypeModal: (v: boolean) => void;
   showParkingForModal: boolean;
   setShowParkingForModal: (v: boolean) => void;
 };
@@ -74,8 +46,6 @@ export default function Step1BasicDetails({
   errors,
   watch,
   setValue,
-  showSpaceTypeModal,
-  setShowSpaceTypeModal,
   showParkingForModal,
   setShowParkingForModal,
 }: Props) {
@@ -98,93 +68,6 @@ export default function Step1BasicDetails({
               onBlur={onBlur}
               error={errors.spaceName?.message}
             />
-          )}
-        />
-      </View>
-
-      <View style={styles.formGroup}>
-        <Controller
-          control={control}
-          name="spaceType"
-          render={({ field: { onChange, onBlur, value } }) => (
-            <>
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={() => setShowSpaceTypeModal(true)}
-                style={styles.dropdownWrapper}
-              >
-                <View pointerEvents="none">
-                  <FormInput
-                    label="SPACE TYPE"
-                    required
-                    placeholder="Select space type..."
-                    value={value}
-                    onChangeText={onChange}
-                    onBlur={onBlur}
-                    editable={false}
-                    error={errors.spaceType?.message}
-                  />
-                </View>
-                <View style={styles.dropdownChevron}>
-                  <ChevronDown size={18} color={Colors.textSecondary} />
-                </View>
-              </TouchableOpacity>
-
-              <Modal
-                visible={showSpaceTypeModal}
-                transparent
-                animationType="slide"
-                onRequestClose={() => setShowSpaceTypeModal(false)}
-              >
-                <TouchableOpacity
-                  style={styles.modalOverlay}
-                  activeOpacity={1}
-                  onPress={() => setShowSpaceTypeModal(false)}
-                >
-                  <View style={styles.modalSheet}>
-                    <View style={styles.modalHandle} />
-                    <View style={styles.modalHeader}>
-                      <Text style={styles.modalTitle}>Select Space Type</Text>
-                      <TouchableOpacity
-                        style={styles.modalClose}
-                        onPress={() => setShowSpaceTypeModal(false)}
-                      >
-                        <X size={18} color={Colors.textSecondary} />
-                      </TouchableOpacity>
-                    </View>
-                    <FlatList
-                      data={SPACE_TYPES}
-                      keyExtractor={(item) => item}
-                      renderItem={({ item }) => (
-                        <TouchableOpacity
-                          style={[
-                            styles.modalOption,
-                            value === item && styles.modalOptionActive,
-                          ]}
-                          onPress={() => {
-                            onChange(item);
-                            // Reset docType when space type changes (compliance requirement)
-                            setValue('docType', SPACE_DOC_REQUIREMENTS[item]?.[0] as any);
-                            setShowSpaceTypeModal(false);
-                          }}
-                        >
-                          <Text
-                            style={[
-                              styles.modalOptionText,
-                              value === item && styles.modalOptionTextActive,
-                            ]}
-                          >
-                            {item}
-                          </Text>
-                          {value === item && <CheckCircle size={18} color={Colors.primary} />}
-                        </TouchableOpacity>
-                      )}
-                      showsVerticalScrollIndicator={false}
-                    />
-                  </View>
-                </TouchableOpacity>
-              </Modal>
-            </>
           )}
         />
       </View>

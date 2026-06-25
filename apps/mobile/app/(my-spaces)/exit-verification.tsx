@@ -13,7 +13,7 @@ import {View,
   DeviceEventEmitter} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
-import { User, Car, Clock, Star, CheckCircle2 } from 'lucide-react-native';
+import { User, Car, Clock, Star, CheckCircle2, BadgeCheck, AlertCircle } from 'lucide-react-native';
 import PageHeader from '../../components/PageHeader';
 import { api } from '../../services/api';
 import { useNetworkStore } from '../../store/networkStore';
@@ -131,12 +131,33 @@ export default function ExitVerificationScreen() {
       Alert.alert('Invalid Time', 'Please enter a valid exit time (HH:MM in 24hr format).');
       return;
     }
-    
+
     if (booking?.sessionStartedAt && exitDate.getTime() < new Date(booking.sessionStartedAt).getTime()) {
       Alert.alert('Invalid Time', 'Exit time cannot be before entry time.');
       return;
     }
 
+    // Guard: if the parker never tapped "I've paid" via the UPI QR, warn the owner
+    // before closing the session so they don't accidentally finish before collecting.
+    // (The app never verifies the actual transfer — this is just a self-declared
+    // marker, so the owner may still complete after collecting cash.)
+    if (!booking?.parkerMarkedPaidAt) {
+      Alert.alert(
+        'Parker hasn’t marked as paid',
+        `The parker has not confirmed payment of ₹${getDurationStats().amount}. Make sure you’ve received the amount before completing.`,
+        [
+          { text: 'Go back', style: 'cancel' },
+          { text: 'Complete anyway', style: 'destructive', onPress: () => doRelease(exitDate) },
+        ],
+      );
+      return;
+    }
+
+    await doRelease(exitDate);
+  };
+
+  // The actual release call (extracted so the unpaid-guard dialog can defer to it).
+  const doRelease = async (exitDate: Date) => {
     try {
       setActionLoading(true);
       const data = await api.put(`/bookings/${bookingId}/release`, { exitTime: exitDate.toISOString() });
@@ -195,7 +216,7 @@ export default function ExitVerificationScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <PageHeader title="Exit Verification" onBack={() => router.back()} />
+        <PageHeader title="Exit Verification" onBack={() => router.replace('/(my-spaces)')} />
         <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>
       </SafeAreaView>
     );
@@ -204,7 +225,7 @@ export default function ExitVerificationScreen() {
   if (error || !booking) {
     return (
       <SafeAreaView style={styles.container}>
-        <PageHeader title="Exit Verification" onBack={() => router.back()} />
+        <PageHeader title="Exit Verification" onBack={() => router.replace('/(my-spaces)')} />
         <View style={styles.center}>
           <Text style={styles.errorText}>{error || 'Booking not found'}</Text>
           <TouchableOpacity style={styles.btnPrimary} onPress={fetchBooking}>
@@ -217,10 +238,19 @@ export default function ExitVerificationScreen() {
 
   const stats = getDurationStats();
 
+  // Payment reconciliation. The parker pays the booking ESTIMATE (totalAmount) via
+  // the UPI QR during the session; the FINAL fee is the duration-based amount we
+  // compute here. They can differ if the parker overstayed or left early, so we
+  // surface the gap to the owner. This is purely informational — the owner's
+  // "Complete Session" still records `stats.amount` as the amount of record.
+  const markedPaid = !!booking?.parkerMarkedPaidAt;
+  const paidEstimate = Math.round(Number(booking?.totalAmount) || 0);
+  const balance = stats.amount - paidEstimate; // >0 collect more, <0 overpaid, 0 settled
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <PageHeader title="Exit Verification" onBack={() => router.back()} />
+      <PageHeader title="Exit Verification" onBack={() => router.replace('/(my-spaces)')} />
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
         {/* Session Details Card */}
@@ -325,6 +355,49 @@ export default function ExitVerificationScreen() {
             <Text style={styles.calcTotalLabel}>Parking Fee</Text>
             <Text style={styles.calcTotalVal}>₹{stats.amount}</Text>
           </View>
+
+          {/* Payment status — whether the parker self-declared payment via the UPI
+              QR, and (if so) whether the estimate they paid covers the final fee. */}
+          <View style={styles.payDivider} />
+          {markedPaid ? (
+            <>
+              <View style={styles.payStatusRow}>
+                <View style={styles.payStatusLeft}>
+                  <BadgeCheck size={18} color={Colors.success} strokeWidth={2.2} />
+                  <Text style={styles.payStatusPaid}>Parker marked as paid</Text>
+                </View>
+                <Text style={styles.payPaidAmt}>₹{paidEstimate}</Text>
+              </View>
+              {balance > 0 ? (
+                <View style={[styles.payNote, styles.payNoteWarn]}>
+                  <AlertCircle size={14} color={Colors.warningAlt} strokeWidth={2.2} />
+                  <Text style={styles.payNoteWarnText}>
+                    Collect ₹{balance} more — they parked longer than the estimate.
+                  </Text>
+                </View>
+              ) : balance < 0 ? (
+                <View style={[styles.payNote, styles.payNoteInfo]}>
+                  <AlertCircle size={14} color={Colors.textSecondary} strokeWidth={2.2} />
+                  <Text style={styles.payNoteInfoText}>
+                    Parker paid ₹{-balance} more than the final fee.
+                  </Text>
+                </View>
+              ) : (
+                <View style={[styles.payNote, styles.payNoteOk]}>
+                  <CheckCircle2 size={14} color={Colors.success} strokeWidth={2.2} />
+                  <Text style={styles.payNoteOkText}>Fully paid — no balance to collect.</Text>
+                </View>
+              )}
+            </>
+          ) : (
+            <View style={styles.payStatusRow}>
+              <View style={styles.payStatusLeft}>
+                <AlertCircle size={18} color={Colors.textMuted} strokeWidth={2.2} />
+                <Text style={styles.payStatusUnpaid}>Not marked paid yet</Text>
+              </View>
+              <Text style={styles.payCollectAmt}>Collect ₹{stats.amount}</Text>
+            </View>
+          )}
         </View>
       </ScrollView>
 
@@ -436,6 +509,22 @@ const styles = StyleSheet.create({
   calcTotalLabel: { fontSize: FontSize.base, color: Colors.textPrimary, fontWeight: FontWeight.bold },
   calcTotalVal: { fontSize: FontSize['3xl'], color: Colors.primary, fontWeight: FontWeight.extrabold },
   minChargeNote: { fontSize: FontSize.xs, color: Colors.warningAlt, fontWeight: FontWeight.semibold, marginTop: -6, marginBottom: Spacing.lg },
+
+  // Payment status block inside the Summary card
+  payDivider: { height: 1, backgroundColor: Colors.borderLighter, marginTop: Spacing.lg, marginBottom: Spacing.lg },
+  payStatusRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  payStatusLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flex: 1 },
+  payStatusPaid: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: Colors.success },
+  payStatusUnpaid: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.textSecondary },
+  payPaidAmt: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  payCollectAmt: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: Colors.warningAlt },
+  payNote: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.md, paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md, borderRadius: BorderRadius.sm },
+  payNoteWarn: { backgroundColor: Colors.warningBgAlt },
+  payNoteWarnText: { flex: 1, fontSize: FontSize.xs, fontWeight: FontWeight.semibold, color: Colors.warningAlt },
+  payNoteOk: { backgroundColor: Colors.successBg },
+  payNoteOkText: { flex: 1, fontSize: FontSize.xs, fontWeight: FontWeight.semibold, color: Colors.success },
+  payNoteInfo: { backgroundColor: Colors.screenBg },
+  payNoteInfoText: { flex: 1, fontSize: FontSize.xs, fontWeight: FontWeight.semibold, color: Colors.textSecondary },
 
   footer: { padding: Spacing['3xl'], backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: Colors.borderLight },
   btnPrimary: { backgroundColor: Colors.primary, borderRadius: BorderRadius.lg, paddingVertical: Spacing['2xl'], alignItems: 'center' },

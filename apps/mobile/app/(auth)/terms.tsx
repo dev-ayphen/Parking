@@ -34,7 +34,7 @@ const TermsScreen = () => {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
-        <PageHeader title="Terms of Service" />
+        <PageHeader title="Terms of Service"  onBack={() => router.replace('/(auth)/login')} />
         <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>
       </SafeAreaView>
     );
@@ -45,7 +45,7 @@ const TermsScreen = () => {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
-        <PageHeader title="Terms of Service" />
+        <PageHeader title="Terms of Service"  onBack={() => router.replace('/(auth)/login')} />
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           <View style={styles.textContainer}>
             {serverVersion ? <Text style={styles.version}>Version {serverVersion}</Text> : null}
@@ -60,7 +60,7 @@ const TermsScreen = () => {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
-      <PageHeader title="Terms of Service" />
+      <PageHeader title="Terms of Service"  onBack={() => router.replace('/(auth)/login')} />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.textContainer}>

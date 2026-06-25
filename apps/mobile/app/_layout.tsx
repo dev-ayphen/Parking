@@ -178,7 +178,7 @@ export default function RootLayout() {
         <Stack
           screenOptions={{
             headerShown: false,
-            animation: 'none',
+            animation: 'slide_from_right',
             contentStyle: { backgroundColor: 'transparent' },
           }}
           initialRouteName="(auth)"
@@ -187,7 +187,7 @@ export default function RootLayout() {
             name="(auth)"
             options={{
               headerShown: false,
-              animation: 'none',
+              animation: 'slide_from_right',
               contentStyle: { backgroundColor: 'transparent' },
             }}
           />
@@ -195,7 +195,7 @@ export default function RootLayout() {
             name="(home)"
             options={{
               headerShown: false,
-              animation: 'none',
+              animation: 'slide_from_right',
               contentStyle: { backgroundColor: 'transparent' },
             }}
           />

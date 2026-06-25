@@ -89,7 +89,7 @@ export const userAdminService = {
         spacesOwned: { select: { id: true, name: true, status: true, hourlyRate: true } },
         vehicles: { select: { id: true, brandModel: true, licensePlate: true, vehicleType: true, frontPhotoUrl: true, sidePhotoUrl: true } },
         bookingsAsParker: {
-          select: { id: true, status: true, totalAmount: true, createdAt: true, space: { select: { name: true } } },
+          select: { id: true, status: true, totalAmount: true, duration: true, createdAt: true, space: { select: { name: true } } },
           orderBy: { createdAt: 'desc' },
           take: 10,
         },
@@ -103,6 +103,14 @@ export const userAdminService = {
     });
 
     if (!user) throw new Error('User not found');
+
+    // Recent transactions for the Activity timeline (last 10, newest first).
+    const transactions = await db.transaction.findMany({
+      where: { userId },
+      select: { id: true, txnNumber: true, type: true, amount: true, status: true, description: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+    });
 
     const ratings = user.ratingsReceived;
     const avgRating = ratings.length > 0
@@ -125,12 +133,13 @@ export const userAdminService = {
         phone: user.phone,
         photoUrl: user.photoUrl,
         role: user.role,
-        // Billing profile (for subscription invoices / GST) — admin-visible.
+        // Billing profile (for subscription invoices / GST / UPI) — admin-visible.
         billing: {
           billingName: user.billingName || null,
           billingEmail: user.billingEmail || null,
           billingAddress: user.billingAddress || null,
           gstin: user.gstin || null,
+          upiId: user.upiId || null,
         },
         type: formatUserType(user.role, user.spacesOwned.length > 0),
         status: user.status,
@@ -159,7 +168,17 @@ export const userAdminService = {
           space: b.space?.name ?? '—',
           status: b.status,
           amount: b.totalAmount,
+          duration: b.duration,
           date: b.createdAt,
+        })),
+        recentTransactions: transactions.map((t) => ({
+          id: t.id,
+          txnNumber: t.txnNumber,
+          type: t.type,
+          amount: t.amount,
+          status: t.status,
+          description: t.description,
+          date: t.createdAt,
         })),
         subscriptions: user.subscriptions,
       },

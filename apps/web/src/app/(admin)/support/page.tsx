@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, MoreVertical, MessageSquare, X,
@@ -147,6 +148,7 @@ function SlaBadge({ slaDueAt, status, size = 'sm' }: { slaDueAt: string | null; 
 }
 
 export default function SupportPage() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<typeof tabs[number]>(tabs[0]);
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [stats, setStats] = useState<Stats>({ open: 0, in_progress: 0, resolved: 0, closed: 0, total: 0 });
@@ -288,11 +290,11 @@ export default function SupportPage() {
             ))}
           </div>
 
-          <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-4">
             <select
               value={categoryFilter}
               onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
-              className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+              className="px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 min-w-max"
             >
               <option value="">All Categories</option>
               {CATEGORY_OPTIONS.map((c) => (
@@ -302,7 +304,7 @@ export default function SupportPage() {
             <select
               value={priorityFilter}
               onChange={(e) => { setPriorityFilter(e.target.value); setPage(1); }}
-              className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+              className="px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 min-w-max"
             >
               <option value="">All Priorities</option>
               <option value="URGENT">Urgent</option>
@@ -310,14 +312,14 @@ export default function SupportPage() {
               <option value="NORMAL">Normal</option>
               <option value="LOW">Low</option>
             </select>
-            <div className="relative">
+            <div className="relative flex-1 max-w-md">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
                 placeholder="Search tickets..."
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-                className="pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all w-64"
+                className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
               />
             </div>
           </div>
@@ -541,6 +543,7 @@ function TicketDetailsModal({ ticket, onClose, onChanged, onTicketUpdate }: {
   onChanged: () => void;
   onTicketUpdate: (t: TicketDetails) => void;
 }) {
+  const router = useRouter();
   const [replyText, setReplyText] = useState('');
   const [sending, setSending] = useState(false);
   const [updatingPriority, setUpdatingPriority] = useState(false);
@@ -689,7 +692,18 @@ function TicketDetailsModal({ ticket, onClose, onChanged, onTicketUpdate }: {
             </div>
             <h2 className="text-xl font-bold text-gray-900 truncate">{ticket.subject}</h2>
             <p className="text-xs text-gray-500 mt-1">
-              Opened by {ticket.user?.name || 'Unknown'} · {formatDate(ticket.createdAt)}
+              Opened by{' '}
+              {ticket.user?.id ? (
+                <button
+                  onClick={() => { onClose(); router.push(`/admin/users?focus=${ticket.user!.id}`); }}
+                  className="text-indigo-600 underline hover:text-indigo-700 font-medium"
+                >
+                  {ticket.user.name || 'Unknown'}
+                </button>
+              ) : (
+                ticket.user?.name || 'Unknown'
+              )}{' '}
+              · {formatDate(ticket.createdAt)}
             </p>
             <div className="mt-2">
               <SlaBadge slaDueAt={ticket.slaDueAt} status={ticket.status} size="md" />

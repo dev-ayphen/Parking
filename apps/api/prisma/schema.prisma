@@ -28,6 +28,11 @@ model User {
   billingAddress      String?
   gstin               String?
 
+  // Owner's UPI ID (e.g. "name@okhdfcbank"). When set, the parker's active-session
+  // screen renders a UPI QR (upi://pay?pa=<upiId>&am=<amount>) so they can pay the
+  // owner directly. The app NEVER holds money — UPI handles the transfer end-to-end.
+  upiId               String?
+
   // Expo push token — stored on app open, used for background push notifications
   expoPushToken       String?
 
@@ -313,6 +318,10 @@ model Booking {
   // null = the parker never updated it (still the original ETA). When set, the
   // owner's "Parker is on the way" card highlights the new time as updated.
   etaUpdatedAt      DateTime?
+  // Set when the parker taps "I've paid" after scanning the owner's UPI QR. This
+  // is a self-declared marker only — the app does NOT process the payment, so the
+  // owner still confirms receipt in their own UPI app. Shown on the owner's screen.
+  parkerMarkedPaidAt DateTime?
   // Hourly rate SNAPSHOT taken at booking creation. The final bill is computed
   // from this, NOT the space's live hourlyRate — so an owner editing their rate
   // mid-session can never change what an already-booked parker is charged.

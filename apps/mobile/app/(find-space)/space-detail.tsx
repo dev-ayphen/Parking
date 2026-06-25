@@ -399,7 +399,7 @@ const SpaceDetailScreen = () => {
 
       <PageHeader
         title="Space Details"
-        onBack={() => router.back()}
+        onBack={() => router.replace('/(find-space)')}
       />
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>

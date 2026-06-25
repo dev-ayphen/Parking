@@ -92,7 +92,7 @@ const BillingHistoryScreen = () => {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
-      <PageHeader title="Billing History" />
+      <PageHeader title="Billing History"  onBack={() => router.replace('/(my-spaces)')} />
 
       {loading ? (
         <View style={styles.center}>

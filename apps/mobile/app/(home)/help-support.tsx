@@ -20,6 +20,7 @@ import {
   ChevronDown,
   ChevronUp,
   X,
+  MessageSquare,
 } from 'lucide-react-native';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
 
@@ -30,20 +31,28 @@ interface FAQItem {
 
 const FAQ_DATA: FAQItem[] = [
   {
+    question: 'How do I book a parking space?',
+    answer: "Open the 'Find Parking' tab, search for available spaces, select your vehicle and dates, and confirm your booking. You'll receive a confirmation with space details and entry instructions.",
+  },
+  {
     question: 'How do I cancel my booking?',
-    answer: "Go to your Bookings tab, select the active booking you wish to cancel, and click 'Cancel Booking'. Refunds are processed automatically based on the cancellation policy.",
+    answer: "Go to 'My Bookings', select the booking you wish to cancel, and tap 'Cancel Booking'. Cancellations made before the booking start time are eligible for refunds based on the cancellation policy.",
   },
   {
-    question: 'How to request a refund?',
-    answer: 'Refunds for eligible cancellations are credited directly to your original payment method within 5-7 business days. You can check the status of a cancelled booking under My Bookings.',
+    question: 'What if I have an issue during my parking session?',
+    answer: "If you experience any issues like vehicle damage or unsafe conditions, you can report an incident immediately from your active session. Go to the session card and tap 'Report Incident' to document the issue with photos and details.",
   },
   {
-    question: 'How to add a new parking space?',
-    answer: "Navigate to 'My Spaces' and click 'Add Space'. Follow the step-by-step wizard to upload photos, set pricing, define availability, and submit for verification.",
+    question: 'How do I rate and review a space?',
+    answer: "After your parking session ends, you'll see the rating screen. Rate the space (1-5 stars) and share your experience. Your reviews help other parkers find quality spaces and help owners improve their listings.",
   },
   {
-    question: 'What are the payout cycles for hosts?',
-    answer: 'Payouts are aggregated weekly and deposited directly into your linked bank account every Monday. You can manage your billing and bank details from My Spaces › Manage Subscription.',
+    question: 'How do I add and manage my vehicles?',
+    answer: "Go to 'Find Parking' tab and tap the 'Vehicle' section. You can add, edit, and delete your vehicles here. Make sure to add your primary vehicle before booking so it appears during the booking process.",
+  },
+  {
+    question: 'How do I contact support if I need help?',
+    answer: "Visit 'Help & Support' from the menu. You can browse FAQs, read detailed articles, or open a support ticket to reach our team. We typically respond within a few hours.",
   },
 ];
 
@@ -65,7 +74,7 @@ export default function HelpSupportScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <PageHeader title="Help & Support" />
+      <PageHeader title="Help & Support"  onBack={() => router.replace('/(home)')} />
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
         <View style={styles.searchContainer}>
@@ -167,17 +176,25 @@ export default function HelpSupportScreen() {
         </View>
 
         <View style={styles.contactCard}>
-          <Text style={styles.contactTitle}>Still need help?</Text>
-          <Text style={styles.contactDesc}>
-            Our support team is always ready to assist you with any issues.
-          </Text>
-          <TouchableOpacity
-            style={styles.contactButton}
-            onPress={() => router.push('/(home)/support/create-ticket')}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.contactButtonText}>Contact Support</Text>
-          </TouchableOpacity>
+          <View style={styles.contactGradient}>
+            <View style={styles.contactIcon}>
+              <HelpCircle size={32} color={Colors.white} strokeWidth={1.5} />
+            </View>
+            <View style={styles.contactContent}>
+              <Text style={styles.contactTitle}>Can't find the answer?</Text>
+              <Text style={styles.contactDesc}>
+                Our dedicated support team is available 24/7 to help resolve your issue.
+              </Text>
+              <TouchableOpacity
+                style={styles.contactButton}
+                onPress={() => router.push('/(home)/support/create-ticket')}
+                activeOpacity={0.85}
+              >
+                <Ticket size={16} color={Colors.white} style={{ marginRight: Spacing.sm }} />
+                <Text style={styles.contactButtonText}>Open Support Ticket</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -333,11 +350,40 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
   },
   contactCard: {
-    backgroundColor: Colors.surfaceBg,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing['4xl'],
-    alignItems: 'center',
     marginBottom: Spacing['7xl'],
+    paddingHorizontal: Spacing.xs,
+  },
+  contactGradient: {
+    backgroundColor: Colors.primaryBg,
+    borderRadius: BorderRadius.xl,
+    padding: Spacing['4xl'],
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing['3xl'],
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.06,
+        shadowRadius: 6,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  contactIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: BorderRadius.lg,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    marginTop: Spacing.xs,
+  },
+  contactContent: {
+    flex: 1,
   },
   contactTitle: {
     fontSize: FontSize.xl,
@@ -346,22 +392,22 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   contactDesc: {
-    fontSize: FontSize.md,
+    fontSize: FontSize.sm,
     color: Colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: Spacing['4xl'],
+    marginBottom: Spacing['3xl'],
     lineHeight: 20,
   },
   contactButton: {
-    backgroundColor: Colors.primaryBg,
-    paddingHorizontal: Spacing['4xl'],
-    paddingVertical: Spacing.xl,
+    backgroundColor: Colors.primary,
+    paddingHorizontal: Spacing['3xl'],
+    paddingVertical: Spacing.lg,
     borderRadius: BorderRadius.button,
-    width: '100%',
     alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
   },
   contactButtonText: {
-    color: Colors.primary,
+    color: Colors.white,
     fontSize: FontSize.md,
     fontWeight: FontWeight.bold,
   },

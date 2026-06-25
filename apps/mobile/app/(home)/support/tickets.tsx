@@ -108,7 +108,7 @@ export default function MySupportTicketsScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <PageHeader title="My Support Tickets" onBack={() => router.back()} />
+      <PageHeader title="My Support Tickets" onBack={() => router.replace('/(home)/help-support')} />
 
       <View style={styles.tabsContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsScroll}>

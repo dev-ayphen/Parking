@@ -21,6 +21,7 @@ import { useNetworkStore, NETWORK_RECONNECTED } from '../../store/networkStore';
 import PageHeader from '../../components/PageHeader';
 import ReportSubmitted from '../../components/ReportSubmitted';
 import SessionStepper, { type SessionStep } from '../../components/FindSpace/SessionStepper';
+import UpiPayCard from '../../components/UpiPayCard';
 import { useRealtime } from '../../hooks/useRealtime';
 import { useSessionBarStore, computeEndsAtISO, minsUntil } from '../../store/sessionBarStore';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
@@ -41,6 +42,7 @@ export default function ActiveSessionScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [parkerUpiId, setParkerUpiId] = useState<string | null>(null); // Parker's saved UPI for refunds
 
   const [generatedOtp, setGeneratedOtp] = useState<string | null>(null);
   const [generatingOtp, setGeneratingOtp] = useState(false);
@@ -78,6 +80,18 @@ export default function ActiveSessionScreen() {
       setRefreshing(false);
     }
   }, [bookingId]);
+
+  // Load parker's billing profile (includes saved UPI ID for refunds)
+  useEffect(() => {
+    (async () => {
+      try {
+        const profile = await api.get('/users/me/billing');
+        setParkerUpiId(profile?.billing?.upiId || null);
+      } catch {
+        // Silent — optional billing profile
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     fetchBooking();
@@ -283,6 +297,18 @@ export default function ActiveSessionScreen() {
       Alert.alert('Error', err.message);
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  // Parker self-declares "I've paid" after scanning the owner's UPI QR. Notifies
+  // the owner; the app does NOT verify the transfer (owner confirms in their app).
+  const handleMarkPaid = async () => {
+    if (!useNetworkStore.getState().requireOnline()) return;
+    try {
+      await api.put(`/bookings/${bookingId}/mark-paid`);
+      await fetchBooking();
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Could not mark as paid.');
     }
   };
 
@@ -613,6 +639,26 @@ export default function ActiveSessionScreen() {
                 <Text style={styles.contactBtnText}>Message</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        )}
+
+        {/* Pay the owner — UPI QR generated from the owner's UPI ID. Shown once the
+            session is active (parker can pay anytime during the session). The app
+            never processes the payment; it goes directly owner ↔ parker. */}
+        {isActive && !isLeaving && (
+          <View style={{ marginTop: Spacing.xl }}>
+            <UpiPayCard
+              upiId={booking.space?.owner?.upiId}
+              payeeName={booking.space?.owner?.name}
+              amount={booking.totalAmount ?? 0}
+              alreadyPaid={!!booking.parkerMarkedPaidAt}
+              onMarkPaid={handleMarkPaid}
+              parkerUpiId={parkerUpiId}
+              onSaveParkerUpi={async (upiId: string) => {
+                await api.put('/users/me/billing', { upiId });
+                setParkerUpiId(upiId);
+              }}
+            />
           </View>
         )}
 

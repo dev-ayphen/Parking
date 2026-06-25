@@ -238,7 +238,7 @@ const ManageSubscriptionScreen = () => {
     return (
       <SafeAreaView style={styles.safeArea}>
         <StatusBar barStyle="dark-content" />
-        <PageHeader title="Subscription" />
+        <PageHeader title="Subscription"  onBack={() => router.replace('/(my-spaces)')} />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.primary} />
         </View>
@@ -275,7 +275,7 @@ const ManageSubscriptionScreen = () => {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
-      <PageHeader title="Subscription" />
+      <PageHeader title="Subscription"  onBack={() => router.replace('/(my-spaces)')} />
 
       <ScrollView
         style={styles.container}

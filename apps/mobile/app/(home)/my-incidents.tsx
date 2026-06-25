@@ -77,8 +77,13 @@ export default function MyIncidentsScreen() {
   }, [fetchIncidents]);
 
   useEffect(() => {
-    const sub = DeviceEventEmitter.addListener(NETWORK_RECONNECTED, () => fetchIncidents(true));
-    return () => sub.remove();
+    const reconnectSub = DeviceEventEmitter.addListener(NETWORK_RECONNECTED, () => fetchIncidents(true));
+    // Live-refresh when an admin reviews one of the user's incidents.
+    const updatedSub = DeviceEventEmitter.addListener('incident:updated', () => fetchIncidents(true));
+    return () => {
+      reconnectSub.remove();
+      updatedSub.remove();
+    };
   }, [fetchIncidents]);
 
   const fmtDate = (iso: string) =>

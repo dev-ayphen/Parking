@@ -8,11 +8,12 @@ import {View,
   StatusBar,
   ActivityIndicator,
   Alert,
+  Image,
   DeviceEventEmitter} from 'react-native';
 import { toast } from '../../utils/toast';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { Plus, MapPin, Edit3, Trash2, Clock, CheckCircle, XCircle, AlertTriangle, Car, IndianRupee, BarChart3 } from 'lucide-react-native';
+import { Plus, MapPin, Edit3, Trash2, Clock, CheckCircle, XCircle, AlertTriangle, Car, IndianRupee, BarChart3, ShieldCheck, Eye } from 'lucide-react-native';
 import { PageHeader, LoadErrorState } from '../../components';
 import { api } from '../../services/api';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
@@ -33,17 +34,24 @@ interface MySpace {
   id: number;
   name: string;
   address: string;
+  landmark: string | null;
   spaceType: string;
   parkingFor: string;
   capacity: number;
   hourlyRate: number;
   dailyRate: number | null;
+  monthlyRate: number | null;
   availability: string;
+  startTime: string | null;
+  endTime: string | null;
+  visibility: string | null;
   status: SpaceStatus;
   amenities: string[];
+  frontPhotoUrl: string | null;
   bookingsCount: number;
   createdAt: string;
   rejectionReason?: string;
+  consentVerified: boolean;
 }
 
 export default function MySpacesListScreen() {
@@ -69,17 +77,28 @@ export default function MySpacesListScreen() {
         id: s.id,
         name: s.name,
         address: s.address,
+        landmark: s.landmark ?? null,
         spaceType: s.spaceType,
         parkingFor: s.parkingFor,
         capacity: s.capacity,
         hourlyRate: s.hourlyRate,
-        dailyRate: s.dailyRate,
+        dailyRate: s.dailyRate ?? null,
+        monthlyRate: s.monthlyRate ?? null,
         availability: s.availability,
+        startTime: s.startTime ?? null,
+        endTime: s.endTime ?? null,
+        visibility: s.visibility ?? null,
         status: s.status,
         amenities: s.amenities || [],
+        frontPhotoUrl: s.frontPhotoUrl ?? null,
         bookingsCount: s._count?.bookings ?? 0,
         createdAt: s.createdAt,
         rejectionReason: s.rejectionReason,
+        consentVerified: Boolean(
+          s.ownerConsent?.acceptOwnerResponsibility &&
+          s.ownerConsent?.acceptLegalCompliance &&
+          s.ownerConsent?.acceptNonViolationDeclaration
+        ),
       }));
 
       setSpaces(mapped);
@@ -153,12 +172,19 @@ export default function MySpacesListScreen() {
       <View style={styles.card}>
         {/* Header row */}
         <View style={styles.cardHeader}>
-          <View style={styles.spaceIconBox}>
-            <MapPin size={22} color={Colors.primary} />
-          </View>
+          {item.frontPhotoUrl ? (
+            <Image source={{ uri: item.frontPhotoUrl }} style={styles.spacePhoto} resizeMode="cover" />
+          ) : (
+            <View style={styles.spaceIconBox}>
+              <MapPin size={22} color={Colors.primary} />
+            </View>
+          )}
           <View style={styles.headerInfo}>
             <Text style={styles.spaceName} numberOfLines={1}>{item.name}</Text>
             <Text style={styles.spaceAddress} numberOfLines={1}>{item.address}</Text>
+            {!!item.landmark && (
+              <Text style={styles.spaceLandmark} numberOfLines={1}>Near {item.landmark}</Text>
+            )}
             <View style={[styles.badgeRow, { backgroundColor: badge.bg }]}>
               {badge.icon}
               <Text style={[styles.badgeText, { color: badge.color }]}>{badge.text}</Text>
@@ -186,11 +212,52 @@ export default function MySpacesListScreen() {
             <IndianRupee size={12} color={Colors.textSecondary} />
             <Text style={styles.metaChipText}>{item.hourlyRate}/hr</Text>
           </View>
+          {item.dailyRate != null && (
+            <View style={styles.metaChip}>
+              <IndianRupee size={12} color={Colors.textSecondary} />
+              <Text style={styles.metaChipText}>{item.dailyRate}/day</Text>
+            </View>
+          )}
+          {item.monthlyRate != null && (
+            <View style={styles.metaChip}>
+              <IndianRupee size={12} color={Colors.textSecondary} />
+              <Text style={styles.metaChipText}>{item.monthlyRate}/mo</Text>
+            </View>
+          )}
           <View style={styles.metaChip}>
             <Clock size={12} color={Colors.textSecondary} />
-            <Text style={styles.metaChipText}>{item.availability}</Text>
+            <Text style={styles.metaChipText}>
+              {item.availability === 'Custom Hours' && item.startTime && item.endTime
+                ? `${item.startTime} – ${item.endTime}`
+                : item.availability}
+            </Text>
           </View>
+          {!!item.visibility && (
+            <View style={styles.metaChip}>
+              <Eye size={12} color={Colors.textSecondary} />
+              <Text style={styles.metaChipText}>{item.visibility}</Text>
+            </View>
+          )}
         </View>
+
+        {/* Amenities */}
+        {item.amenities.length > 0 && (
+          <View style={styles.amenitiesRow}>
+            {item.amenities.map((a) => (
+              <View key={a} style={styles.amenityChip}>
+                <Text style={styles.amenityChipText}>{a}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Compliance consent indicator */}
+        {item.consentVerified && (
+          <View style={styles.consentRow}>
+            <ShieldCheck size={13} color={Colors.success} />
+            <Text style={styles.consentText}>Ownership & compliance confirmed</Text>
+          </View>
+        )}
 
         {/* Stats */}
         <View style={styles.statsRow}>
@@ -396,9 +463,14 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryBg, alignItems: 'center', justifyContent: 'center',
     flexShrink: 0,
   },
+  spacePhoto: {
+    width: 52, height: 52, borderRadius: BorderRadius.button,
+    backgroundColor: Colors.surfaceBg, flexShrink: 0,
+  },
   headerInfo: { flex: 1 },
   spaceName: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textPrimary, marginBottom: 3 },  // 15 = lg ✓
-  spaceAddress: { fontSize: FontSize.sm, color: Colors.textSecondary, marginBottom: Spacing.sm },  // 12 = sm ✓
+  spaceAddress: { fontSize: FontSize.sm, color: Colors.textSecondary, marginBottom: 2 },  // 12 = sm ✓
+  spaceLandmark: { fontSize: FontSize.xs, color: Colors.textMuted, marginBottom: Spacing.sm },  // 11 = xs ✓
   badgeRow: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.xs,
     paddingHorizontal: Spacing.md, paddingVertical: 3, borderRadius: BorderRadius.input, alignSelf: 'flex-start',  // 10 = input ✓
@@ -417,6 +489,16 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.sm, borderWidth: 1, borderColor: Colors.border,  // 8 = sm ✓
   },
   metaChipText: { fontSize: FontSize.xs, fontWeight: FontWeight.semibold, color: Colors.textBody },  // 11 = xs ✓
+  amenitiesRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.xl, flexWrap: 'wrap' },
+  amenityChip: {
+    backgroundColor: Colors.primaryBg, paddingHorizontal: Spacing.md, paddingVertical: 3,
+    borderRadius: BorderRadius.sm,
+  },
+  amenityChipText: { fontSize: FontSize.xs, fontWeight: FontWeight.medium, color: Colors.primary },  // 11 = xs ✓
+  consentRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginBottom: Spacing.xl,
+  },
+  consentText: { fontSize: FontSize.xs, fontWeight: FontWeight.medium, color: Colors.success },  // 11 = xs ✓
   statsRow: {
     flexDirection: 'row', backgroundColor: Colors.screenBg,
     borderRadius: BorderRadius.input, padding: Spacing.lg, marginBottom: Spacing['2xl'],  // 10 = input ✓

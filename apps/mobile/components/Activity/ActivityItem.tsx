@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -6,16 +6,19 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import {
-  MapPin,
-  CheckCircle2,
-  AlertCircle,
-  CreditCard,
-  Shield,
-  Clock,
-  ChevronRight,
+  Car,
+  IndianRupee,
+  ShieldCheck,
+  CalendarCheck,
 } from 'lucide-react-native';
 import { useTheme } from '../../hooks/useTheme';
-import { Spacing } from '../../theme/colors';
+
+const ICON_CONFIG: Record<string, { Icon: any; color: string; bg: string }> = {
+  booking:  { Icon: Car,           color: '#3B82F6', bg: '#EFF6FF' },
+  payment:  { Icon: IndianRupee,   color: '#10B981', bg: '#ECFDF5' },
+  otp:      { Icon: ShieldCheck,   color: '#8B5CF6', bg: '#F5F3FF' },
+  approval: { Icon: CalendarCheck, color: '#F59E0B', bg: '#FFFBEB' },
+};
 
 export type ActivityType = 'booking' | 'otp' | 'payment' | 'approval';
 
@@ -25,9 +28,11 @@ interface ActivityItemProps {
   description: string;
   amount?: number;
   status: 'active' | 'completed' | 'pending' | 'failed';
+  statusLabel?: string;
   timestamp: string;
   onPress?: () => void;
   icon?: React.ReactNode;
+  isLast?: boolean;
 }
 
 const ActivityItem: React.FC<ActivityItemProps> = ({
@@ -35,75 +40,24 @@ const ActivityItem: React.FC<ActivityItemProps> = ({
   title,
   description,
   amount,
-  status,
   timestamp,
   onPress,
-  icon,
+  isLast,
 }) => {
-  const theme = useTheme();
+  useTheme();
 
-  const getDefaultIcon = () => {
-    switch (type) {
-      case 'booking':
-        return <MapPin size={22} color="#10B981" strokeWidth={2} />;
-      case 'payment':
-        return <MapPin size={22} color="#64748B" strokeWidth={2} />;
-      default:
-        return <MapPin size={22} color="#64748B" strokeWidth={2} />;
-    }
-  };
-
-  const getIconBg = () => {
-    switch (type) {
-      case 'booking':
-        return 'rgba(16, 185, 129, 0.1)';
-      case 'payment':
-        return 'rgba(100, 116, 139, 0.1)';
-      default:
-        return 'rgba(100, 116, 139, 0.1)';
-    }
-  };
-
-  const getStatusColor = () => {
-    switch (status) {
-      case 'active':
-        return '#10B981';
-      case 'completed':
-        return '#64748B';
-      case 'pending':
-        return '#F59E0B';
-      case 'failed':
-        return '#EF4444';
-      default:
-        return '#64748B';
-    }
-  };
-
-  const getStatusLabel = () => {
-    switch (status) {
-      case 'active':
-        return 'Active';
-      case 'completed':
-        return 'Completed';
-      case 'pending':
-        return 'Pending';
-      case 'failed':
-        return 'Failed';
-      default:
-        return status;
-    }
-  };
+  const { Icon, color, bg } = ICON_CONFIG[type] ?? ICON_CONFIG.booking;
 
   return (
     <TouchableOpacity
-      style={styles.container}
+      style={[styles.container, !isLast && styles.borderBottom]}
       onPress={onPress}
       activeOpacity={onPress ? 0.7 : 1}
     >
       <View style={styles.content}>
         {/* Left: Icon */}
-        <View style={[styles.iconContainer, { backgroundColor: getIconBg() }]}>
-          {icon || getDefaultIcon()}
+        <View style={[styles.iconContainer, { backgroundColor: bg }]}>
+          <Icon size={16} color={color} strokeWidth={2} />
         </View>
 
         {/* Center: Details */}
@@ -111,24 +65,20 @@ const ActivityItem: React.FC<ActivityItemProps> = ({
           <Text style={styles.title} numberOfLines={1}>
             {title}
           </Text>
-          <View style={styles.descRow}>
-            <Clock size={12} color="#94A3B8" style={{ marginRight: 4 }} />
-            <Text style={styles.description} numberOfLines={1}>
-              {description}
-            </Text>
-          </View>
+          <Text style={styles.description} numberOfLines={1}>
+            {description}
+          </Text>
         </View>
 
-        {/* Right: Amount only */}
+        {/* Right: Amount and Timestamp */}
         <View style={styles.rightContainer}>
           {(amount ?? 0) > 0 && (
             <Text style={styles.amount}>
               ₹{amount}
             </Text>
           )}
+          <Text style={styles.timestamp}>{timestamp}</Text>
         </View>
-        
-        <ChevronRight size={16} color="#CBD5E1" style={{ marginLeft: 4 }} />
       </View>
     </TouchableOpacity>
   );
@@ -136,12 +86,12 @@ const ActivityItem: React.FC<ActivityItemProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginHorizontal: Spacing.lg,
-    marginVertical: 4,
-    borderRadius: 14,
+    paddingVertical: 14,
     backgroundColor: '#FFFFFF',
+  },
+  borderBottom: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
   },
   content: {
     flexDirection: 'row',
@@ -153,48 +103,42 @@ const styles = StyleSheet.create({
     borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
+    marginRight: 12,
     flexShrink: 0,
   },
   detailsContainer: {
     flex: 1,
     justifyContent: 'center',
     minWidth: 0,
-    marginRight: 8,
+    marginRight: 12,
   },
   title: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '700',
     color: '#0F172A',
-    marginBottom: 3,
-  },
-  descRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    marginBottom: 4,
   },
   description: {
-    fontSize: 11,
+    fontSize: 13,
     color: '#64748B',
-    fontWeight: '500',
+    fontWeight: '400',
   },
   rightContainer: {
     alignItems: 'flex-end',
     justifyContent: 'center',
     flexShrink: 0,
-    gap: 3,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statusText: {
-    fontSize: 11,
-    fontWeight: '700',
+    gap: 4,
+    paddingRight: 4,
   },
   amount: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '800',
     color: '#0F172A',
+  },
+  timestamp: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontWeight: '500',
   },
 });
 

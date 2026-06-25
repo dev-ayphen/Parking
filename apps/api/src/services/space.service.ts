@@ -36,7 +36,7 @@ async function enrichSpacesWithStats(spaces: any[]): Promise<any[]> {
   const ratingMap = new Map<number, { avg: number; count: number }>();
   ratingRows.forEach((r) => ratingMap.set(r.spaceId, { avg: r.avg, count: r.count }));
 
-  return spaces.map((s) => {
+  return Promise.all(spaces.map(async (s) => {
     const r = ratingMap.get(s.id);
     const ratingCount = r?.count ?? 0;
     const ratingAvg = ratingCount > 0 ? Math.round((r!.avg || 0) * 10) / 10 : 0;
@@ -45,8 +45,14 @@ async function enrichSpacesWithStats(spaces: any[]): Promise<any[]> {
     // Whether the space is within its operating window right now (IST). Drives
     // the "Closed" state on the map/list independently of free capacity.
     const isOpenNow = isSpaceOpenAt(s);
-    return { ...s, ratingAvg, ratingCount, availableSpots, isOpenNow };
-  });
+    // Resolve the stored photo KEY to a usable display URL (front photo preferred,
+    // area photo as fallback) so the search card shows the real space image.
+    const photoKey = s.frontPhotoUrl || s.areaPhotoUrl || null;
+    const imageUrl = photoKey
+      ? await storageService.resolveUrl(photoKey, BUCKETS.PUBLIC).catch(() => null)
+      : null;
+    return { ...s, ratingAvg, ratingCount, availableSpots, isOpenNow, imageUrl };
+  }));
 }
 
 type SpaceMediaFiles = {
@@ -288,16 +294,24 @@ export const spaceService = {
       where: { ownerId, deletedAt: null },
       include: {
         _count: { select: { bookings: true } },
+        ownerConsent: true,
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    // Resolve storage keys → full public URLs for all spaces in the list.
+    // Resolve storage keys → full public URLs for all spaces in the list
+    // (front + area photo and video, so owners see their own media).
     const resolved = await Promise.all(
       spaces.map(async (sp) => ({
         ...sp,
         frontPhotoUrl: sp.frontPhotoUrl
           ? await storageService.resolveUrl(sp.frontPhotoUrl, BUCKETS.PUBLIC).catch(() => sp.frontPhotoUrl)
+          : null,
+        areaPhotoUrl: sp.areaPhotoUrl
+          ? await storageService.resolveUrl(sp.areaPhotoUrl, BUCKETS.PUBLIC).catch(() => sp.areaPhotoUrl)
+          : null,
+        videoUrl: sp.videoUrl
+          ? await storageService.resolveUrl(sp.videoUrl, BUCKETS.PUBLIC).catch(() => sp.videoUrl)
           : null,
       }))
     );

@@ -73,8 +73,9 @@ export const styles = StyleSheet.create({
   },
   // When the dropdown is open, square the bottom so bar + list read as one card.
   searchBoxActive: {
-    borderBottomLeftRadius: BorderRadius.lg,
-    borderBottomRightRadius: BorderRadius.lg,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    borderBottomWidth: 0,
   },
   searchClearBtn: {
     width: 18,
@@ -216,9 +217,12 @@ export const styles = StyleSheet.create({
   },
   suggestionsBox: {
     backgroundColor: Colors.white,
-    borderBottomLeftRadius: BorderRadius.lg,        // 16 — matches the active search box
-    borderBottomRightRadius: BorderRadius.lg,
-    marginTop: -2,                                  // tuck under the squared search box
+    borderBottomLeftRadius: 28,                     // match the top pill radius for symmetry
+    borderBottomRightRadius: 28,
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderColor: Colors.borderLighter,
+    marginTop: 0,                                   // flush with squared search box
     maxHeight: 320,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
@@ -363,18 +367,21 @@ export const styles = StyleSheet.create({
   },
   spaceCard: {
     backgroundColor: Colors.white,
-    borderTopLeftRadius: BorderRadius.xl,           // 24 = xl ✓
-    borderTopRightRadius: BorderRadius.xl,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    marginHorizontal: Spacing.xl,
     paddingHorizontal: Spacing['3xl'],
     paddingTop: Spacing.xl,
     paddingBottom: Spacing['3xl'],
     shadowColor: Colors.textPrimary,
-    shadowOffset: { width: 0, height: -10 },
-    shadowOpacity: 0.12,
-    shadowRadius: 20,
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.10,
+    shadowRadius: 18,
     elevation: 12,
     position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 76 : 58,
+    bottom: Platform.OS === 'ios' ? 84 : 64,
     left: 0,
     right: 0,
     zIndex: 15,
@@ -384,8 +391,8 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
-    height: 32,
-    marginBottom: Spacing.xl,
+    paddingTop: Spacing.lg,
+    marginBottom: Spacing.lg,
   },
   cardHandle: {
     width: 38,
@@ -396,10 +403,10 @@ export const styles = StyleSheet.create({
   closeCardBtn: {
     position: 'absolute',
     right: Spacing['3xl'],
-    top: Spacing['2xl'],
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    top: Spacing.lg,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: Colors.surfaceBg,
     alignItems: 'center',
     justifyContent: 'center',
@@ -410,10 +417,11 @@ export const styles = StyleSheet.create({
     alignItems: 'stretch',
   },
   cardImage: {
-    width: 76,
-    height: 76,
-    borderRadius: BorderRadius.md,                  // 12 = md ✓
+    width: 80,
+    height: 80,
+    borderRadius: 14,
     backgroundColor: Colors.surfaceBg,
+    overflow: 'hidden',
   },
   cardInfoCol: {
     flex: 1,
@@ -493,7 +501,7 @@ export const styles = StyleSheet.create({
   },
   chevronTouchBtn: {
     padding: 2,
-    marginTop: -2,
+    marginTop: 8,
   },
   priceContainer: {
     flexDirection: 'row',
@@ -512,10 +520,8 @@ export const styles = StyleSheet.create({
     marginLeft: 2,
   },
   compactAmenitiesRow: {
-    marginTop: Spacing.xl,
-    paddingTop: Spacing.lg,
-    borderTopWidth: 1,
-    borderTopColor: Colors.surfaceBg,
+    marginTop: Spacing.lg,
+    paddingTop: Spacing.sm,
   },
   amenitiesScrollContent: {
     gap: Spacing.md,
@@ -997,7 +1003,7 @@ export const styles = StyleSheet.create({
   },
   vehicleCardActive: {
     borderColor: Colors.primary,
-    backgroundColor: ExtendedColors.primaryTint1,
+    borderWidth: 1.5,
   },
   vehicleInfoRow: {
     flexDirection: 'row',
@@ -1013,7 +1019,7 @@ export const styles = StyleSheet.create({
     marginRight: Spacing['3xl'],
   },
   vehicleIconBgActive: {
-    backgroundColor: Colors.primary,
+    backgroundColor: ExtendedColors.primaryTint1,
   },
   vehicleDetailsCol: {
     flex: 1,

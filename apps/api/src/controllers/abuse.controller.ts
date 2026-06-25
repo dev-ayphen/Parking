@@ -82,11 +82,18 @@ export const abuseController = {
         // A warning doesn't change the account status, but the user MUST still be
         // told — otherwise "Warning Issued" only updates the admin panel and the
         // user never actually receives the warning.
+        const warningMessage = req.body?.adminAction
+          ? String(req.body.adminAction)
+          : 'You have received a warning for violating our community guidelines. Repeated violations may lead to suspension or a ban.';
+        // Real-time alert so an open mobile session is notified immediately
+        // (not just on next notifications-screen open).
+        emitToUser(reportedUserId, 'user:warning', {
+          title: 'Warning from ParkSwift',
+          message: warningMessage,
+        });
         await adminService.notifyUser(reportedUserId, {
           title: 'Warning from ParkSwift',
-          message: req.body?.adminAction
-            ? String(req.body.adminAction)
-            : 'You have received a warning for violating our community guidelines. Repeated violations may lead to suspension or a ban.',
+          message: warningMessage,
           category: 'SYSTEM',
         });
       }

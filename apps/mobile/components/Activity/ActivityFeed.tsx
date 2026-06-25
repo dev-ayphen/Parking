@@ -3,11 +3,13 @@ import {
   View,
   Text,
   StyleSheet,
+  TouchableOpacity,
 } from 'react-native';
 import { useTheme } from '../../hooks/useTheme';
 import NoActivitySvg from '../Illustrations/NoActivitySvg';
 import ActivityItem, { ActivityType } from './ActivityItem';
 import { Spacing, Typography } from '../../theme/colors';
+import { Colors, BorderRadius } from '../../theme';
 
 export interface Activity {
   id: string;
@@ -16,6 +18,7 @@ export interface Activity {
   description: string;
   amount?: number;
   status: 'active' | 'completed' | 'pending' | 'failed';
+  statusLabel?: string;
   timestamp: string;
   onPress?: () => void;
 }
@@ -27,12 +30,14 @@ interface ActivityFeedProps {
   horizontal?: boolean;
   onLoadMore?: () => void;
   isLoading?: boolean;
+  onSeeAll?: () => void;
 }
 
 const ActivityFeed: React.FC<ActivityFeedProps> = ({
   activities,
   title = 'Recent Activity',
   isLoading = false,
+  onSeeAll,
 }) => {
   const theme = useTheme();
 
@@ -48,11 +53,9 @@ const ActivityFeed: React.FC<ActivityFeedProps> = ({
   if (activities.length === 0) {
     return (
       <View style={styles.emptyContainer}>
-        {!!title && <Text style={[styles.title, dynamicStyles.title]}>{title}</Text>}
         <View style={styles.emptyIconWrapper}>
           <NoActivitySvg width={100} height={100} primaryColor="#DC0159" />
         </View>
-        <Text style={[styles.emptyTitle, dynamicStyles.emptyText]}>No Recent Activity</Text>
         <Text style={[styles.emptyDescription, dynamicStyles.emptyText]}>
           Your bookings and transactions will appear here
         </Text>
@@ -62,9 +65,10 @@ const ActivityFeed: React.FC<ActivityFeedProps> = ({
 
   return (
     <View style={styles.container}>
-      {!!title && <Text style={[styles.title, dynamicStyles.title]}>{title}</Text>}
-      {/* Plain map — no FlatList, safe to nest inside a ScrollView */}
-      {activities.map((item) => (
+      <View style={styles.card}>
+
+        {/* Plain map — no FlatList, safe to nest inside a ScrollView */}
+        {activities.map((item, index) => (
         <ActivityItem
           key={item.id}
           type={item.type}
@@ -72,10 +76,13 @@ const ActivityFeed: React.FC<ActivityFeedProps> = ({
           description={item.description}
           amount={item.amount}
           status={item.status}
+          statusLabel={item.statusLabel}
           timestamp={item.timestamp}
           onPress={item.onPress}
+          isLast={index === activities.length - 1}
         />
       ))}
+      </View>
     </View>
   );
 };
@@ -84,12 +91,34 @@ const styles = StyleSheet.create({
   container: {
     paddingVertical: Spacing.sm,
     paddingBottom: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+  },
+  card: {
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.xl,
+    paddingVertical: Spacing.lg,
+    paddingHorizontal: Spacing.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.md,
   },
   title: {
-    fontSize: Typography.heading3.fontSize,
-    fontWeight: Typography.heading3.fontWeight as any,
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.sm,
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  seeAllText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.primary,
   },
   emptyContainer: {
     paddingHorizontal: Spacing.lg,

@@ -21,11 +21,28 @@ import { Bell } from 'lucide-react-native';
 import PersonalizedGreeting from '../../components/Home/PersonalizedGreeting';
 import HomeCard from '../../components/Cards/HomeCard';
 import ActivityFeed, { Activity } from '../../components/Activity/ActivityFeed';
+import { ActivityType } from '../../components/Activity/ActivityItem';
 import NavigationDrawer from '../../components/Navigation/NavigationDrawer';
 import MagnifyingGlassSvg from '../../components/Illustrations/MagnifyingGlassSvg';
 import { MapPin, CarFront } from 'lucide-react-native';
 import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 import { NETWORK_RECONNECTED } from '../../store/networkStore';
+
+// Relative timestamps: "15m ago", "2h ago", "Yesterday", "3 days ago", then a date.
+const formatTime = (dateStr: string): string => {
+  if (!dateStr) return '';
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMins = Math.floor((now.getTime() - date.getTime()) / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays} days ago`;
+  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+};
 
 
 const HomeScreen = () => {
@@ -65,7 +82,7 @@ const HomeScreen = () => {
 
   const loadRecentActivity = useCallback(async () => {
     try {
-      const json = await api.get('/bookings/my?limit=5');
+      const json = await api.get('/bookings/my?limit=10');
       if (json.success) {
         const statusLabel: Record<string, string> = {
           PENDING_APPROVAL: 'Waiting for approval',
@@ -82,15 +99,35 @@ const HomeScreen = () => {
           if (s === 'CANCELLED' || s === 'REJECTED' || s === 'EXPIRED') return 'failed';
           return 'pending';
         };
-        const mapped: Activity[] = (json.bookings || []).map((b: any) => ({
-          id: String(b.id),
-          type: b.status === 'COMPLETED' ? 'payment' : 'booking',
-          title: b.space?.name || 'Unknown Space',
-          description: statusLabel[b.status] ?? b.status,
-          amount: b.totalAmount || 0,
-          status: statusType(b.status),
-          timestamp: b.createdAt,
-        }));
+        const mapped: Activity[] = (json.bookings || []).map((b: any) => {
+          const isOwner = currentUser?.id && b.space?.ownerId === currentUser.id;
+          const isCompleted = b.status === 'COMPLETED';
+          
+          let title = 'Parking Booked';
+          let type: ActivityType = 'booking';
+          
+          if (isOwner) {
+            title = isCompleted ? 'Earnings Received' : 'Space Booked';
+            type = isCompleted ? 'payment' : 'approval';
+          } else {
+            if (b.status === 'COMPLETED') { title = 'Parking Completed'; type = 'payment'; }
+            else if (b.status === 'ACTIVE') { title = 'Parking Active'; type = 'booking'; }
+            else if (b.status === 'PENDING_APPROVAL') { title = 'Awaiting Approval'; type = 'approval'; }
+            else if (b.status === 'APPROVED') { title = 'Booking Approved'; type = 'otp'; }
+            else { title = 'Parking Booked'; type = 'booking'; }
+          }
+          
+          return {
+            id: String(b.id),
+            type,
+            title,
+            description: b.space?.name || 'Unknown Space',
+            amount: b.totalAmount || 0,
+            status: statusType(b.status),
+            statusLabel: statusLabel[b.status] ?? b.status,
+            timestamp: formatTime(b.createdAt),
+          };
+        });
         setRecentActivities(mapped);
       }
     } catch (e) {
@@ -98,7 +135,7 @@ const HomeScreen = () => {
     } finally {
       setRecentActivityLoading(false);
     }
-  }, []);
+  }, [currentUser?.id]);
 
   const loadHomeStats = useCallback(async () => {
     try {
@@ -392,11 +429,12 @@ const HomeScreen = () => {
     return () => sub.remove();
   }, [loadDashboardData, loadRecentActivity, loadHomeStats, loadUnreadCount, syncSessionBar]);
 
-  // Re-fetch badge count every time screen is focused (e.g. after returning from notifications)
+  // Re-fetch badge count + recent activity every time screen is focused
   useFocusEffect(
     useCallback(() => {
-      loadUnreadCount(true); // focus — fresh
-    }, [loadUnreadCount])
+      loadUnreadCount(true);
+      loadRecentActivity();
+    }, [loadUnreadCount, loadRecentActivity])
   );
 
   const handleRefresh = async () => {
@@ -584,8 +622,8 @@ const HomeScreen = () => {
             ...a,
             onPress: () => router.push('/(home)/recent-activity'),
           }))}
-          title=""
           isLoading={recentActivityLoading}
+          onSeeAll={() => router.push('/(home)/recent-activity')}
         />
 
         <View style={{ height: 40 }} />

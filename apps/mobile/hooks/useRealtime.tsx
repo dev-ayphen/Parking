@@ -134,6 +134,13 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       socket.on('transaction:update', (payload: any) => DeviceEventEmitter.emit('transaction:update', payload));
       socket.on('notification:new', (payload: any) => DeviceEventEmitter.emit('notification:new', payload));
       socket.on('rating:new', (payload: any) => DeviceEventEmitter.emit('rating:new', payload));
+      // Admin reviewed an incident the user reported — refresh "My Incidents".
+      socket.on('incident:updated', (payload: any) => DeviceEventEmitter.emit('incident:updated', payload));
+      // Admin issued a warning (no account-status change) — alert the user now.
+      socket.on('user:warning', (payload: any) => {
+        DeviceEventEmitter.emit('notification:new', payload);
+        Alert.alert(payload?.title || 'Warning from ParkSwift', payload?.message || 'You have received a warning.');
+      });
     };
 
     connect();

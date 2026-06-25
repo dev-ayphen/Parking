@@ -503,7 +503,7 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
                     {item.frontPhotoUrl ? (
                       <Image source={{ uri: item.frontPhotoUrl }} style={{ width: 38, height: 38, borderRadius: 19 }} />
                     ) : (
-                      <Car size={22} color={item.active ? Colors.white : Colors.textSecondary} strokeWidth={2} />
+                      <Car size={22} color={item.active ? Colors.primary : Colors.textSecondary} strokeWidth={2} />
                     )}
                   </View>
                   <View style={styles.vehicleDetailsCol}>

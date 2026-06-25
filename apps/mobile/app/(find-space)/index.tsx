@@ -143,14 +143,19 @@ const FindSpaceScreen = () => {
 
   const [historyBookings, setHistoryBookings] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyRefreshing, setHistoryRefreshing] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
 
   // Pull the user's real bookings; split into the current active/pending one and
   // the completed history. Errors set an error flag (so the tabs can show a retry
   // instead of a misleading "empty" state).
-  const loadMyBookings = useCallback(async () => {
-    setActiveLoading(true);
-    setHistoryLoading(true);
+  const loadMyBookings = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setHistoryRefreshing(true);
+    } else {
+      setActiveLoading(true);
+      setHistoryLoading(true);
+    }
     setActiveError(null);
     setHistoryError(null);
     try {
@@ -189,6 +194,7 @@ const FindSpaceScreen = () => {
     } finally {
       setActiveLoading(false);
       setHistoryLoading(false);
+      setHistoryRefreshing(false);
     }
   }, []);
 
@@ -629,7 +635,9 @@ const FindSpaceScreen = () => {
           price: s.hourlyRate,
           rating: s.ratingAvg ?? 0,
           available: s.availableSpots ?? s.capacity ?? 0,
-          image: null,
+          // Real space photo (front photo preferred) resolved by the API. Falls
+          // back to the Unsplash placeholder in the card if the space has no media.
+          image: s.imageUrl ?? null,
           distanceKm: distKm,
           distance: formatDistance(distKm),
           address: s.address ?? '',
@@ -1148,18 +1156,19 @@ const FindSpaceScreen = () => {
       {/* Bottom Parking Space Card - PREMIUM */}
       {selectedSpace && selectedSpace.type === 'parking' && (
         <View style={styles.spaceCard}>
-          <TouchableOpacity 
-            style={styles.closeCardBtn} 
+          {/* Drag handle */}
+          <View style={styles.cardHeaderRow}>
+            <View style={styles.cardHandle} />
+          </View>
+
+          {/* Close button - absolute in top-right */}
+          <TouchableOpacity
+            style={styles.closeCardBtn}
             onPress={() => setSelectedSpace(null)}
             activeOpacity={0.7}
           >
             <X size={14} color={Colors.textMuted} strokeWidth={2.5} />
           </TouchableOpacity>
-
-          <View style={styles.cardHeaderRow}>
-            <View style={styles.cardHandle} />
-          </View>
-          
           <View style={styles.cardMainRow}>
             {/* Left image thumbnail */}
             <Image 
@@ -1259,7 +1268,7 @@ const FindSpaceScreen = () => {
           </View>
 
           {/* Details & Amenities row */}
-          {selectedSpace.amenities && (
+          {selectedSpace.amenities && selectedSpace.amenities.length > 0 && (
             <View style={styles.compactAmenitiesRow}>
               <ScrollView 
                 horizontal 
@@ -1348,8 +1357,10 @@ const FindSpaceScreen = () => {
         <BookingHistoryTab
           historyBookings={historyBookings}
           loading={historyLoading}
+          refreshing={historyRefreshing}
           error={historyError}
           onRetry={loadMyBookings}
+          onRefresh={() => loadMyBookings(true)}
         />
       )}
 

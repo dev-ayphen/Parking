@@ -101,7 +101,6 @@ export default function MySpacesLayout() {
     <Tabs
       tabBar={(props) => <CustomTabBar {...props} />}
       screenOptions={{
-        animation: 'slide_from_right',
         headerShown: false,
       }}
     >

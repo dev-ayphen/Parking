@@ -3,6 +3,7 @@ import {
   View,
   Text,
   ScrollView,
+  RefreshControl,
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
@@ -13,15 +14,19 @@ import { styles } from './findSpaceStyles';
 interface BookingHistoryTabProps {
   historyBookings: any[];
   loading: boolean;
+  refreshing?: boolean;
   error: string | null;
   onRetry: () => void;
+  onRefresh?: () => void;
 }
 
 const BookingHistoryTab: React.FC<BookingHistoryTabProps> = ({
   historyBookings,
   loading,
+  refreshing = false,
   error,
   onRetry,
+  onRefresh,
 }) => {
   if (loading) {
     return (
@@ -46,7 +51,19 @@ const BookingHistoryTab: React.FC<BookingHistoryTabProps> = ({
   }
 
   return (
-    <ScrollView style={styles.tabContent} contentContainerStyle={styles.tabContentContainer} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      style={styles.tabContent}
+      contentContainerStyle={styles.tabContentContainer}
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={Colors.primary}
+          colors={[Colors.primary]}
+        />
+      }
+    >
       <Text style={styles.sectionHeading}>Past Reservations</Text>
       {historyBookings.length === 0 ? (
         <View style={styles.emptyTabContent}>

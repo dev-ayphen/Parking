@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { authenticate, requireRole } from '../middleware/auth';
 import { db } from '../config/database';
-import { emitToAdmin } from '../app';
+import { emitToAdmin, emitToUser } from '../app';
 import { storageService } from '../services/storage.service';
 import { BUCKETS } from '../config/supabase';
+import { adminService } from '../services/admin.service';
 
 const router = Router();
 
@@ -137,6 +138,29 @@ router.put('/:id/status', authenticate, requireRole('ADMIN'), async (req, res) =
         resolvedAt: ['RESOLVED', 'REJECTED'].includes(status) ? new Date() : null,
       },
     });
+
+    // Notify the reporter in real time so their "My Incidents" updates without a
+    // manual pull-to-refresh. Mobile listens for `incident:updated` and re-fetches.
+    if (updated.reportedByUserId) {
+      const ref = `INC-${String(updated.id).padStart(5, '0')}`;
+      const STATUS_LABEL: Record<string, string> = {
+        OPEN: 'Open', INVESTIGATING: 'Investigating', RESOLVED: 'Resolved', REJECTED: 'Closed',
+      };
+      emitToUser(updated.reportedByUserId, 'incident:updated', {
+        id: updated.id,
+        status: updated.status,
+        adminNotes: updated.adminNotes,
+      });
+      // Durable notification (push + bell) so the user is told even if offline.
+      await adminService.notifyUser(updated.reportedByUserId, {
+        title: `Incident ${ref} ${STATUS_LABEL[status] ?? status}`,
+        message: adminNotes
+          ? String(adminNotes)
+          : `Your incident report is now "${STATUS_LABEL[status] ?? status}".`,
+        category: 'SYSTEM',
+      });
+    }
+
     res.json({ success: true, incident: updated });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });

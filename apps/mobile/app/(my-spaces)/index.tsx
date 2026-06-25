@@ -378,27 +378,6 @@ export default function OwnerDashboardScreen() {
           </View>
         )}
 
-        {/* UPI nudge — without a UPI ID the parker's pay screen can only show the
-            cash fallback (no scan-to-pay QR). Prompt the owner to add it. Hidden
-            once set, and suppressed for owners who have no spaces yet. */}
-        {!dashboardData.hasUpiId && (
-          <TouchableOpacity
-            style={styles.upiBanner}
-            activeOpacity={0.85}
-            onPress={() => router.push('/(home)/manage-billing')}
-          >
-            <View style={styles.upiBannerIcon}>
-              <QrCode size={18} color={Colors.primary} />
-            </View>
-            <View style={styles.upiBannerBody}>
-              <Text style={styles.upiBannerTitle}>Add your UPI ID to get paid</Text>
-              <Text style={styles.upiBannerText}>
-                Parkers can scan a QR to pay you directly. Set it once in Billing.
-              </Text>
-            </View>
-            <ArrowRight size={18} color={Colors.primary} />
-          </TouchableOpacity>
-        )}
 
         {/* Premium Banner - Floating Style */}
         <LinearGradient

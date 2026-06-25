@@ -6,7 +6,19 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { MapPin, Clock, XCircle, AlertCircle } from 'lucide-react-native';
+import { Car, IndianRupee, CalendarCheck, Clock, XCircle, AlertCircle } from 'lucide-react-native';
+
+const ICON_CONFIG: Record<string, { Icon: any; color: string; bg: string }> = {
+  booking:  { Icon: Car,           color: '#3B82F6', bg: '#EFF6FF' },
+  payment:  { Icon: IndianRupee,   color: '#10B981', bg: '#ECFDF5' },
+  approval: { Icon: CalendarCheck, color: '#F59E0B', bg: '#FFFBEB' },
+};
+
+const iconForItem = (type: 'Parking' | 'Earnings', status: string) => {
+  if (type === 'Earnings') return ICON_CONFIG.payment;
+  if (status === 'Pending' || status === 'Approved') return ICON_CONFIG.approval;
+  return ICON_CONFIG.booking;
+};
 import { PageHeader } from '../../components';
 import NoActivitySvg from '../../components/Illustrations/NoActivitySvg';
 import { api } from '../../services/api';
@@ -17,6 +29,7 @@ interface Activity {
   id: string;
   location: string;
   status: string;
+  statusTitle: string;
   time: string;
   amount: string | null;
   type: 'Parking' | 'Earnings';
@@ -41,6 +54,20 @@ const formatTime = (dateStr: string) => {
   if (diffDays === 1) return 'Yesterday';
   if (diffDays < 7) return `${diffDays} days ago`;
   return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+};
+
+// Descriptive title matching the home feed (e.g. "Parking Completed").
+const titleForStatus = (rawStatus: string): string => {
+  switch (rawStatus) {
+    case 'COMPLETED': return 'Parking Completed';
+    case 'ACTIVE': return 'Parking Active';
+    case 'PENDING_APPROVAL': return 'Awaiting Approval';
+    case 'APPROVED': return 'Booking Approved';
+    case 'CANCELLED': return 'Booking Cancelled';
+    case 'REJECTED': return 'Booking Rejected';
+    case 'EXPIRED': return 'Request Expired';
+    default: return 'Parking Booked';
+  }
 };
 
 const mapStatus = (status: string) => {
@@ -94,6 +121,7 @@ const RecentActivityScreen = () => {
             id: String(b.id),
             location: b.space?.name || b.space?.address || 'Unknown Space',
             status,
+            statusTitle: titleForStatus(b.status),
             time: formatTime(b.createdAt),
             amount: isEarning ? `₹${b.totalAmount}` : null,
             type: isEarning ? 'Earnings' : 'Parking',
@@ -168,29 +196,23 @@ const RecentActivityScreen = () => {
   };
 
   const renderItem = ({ item }: { item: Activity }) => {
-    const color = statusColor(item.status);
-    const bg = statusBg(item.status);
+    const { Icon, color: iconColor, bg: iconBg } = iconForItem(item.type, item.status);
     return (
       <TouchableOpacity
         style={styles.activityItem}
         onPress={() => handleCardPress(item)}
         activeOpacity={0.7}
       >
-        <View style={[styles.activityIcon, { backgroundColor: bg }]}>
-          <MapPin size={17} color={color} strokeWidth={2.5} />
+        <View style={[styles.activityIcon, { backgroundColor: iconBg }]}>
+          <Icon size={16} color={iconColor} strokeWidth={2} />
         </View>
         <View style={styles.activityInfo}>
+          <Text style={styles.activityTitleText} numberOfLines={1}>{item.statusTitle}</Text>
           <Text style={styles.activityLocation} numberOfLines={1}>{item.location}</Text>
-          <View style={styles.activityMeta}>
-            <Clock size={11} color={Colors.textMuted} />
-            <Text style={styles.activityTime}>{item.time}</Text>
-          </View>
         </View>
         <View style={styles.activityRight}>
-          <View style={[styles.statusBadge, { backgroundColor: bg }]}>
-            <Text style={[styles.statusBadgeText, { color }]}>{item.status}</Text>
-          </View>
           {item.amount && <Text style={styles.activityAmount}>{item.amount}</Text>}
+          <Text style={styles.activityRightTime}>{item.time}</Text>
         </View>
       </TouchableOpacity>
     );
@@ -376,15 +398,13 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing['3xl'], paddingHorizontal: Spacing['3xl'],
     borderBottomWidth: 1, borderBottomColor: Colors.surfaceBg,
   },
-  activityIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginRight: Spacing.xl },
-  activityInfo: { flex: 1 },
-  activityLocation: { fontSize: FontSize.lg, fontWeight: FontWeight.semibold, color: Colors.textPrimary, marginBottom: Spacing.xs },  // 15 = lg ✓
-  activityMeta: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
-  activityTime: { fontSize: FontSize.sm, color: Colors.textSecondary, fontWeight: FontWeight.medium },  // 12 = sm ✓
-  activityRight: { alignItems: 'flex-end', justifyContent: 'center', gap: Spacing.xs },
-  statusBadge: { paddingHorizontal: 0, paddingVertical: 0, borderRadius: 0, backgroundColor: 'transparent' },
-  statusBadgeText: { fontSize: FontSize.base, fontWeight: FontWeight.semibold },  // 13 = base ✓
-  activityAmount: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textPrimary },  // 15 = lg ✓
+  activityIcon: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', marginRight: Spacing.lg },
+  activityInfo: { flex: 1, marginRight: 12, minWidth: 0 },
+  activityTitleText: { fontSize: 15, fontWeight: '700', color: '#0F172A', marginBottom: 4 },
+  activityLocation: { fontSize: 13, fontWeight: '400', color: '#64748B' },
+  activityRight: { alignItems: 'flex-end', justifyContent: 'center', flexShrink: 0, gap: 4, paddingRight: 4 },
+  activityAmount: { fontSize: 15, fontWeight: '800', color: '#0F172A' },
+  activityRightTime: { fontSize: 12, fontWeight: '500', color: '#94A3B8' },
   emptyState: {
     flex: 1,
     paddingVertical: 80,

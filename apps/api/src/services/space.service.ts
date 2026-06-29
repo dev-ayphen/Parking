@@ -1,22 +1,26 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, BookingStatus } from '@prisma/client';
 import { db } from '../config/database';
+import { AppError } from '../utils/errors';
 import { CreateSpaceInput, SearchSpacesQuery } from '../validations/space.validation';
 import { storageService } from './storage.service';
 import { BUCKETS } from '../config/supabase';
 import { entitlementService } from './entitlement.service';
 import { isSpaceOpenAt } from '../utils/availability';
 
-const ACTIVE_BOOKING_STATUSES = ['PENDING_APPROVAL', 'APPROVED', 'ACTIVE'];
+const ACTIVE_BOOKING_STATUSES = [BookingStatus.PENDING_APPROVAL, BookingStatus.APPROVED, BookingStatus.ACTIVE];
 
 /**
  * Attach real rating (avg + count) and live availability (capacity − active bookings)
  * to a list of space rows. Works for both search modes.
+ * @param durationMinutes - optional booking duration to calculate effective rate (considering daily/monthly discounts)
  */
-async function enrichSpacesWithStats(spaces: any[]): Promise<any[]> {
+async function enrichSpacesWithStats(spaces: any[], durationMinutes?: number): Promise<any[]> {
   const ids = spaces.map((s) => s.id).filter((x) => x != null);
   if (ids.length === 0) return spaces;
 
-  const [activeCounts, ratingRows] = await Promise.all([
+  const ownerIds = [...new Set(spaces.map((s) => s.ownerId).filter(Boolean))];
+
+  const [activeCounts, ratingRows, subscriptions] = await Promise.all([
     db.booking.groupBy({
       by: ['spaceId'],
       where: { spaceId: { in: ids }, status: { in: ACTIVE_BOOKING_STATUSES } },
@@ -29,12 +33,18 @@ async function enrichSpacesWithStats(spaces: any[]): Promise<any[]> {
       WHERE b."spaceId" IN (${Prisma.join(ids)}) AND r."isHidden" = false
       GROUP BY b."spaceId"
     `,
+    db.subscription.findMany({
+      where: { userId: { in: ownerIds } },
+      select: { userId: true, status: true },
+    }),
   ]);
 
   const activeMap = new Map<number, number>();
   (activeCounts as any[]).forEach((a) => activeMap.set(a.spaceId, a._count._all));
   const ratingMap = new Map<number, { avg: number; count: number }>();
   ratingRows.forEach((r) => ratingMap.set(r.spaceId, { avg: r.avg, count: r.count }));
+  const subscriptionMap = new Map<number, string>();
+  subscriptions.forEach((sub) => subscriptionMap.set(sub.userId, sub.status));
 
   return Promise.all(spaces.map(async (s) => {
     const r = ratingMap.get(s.id);
@@ -51,7 +61,29 @@ async function enrichSpacesWithStats(spaces: any[]): Promise<any[]> {
     const imageUrl = photoKey
       ? await storageService.resolveUrl(photoKey, BUCKETS.PUBLIC).catch(() => null)
       : null;
-    return { ...s, ratingAvg, ratingCount, availableSpots, isOpenNow, imageUrl };
+    // Owner's subscription status (used to show why a space might be hidden or
+    // in limited visibility). Values: ACTIVE, CANCELLED, EXPIRED, INACTIVE.
+    const ownerSubscriptionStatus = subscriptionMap.get(s.ownerId) || 'INACTIVE';
+
+    // Effective rate calculation: if durationMinutes provided, check if daily/monthly
+    // rates offer better value than hourly × duration.
+    let effectiveRate = s.hourlyRate || 0;
+    if (durationMinutes && durationMinutes > 0) {
+      const hourlyTotal = (s.hourlyRate || 0) * (durationMinutes / 60);
+      const durationHours = durationMinutes / 60;
+      // If duration >= 24h and daily rate exists, use it if cheaper
+      if (durationHours >= 24 && s.dailyRate && s.dailyRate < hourlyTotal) {
+        const daysCount = Math.ceil(durationHours / 24);
+        effectiveRate = s.dailyRate * daysCount;
+      }
+      // If duration >= 30 days and monthly rate exists, use it if cheaper
+      else if (durationHours >= 720 && s.monthlyRate && s.monthlyRate < hourlyTotal) {
+        effectiveRate = s.monthlyRate;
+      }
+      // Otherwise stick with hourly
+    }
+
+    return { ...s, ratingAvg, ratingCount, availableSpots, isOpenNow, imageUrl, ownerSubscriptionStatus, effectiveRate };
   }));
 }
 
@@ -68,7 +100,7 @@ export const spaceService = {
    */
   uploadMedia: async (spaceId: number, ownerId: number, files: SpaceMediaFiles) => {
     const space = await db.space.findFirst({ where: { id: spaceId, ownerId } });
-    if (!space) throw { status: 403, message: 'Space not found or access denied' };
+    if (!space) throw new AppError('Space not found or access denied', 403);
 
     const folder = `spaces/${spaceId}`;
     const data: Record<string, string> = {};
@@ -87,7 +119,7 @@ export const spaceService = {
     }
 
     if (Object.keys(data).length === 0) {
-      throw { status: 400, message: 'No media files provided' };
+      throw new AppError('No media files provided', 400);
     }
 
     const updated = await db.space.update({
@@ -129,7 +161,7 @@ export const spaceService = {
         : Prisma.sql`"distanceKm" ASC`;
 
       const searchClause = query.search
-        ? Prisma.sql`AND (s."name" ILIKE ${'%' + query.search + '%'} OR s."address" ILIKE ${'%' + query.search + '%'})`
+        ? Prisma.sql`AND (s."name" ILIKE ${'%' + query.search + '%'} OR s."address" ILIKE ${'%' + query.search + '%'} OR s."landmark" ILIKE ${'%' + query.search + '%'})`
         : Prisma.empty;
       // spaceType may be a single value OR a comma-separated list (a category
       // group like "Residential" expands to several underlying types on the client).
@@ -182,7 +214,20 @@ export const spaceService = {
 
       // Trim spaces to those actually within radius (bounding box is a superset)
       const filtered = spaces.filter((s) => (s.distanceKm ?? Infinity) <= radius);
-      const enriched = await enrichSpacesWithStats(filtered);
+      const enriched = await enrichSpacesWithStats(filtered, query.durationMinutes);
+
+      // Analytics: track why spaces were hidden (filtered out by subscription gate)
+      // This gives users visibility into why they aren't seeing everything.
+      const allSpacesBeforeGate = await db.$queryRaw<Array<any>>`
+        SELECT COUNT(*)::int as count FROM "Space" s
+        WHERE s.status = 'VERIFIED'
+          AND s."deletedAt" IS NULL
+          AND s.lat IS NOT NULL AND s.lng IS NOT NULL
+          AND s.lat BETWEEN ${minLat} AND ${maxLat}
+          AND s.lng BETWEEN ${minLng} AND ${maxLng}
+      `;
+      const spacesBeforeGateCount = (allSpacesBeforeGate as any[])[0]?.count || 0;
+      const hiddenBySubscription = spacesBeforeGateCount - spaces.length;
 
       return {
         success: true,
@@ -190,6 +235,13 @@ export const spaceService = {
         count: enriched.length,
         mode: 'geo' as const,
         center: { lat: query.lat, lng: query.lng, radius },
+        analytics: {
+          totalInRadius: spacesBeforeGateCount,
+          shown: enriched.length,
+          hiddenBySubscription,
+          hiddenByFilter: spaces.length - filtered.length,
+          hiddenByOutsideRadius: filtered.length - enriched.length,
+        },
       };
     }
 
@@ -202,6 +254,7 @@ export const spaceService = {
           OR: [
             { name: { contains: query.search, mode: 'insensitive' } },
             { address: { contains: query.search, mode: 'insensitive' } },
+            { landmark: { contains: query.search, mode: 'insensitive' } },
           ],
         }),
         ...(query.spaceType && { spaceType: query.spaceType }),
@@ -221,7 +274,7 @@ export const spaceService = {
       skip: offset,
     });
 
-    const enriched = await enrichSpacesWithStats(spaces);
+    const enriched = await enrichSpacesWithStats(spaces, query.durationMinutes);
     return { success: true, spaces: enriched, count: enriched.length, mode: 'text' as const };
   },
 
@@ -271,7 +324,7 @@ export const spaceService = {
         _count: { rating: true },
       }),
       db.booking.count({
-        where: { spaceId, status: { in: ['PENDING_APPROVAL', 'APPROVED', 'ACTIVE'] } },
+        where: { spaceId, status: { in: [BookingStatus.PENDING_APPROVAL, BookingStatus.APPROVED, BookingStatus.ACTIVE] } },
       }),
     ]);
 
@@ -328,98 +381,100 @@ export const spaceService = {
     const settings = await db.platformSettings.findUnique({ where: { id: 1 } });
     if (settings) {
       if (data.hourlyPrice < settings.minHourlyRate || data.hourlyPrice > settings.maxHourlyRate) {
-        const err = new Error(
-          `Hourly rate must be between ₹${settings.minHourlyRate} and ₹${settings.maxHourlyRate}`
+        throw new AppError(
+          `Hourly rate must be between ₹${settings.minHourlyRate} and ₹${settings.maxHourlyRate}`,
+          400
         );
-        (err as any).status = 400;
-        throw err;
       }
     }
 
-    const space = await db.space.create({
-      data: {
-        ownerId,
-        name: data.spaceName,
-        spaceType: data.spaceType,
-        parkingFor: data.parkingFor,
-        capacity: data.capacity,
-        address: data.address,
-        landmark: data.landmark || null,
-        lat: data.latitude,
-        lng: data.longitude,
-        hourlyRate: data.hourlyPrice,
-        dailyRate: data.dailyRate || null,
-        monthlyRate: data.monthlyRate || null,
-        availability: data.availability,
-        startTime: data.startTime || null,
-        endTime: data.endTime || null,
-        requiresAdminReview: data.spaceType === 'Open Frontage Area',
-        amenities: data.amenities || [],
-        // Real media is uploaded separately via POST /spaces/:id/media after creation.
-        frontPhotoUrl: null,
-        areaPhotoUrl: null,
-        videoUrl: null,
-        visibility: data.visibility || null,
-        docType: data.docType,
-        docPhotoUrl: null,
-        status: 'PENDING',
-        features: [],
-      },
-    });
-
-    // Update owner profile
-    await db.ownerProfile.update({
-      where: { userId: ownerId },
-      data: {
-        totalSpaces: {
-          increment: 1,
-        },
-      },
-    });
-
-    // Persist owner compliance declarations + ownership confirmation. We always
-    // record consent when the listing was confirmed (data.confirmed), so every
-    // space has a legal audit row (who confirmed, when, from which IP) — not just
-    // those that ticked an optional compliance box.
-    if (data.confirmed || data.acceptOwnerResponsibility || data.acceptLegalCompliance || data.acceptNonViolation) {
-      await db.ownerConsent.create({
+    const space = await db.$transaction(async (tx) => {
+      const created = await tx.space.create({
         data: {
-          spaceId: space.id,
-          userId: ownerId,
-          // Genuine ownership confirmation = the required "I confirm I own this
-          // space / am authorised" checkbox the owner actually ticked (NOT the
-          // hardcoded `confirmed` submit flag, which is always true and carries
-          // no real consent signal).
-          confirmedOwnership: (data.acceptOwnerResponsibility ?? false) || (data.confirmed ?? false),
-          acceptOwnerResponsibility: data.acceptOwnerResponsibility ?? false,
-          acceptLegalCompliance: data.acceptLegalCompliance ?? false,
-          acceptPublicObstructionRules: data.acceptNonViolation ?? false,
-          acceptNonViolationDeclaration: data.acceptNonViolation ?? false,
-          nonViolationDeclarationText: 'This space does not block public roads, footpaths, or emergency access',
-          tcVersion: 'owner-tos-v1.0',
-          platform: 'mobile',
+          ownerId,
+          name: data.spaceName,
+          spaceType: data.spaceType,
+          parkingFor: data.parkingFor,
+          capacity: data.capacity,
+          address: data.address,
+          landmark: data.landmark || null,
+          lat: data.latitude,
+          lng: data.longitude,
+          hourlyRate: data.hourlyPrice,
+          dailyRate: data.dailyRate || null,
+          monthlyRate: data.monthlyRate || null,
+          availability: data.availability,
+          startTime: data.startTime || null,
+          endTime: data.endTime || null,
+          requiresAdminReview: data.spaceType === 'Open Frontage Area',
+          amenities: data.amenities || [],
+          // Real media is uploaded separately via POST /spaces/:id/media after creation.
+          frontPhotoUrl: null,
+          areaPhotoUrl: null,
+          videoUrl: null,
+          visibility: data.visibility || null,
+          docType: data.docType,
+          docPhotoUrl: null,
+          status: 'PENDING',
+          features: [],
         },
       });
-    }
+
+      await tx.ownerProfile.update({
+        where: { userId: ownerId },
+        data: { totalSpaces: { increment: 1 } },
+      });
+
+      // Persist owner compliance declarations + ownership confirmation. We always
+      // record consent when the listing was confirmed (data.confirmed), so every
+      // space has a legal audit row (who confirmed, when, from which IP) — not just
+      // those that ticked an optional compliance box.
+      if (data.confirmed || data.acceptOwnerResponsibility || data.acceptLegalCompliance || data.acceptNonViolation) {
+        await tx.ownerConsent.create({
+          data: {
+            spaceId: created.id,
+            userId: ownerId,
+            confirmedOwnership: (data.acceptOwnerResponsibility ?? false) || (data.confirmed ?? false),
+            acceptOwnerResponsibility: data.acceptOwnerResponsibility ?? false,
+            acceptLegalCompliance: data.acceptLegalCompliance ?? false,
+            acceptPublicObstructionRules: data.acceptNonViolation ?? false,
+            acceptNonViolationDeclaration: data.acceptNonViolation ?? false,
+            nonViolationDeclarationText: 'This space does not block public roads, footpaths, or emergency access',
+            tcVersion: 'owner-tos-v1.0',
+            platform: 'mobile',
+          },
+        });
+      }
+
+      return created;
+    });
+
+    // Notify the owner their space is under review (best-effort — never fail the
+    // create over a notification write).
+    await db.notification.create({
+      data: {
+        userId: ownerId,
+        title: 'Space Submitted ✅',
+        message: `Your space "${(space as any).name}" has been submitted and is pending admin review. We'll notify you once it's approved.`,
+        category: 'SPACE',
+      },
+    }).catch(() => {});
 
     return space;
   },
 
   updateSpace: async (spaceId: number, requestorId: number, data: Partial<CreateSpaceInput>) => {
     const existing = await db.space.findUnique({ where: { id: spaceId }, select: { ownerId: true, status: true } });
-    if (!existing) throw Object.assign(new Error('Space not found'), { statusCode: 404 });
+    if (!existing) throw new AppError('Space not found', 404);
     if (existing.ownerId !== requestorId) {
-      throw Object.assign(new Error('Forbidden: You do not own this space'), { statusCode: 403 });
+      throw new AppError('Forbidden: You do not own this space', 403);
     }
 
     // Editing a listing is a premium action — requires an active subscription.
     // (Managing live bookings is NOT gated; only listing changes are.)
     const ent = await entitlementService.getForUser(requestorId);
     if (!ent.isSubscribed) {
-      throw Object.assign(
-        new Error('A subscription is required to edit your spaces. Renew your plan to continue.'),
-        { statusCode: 403, code: 'SUBSCRIPTION_REQUIRED' },
-      );
+      throw new AppError('A subscription is required to edit your spaces. Renew your plan to continue.', 403, 'SUBSCRIPTION_REQUIRED');
     }
 
     const updateData: any = {};
@@ -473,9 +528,9 @@ export const spaceService = {
 
   deleteSpace: async (spaceId: number, requestorId: number, requestorRole: string) => {
     const existing = await db.space.findUnique({ where: { id: spaceId }, select: { ownerId: true } });
-    if (!existing) throw Object.assign(new Error('Space not found'), { statusCode: 404 });
+    if (!existing) throw new AppError('Space not found', 404);
     if (existing.ownerId !== requestorId && requestorRole !== 'ADMIN') {
-      throw Object.assign(new Error('Forbidden: You do not own this space'), { statusCode: 403 });
+      throw new AppError('Forbidden: You do not own this space', 403);
     }
 
     // Check if space has active bookings
@@ -483,7 +538,7 @@ export const spaceService = {
       where: {
         spaceId,
         status: {
-          in: ['PENDING_APPROVAL', 'APPROVED', 'ACTIVE'],
+          in: [BookingStatus.PENDING_APPROVAL, BookingStatus.APPROVED, BookingStatus.ACTIVE],
         },
       },
     });
@@ -513,7 +568,7 @@ export const spaceService = {
 
   getSpaceBookings: async (spaceId: number, ownerId: number, opts: { page?: number; limit?: number } = {}) => {
     const space = await db.space.findFirst({ where: { id: spaceId, ownerId } });
-    if (!space) throw Object.assign(new Error('Space not found or access denied'), { statusCode: 404 });
+    if (!space) throw new AppError('Space not found or access denied', 404);
 
     // Paginate — a popular space can accrue thousands of bookings; never load
     // the whole table into memory.
@@ -615,7 +670,7 @@ export const spaceService = {
 
   getSpaceAnalytics: async (spaceId: number, ownerId: number) => {
     const space = await db.space.findFirst({ where: { id: spaceId, ownerId } });
-    if (!space) throw Object.assign(new Error('Space not found or access denied'), { statusCode: 404 });
+    if (!space) throw new AppError('Space not found or access denied', 404);
 
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -627,7 +682,7 @@ export const spaceService = {
     // (a busy space can have thousands).
     const completedWhere = (since?: Date) => ({
       spaceId,
-      status: 'COMPLETED',
+      status: BookingStatus.COMPLETED,
       ...(since ? { createdAt: { gte: since } } : {}),
     });
     const [
@@ -653,7 +708,7 @@ export const spaceService = {
       db.booking.aggregate({ where: completedWhere(dayStart), _sum: { totalAmount: true } }),
       db.booking.count({ where: { spaceId, createdAt: { gte: monthStart } } }),
       db.booking.aggregate({ where: completedWhere(), _avg: { duration: true }, _count: { _all: true } }),
-      db.booking.count({ where: { spaceId, status: 'ACTIVE' } }),
+      db.booking.count({ where: { spaceId, status: BookingStatus.ACTIVE } }),
     ]);
 
     const countBy = (s: string) => (statusCounts.find((g) => g.status === s)?._count._all ?? 0);
@@ -775,9 +830,9 @@ export const spaceService = {
   // record holds legal/PII evidence, so guessing a spaceId must not grant access.
   assertSpaceOwnerAccess: async (spaceId: number, requester: { id: number; role?: string }) => {
     const space = await db.space.findUnique({ where: { id: spaceId }, select: { ownerId: true } });
-    if (!space) throw Object.assign(new Error('Space not found'), { statusCode: 404 });
+    if (!space) throw new AppError('Space not found', 404);
     if (requester.role !== 'ADMIN' && space.ownerId !== requester.id) {
-      throw Object.assign(new Error('You do not have access to this space'), { statusCode: 403 });
+      throw new AppError('You do not have access to this space', 403);
     }
   },
 

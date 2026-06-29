@@ -1,4 +1,5 @@
 import { db } from '../config/database';
+import { AppError } from '../utils/errors';
 import { redis } from '../config/redis';
 import { storageService } from './storage.service';
 import { BUCKETS } from '../config/supabase';
@@ -200,7 +201,7 @@ export const uploadSpaceDocument = async (
 ) => {
   // Verify space ownership
   const space = await db.space.findFirst({ where: { id: spaceId, ownerId } });
-  if (!space) throw { status: 403, message: 'Space not found or access denied' };
+  if (!space) throw new AppError('Space not found or access denied', 403);
 
   // Map the incoming type/label to the canonical enum so compliance recognises it.
   const canonicalType = normaliseDocumentType(space.spaceType, documentType);
@@ -252,7 +253,7 @@ export const verifySpaceDocument = async (
   rejectionReason?: string,
 ) => {
   const doc = await db.spaceDocument.findUnique({ where: { id: docId } });
-  if (!doc) throw { status: 404, message: 'Document not found' };
+  if (!doc) throw new AppError('Document not found', 404);
 
   const updated = await db.spaceDocument.update({
     where: { id: docId },
@@ -274,7 +275,7 @@ export const deleteSpaceDocument = async (docId: number, ownerId: number) => {
     where: { id: docId },
     include: { space: { select: { ownerId: true } } },
   });
-  if (!doc || doc.space.ownerId !== ownerId) throw { status: 403, message: 'Not found or access denied' };
+  if (!doc || doc.space.ownerId !== ownerId) throw new AppError('Not found or access denied', 403);
 
   // Remove file from Supabase (best-effort — never block DB cleanup on storage errors).
   // Skip legacy rows whose fileUrl is a full URL or old /uploads path.

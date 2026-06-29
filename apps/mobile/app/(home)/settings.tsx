@@ -1,64 +1,88 @@
-import React, { useState, useEffect } from 'react';
-import {View,
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  View,
   Text,
   StyleSheet,
   StatusBar,
   TouchableOpacity,
   ScrollView,
   Switch,
-  Platform,
   ActivityIndicator,
-  Alert} from 'react-native';
+  Alert,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Bell, Globe, Moon, Shield, Trash2 } from 'lucide-react-native';
+import { Bell, Globe, Moon, Shield, Trash2, Sun, Smartphone } from 'lucide-react-native';
 import { PageHeader } from '../../components';
 import { api } from '../../services/api';
 import { toast } from '../../utils/toast';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
+import type { ColorsType } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 import { useThemeStore } from '../../store/themeStore';
 import { useAuthStore } from '../../store/authStore';
 
+type ThemeOption = 'light' | 'dark' | 'system';
+
+const THEME_OPTIONS: { value: ThemeOption; label: string; desc: string }[] = [
+  { value: 'light', label: 'Light', desc: 'Always light' },
+  { value: 'dark',  label: 'Dark',  desc: 'Always dark' },
+  { value: 'system', label: 'System', desc: 'Follow device' },
+];
+
 export default function SettingsScreen() {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
+  const [loading, setLoading] = useState(true);
   const [pushEnabled, setPushEnabled] = useState(true);
   const [emailEnabled, setEmailEnabled] = useState(false);
   const [locationEnabled, setLocationEnabled] = useState(true);
 
-  // Theme — driven by themeStore so the whole app reacts
   const { mode: themeMode, setMode: setThemeMode } = useThemeStore();
-  const darkTheme = themeMode === 'dark';
   const logout = useAuthStore((s) => s.logout);
   const [deleting, setDeleting] = useState(false);
+  // Whether the user currently has a paid subscription — drives the delete-dialog copy.
+  const [hasPaidPlan, setHasPaidPlan] = useState(false);
+
+  const runDelete = async () => {
+    try {
+      setDeleting(true);
+      await api.delete('/users/me');
+      await logout();
+      Alert.alert(
+        'Account Deleted',
+        'Your ParkSwift account has been deactivated. You have been signed out from all devices.',
+        [{ text: 'OK', onPress: () => router.replace('/(auth)/login') }],
+      );
+    } catch (e: any) {
+      setDeleting(false);
+      Alert.alert('Could not delete', e?.message || 'Please try again.');
+    }
+  };
 
   const handleDeleteAccount = () => {
+    // Accurate copy: this is a deactivation/soft-delete. Records are retained for
+    // legal/financial purposes; an active subscription is cancelled (no future charges).
+    const subLine = hasPaidPlan
+      ? '\n• Your active subscription will be cancelled — you will not be charged for future renewals.'
+      : '';
     Alert.alert(
-      'Delete Account',
-      'This permanently deletes your account and removes your spaces. This cannot be undone. Continue?',
+      'Delete Your Account?',
+      'This will permanently deactivate your ParkSwift account.\n' +
+        '\n• You will be signed out from all devices.' +
+        '\n• Your parking spaces will be removed from public listings.' +
+        subLine +
+        '\n• Past bookings, payments, and transaction records are retained for legal and financial purposes.' +
+        '\n\nThis action cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setDeleting(true);
-              await api.delete('/users/me');
-              await logout();
-              router.replace('/(auth)/login');
-            } catch (e: any) {
-              setDeleting(false);
-              Alert.alert('Could not delete', e?.message || 'Please try again.');
-            }
-          },
-        },
+        { text: 'Delete Account', style: 'destructive', onPress: runDelete },
       ],
     );
   };
 
-  // Fetch saved preferences from API on mount
   useEffect(() => {
     (async () => {
       try {
@@ -68,20 +92,38 @@ export default function SettingsScreen() {
           setPushEnabled(p.pushNotifications ?? true);
           setEmailEnabled(p.emailNotifications ?? false);
           setLocationEnabled(p.locationServices ?? true);
-          // Sync API preference → themeStore on load
-          if (p.darkTheme === true) setThemeMode('dark');
+          // Sync saved theme mode → store on load
+          if (p.themeMode && ['light', 'dark', 'system'].includes(p.themeMode)) {
+            setThemeMode(p.themeMode as ThemeOption);
+          } else if (p.darkTheme === true) {
+            // legacy boolean field — upgrade to string
+            setThemeMode('dark');
+          }
         }
       } catch (e) {
         if (__DEV__) console.log('[SETTINGS] load error', e);
+        Alert.alert('Could not load settings', 'Your preferences could not be loaded. Defaults shown.');
       } finally {
         setLoading(false);
       }
     })();
   }, []);
 
-  // Persist a toggle change to the backend.
-  // Returns true on success; on failure we revert the switch so the UI never lies.
-  const updatePreference = async (key: string, value: boolean): Promise<boolean> => {
+  // Detect a paid subscription so the delete dialog can warn it will be cancelled.
+  // Best-effort: failure just falls back to the no-subscription copy.
+  useEffect(() => {
+    (async () => {
+      try {
+        const json = await api.get('/subscriptions/me');
+        const plan = json?.currentPlan;
+        setHasPaidPlan(!!(plan && plan.id && plan.price > 0));
+      } catch {
+        /* ignore — default to no paid plan */
+      }
+    })();
+  }, []);
+
+  const updatePreference = async (key: string, value: boolean | string): Promise<boolean> => {
     try {
       await api.put('/user-preferences', { [key]: value });
       return true;
@@ -97,15 +139,13 @@ export default function SettingsScreen() {
     current: boolean,
   ) => {
     const next = !current;
-    setter(next); // optimistic
+    setter(next);
     const ok = await updatePreference(key, next);
     if (!ok) {
-      // Revert and tell the user it didn't save.
       setter(current);
       toast.error('Could not save. Check your connection.');
       return;
     }
-    // One helpful note when location is turned off — it affects parking search.
     if (key === 'locationServices' && next === false) {
       Alert.alert(
         'Location Services Off',
@@ -114,13 +154,23 @@ export default function SettingsScreen() {
     }
   };
 
+  const selectTheme = async (option: ThemeOption) => {
+    const prev = themeMode;
+    setThemeMode(option); // apply immediately
+    const ok = await updatePreference('themeMode', option);
+    if (!ok) {
+      setThemeMode(prev); // revert
+      toast.error('Could not save. Check your connection.');
+    }
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" />
-        <PageHeader title="Settings"  onBack={() => router.replace('/(home)')} />
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+        <PageHeader title="Settings" onBack={() => router.replace('/(home)')} />
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       </SafeAreaView>
     );
@@ -128,15 +178,17 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
-      <PageHeader title="Settings"  onBack={() => router.replace('/(home)')} />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+      <PageHeader title="Settings" onBack={() => router.replace('/(home)')} />
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
         <Text style={styles.sectionTitle}>Notifications</Text>
         <View style={styles.settingsGroup}>
           <View style={styles.settingItem}>
             <View style={styles.settingLeft}>
-              <View style={styles.iconContainer}><Bell size={20} color={Colors.textSecondary} /></View>
+              <View style={styles.iconContainer}>
+                <Bell size={20} color={colors.textSecondary} />
+              </View>
               <View style={styles.settingText}>
                 <Text style={styles.settingLabel}>Push Notifications</Text>
                 <Text style={styles.settingDesc}>Get updates about your bookings</Text>
@@ -145,14 +197,16 @@ export default function SettingsScreen() {
             <Switch
               value={pushEnabled}
               onValueChange={() => toggle('pushNotifications', setPushEnabled, pushEnabled)}
-              trackColor={{ false: Colors.border, true: Colors.primary }}
-              thumbColor={Colors.white}
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor={colors.white}
             />
           </View>
           <View style={styles.separator} />
           <View style={styles.settingItem}>
             <View style={styles.settingLeft}>
-              <View style={styles.iconContainer}><Shield size={20} color={Colors.textSecondary} /></View>
+              <View style={styles.iconContainer}>
+                <Shield size={20} color={colors.textSecondary} />
+              </View>
               <View style={styles.settingText}>
                 <Text style={styles.settingLabel}>Email Notifications</Text>
                 <Text style={styles.settingDesc}>Receive email updates</Text>
@@ -161,43 +215,52 @@ export default function SettingsScreen() {
             <Switch
               value={emailEnabled}
               onValueChange={() => toggle('emailNotifications', setEmailEnabled, emailEnabled)}
-              trackColor={{ false: Colors.border, true: Colors.primary }}
-              thumbColor={Colors.white}
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor={colors.white}
             />
           </View>
         </View>
 
         <Text style={styles.sectionTitle}>Appearance</Text>
         <View style={styles.settingsGroup}>
-          <View style={styles.settingItem}>
-            <View style={styles.settingLeft}>
-              <View style={styles.iconContainer}><Moon size={20} color={Colors.textSecondary} /></View>
-              <View style={styles.settingText}>
-                <Text style={styles.settingLabel}>Dark Theme</Text>
-                <Text style={styles.settingDesc}>Switch to dark mode</Text>
-              </View>
-            </View>
-            <Switch
-              value={darkTheme}
-              onValueChange={async (val) => {
-                setThemeMode(val ? 'dark' : 'light'); // apply immediately for instant feedback
-                const ok = await updatePreference('darkTheme', val);
-                if (!ok) {
-                  setThemeMode(val ? 'light' : 'dark'); // revert
-                  toast.error('Could not save. Check your connection.');
-                }
-              }}
-              trackColor={{ false: Colors.border, true: Colors.primary }}
-              thumbColor={Colors.white}
-            />
-          </View>
+          {THEME_OPTIONS.map((opt, i) => {
+            const selected = themeMode === opt.value;
+            const Icon = opt.value === 'light' ? Sun : opt.value === 'dark' ? Moon : Smartphone;
+            return (
+              <React.Fragment key={opt.value}>
+                {i > 0 && <View style={styles.separator} />}
+                <TouchableOpacity
+                  style={styles.settingItem}
+                  onPress={() => selectTheme(opt.value)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.settingLeft}>
+                    <View style={[styles.iconContainer, selected && styles.iconContainerActive]}>
+                      <Icon size={20} color={selected ? colors.primary : colors.textSecondary} />
+                    </View>
+                    <View style={styles.settingText}>
+                      <Text style={[styles.settingLabel, selected && styles.settingLabelActive]}>
+                        {opt.label}
+                      </Text>
+                      <Text style={styles.settingDesc}>{opt.desc}</Text>
+                    </View>
+                  </View>
+                  <View style={[styles.radioOuter, selected && styles.radioOuterActive]}>
+                    {selected && <View style={styles.radioInner} />}
+                  </View>
+                </TouchableOpacity>
+              </React.Fragment>
+            );
+          })}
         </View>
 
         <Text style={styles.sectionTitle}>Privacy</Text>
         <View style={styles.settingsGroup}>
           <View style={styles.settingItem}>
             <View style={styles.settingLeft}>
-              <View style={styles.iconContainer}><Globe size={20} color={Colors.textSecondary} /></View>
+              <View style={styles.iconContainer}>
+                <Globe size={20} color={colors.textSecondary} />
+              </View>
               <View style={styles.settingText}>
                 <Text style={styles.settingLabel}>Location Services</Text>
                 <Text style={styles.settingDesc}>Allow location access for parking search</Text>
@@ -206,26 +269,30 @@ export default function SettingsScreen() {
             <Switch
               value={locationEnabled}
               onValueChange={() => toggle('locationServices', setLocationEnabled, locationEnabled)}
-              trackColor={{ false: Colors.border, true: Colors.primary }}
-              thumbColor={Colors.white}
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor={colors.white}
             />
           </View>
         </View>
 
-        {/* Account — deletion (Play Store / GDPR compliance) */}
         <Text style={styles.sectionTitle}>Account</Text>
         <View style={styles.settingsGroup}>
-          <TouchableOpacity style={styles.dangerRow} onPress={handleDeleteAccount} disabled={deleting} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={styles.dangerRow}
+            onPress={handleDeleteAccount}
+            disabled={deleting}
+            activeOpacity={0.7}
+          >
             <View style={styles.settingLeft}>
-              <View style={[styles.iconContainer, { backgroundColor: Colors.errorBg }]}>
-                <Trash2 size={20} color={Colors.error} />
+              <View style={[styles.iconContainer, { backgroundColor: colors.errorBg }]}>
+                <Trash2 size={20} color={colors.error} />
               </View>
               <View style={styles.settingText}>
-                <Text style={[styles.settingLabel, { color: Colors.error }]}>Delete Account</Text>
+                <Text style={[styles.settingLabel, { color: colors.error }]}>Delete Account</Text>
                 <Text style={styles.settingDesc}>Permanently delete your account and data</Text>
               </View>
             </View>
-            {deleting && <ActivityIndicator size="small" color={Colors.error} />}
+            {deleting && <ActivityIndicator size="small" color={colors.error} />}
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -233,23 +300,77 @@ export default function SettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.white },
-  backButton: {
-    width: 38, height: 38, borderRadius: BorderRadius.circle, backgroundColor: Colors.screenBg,   // 19 = circle ✓
-    borderWidth: 1, borderColor: Colors.surfaceBg, alignItems: 'center', justifyContent: 'center',
-  },
-  headerTitle: { fontSize: FontSize['3xl'], fontWeight: FontWeight.bold, color: Colors.textPrimary },  // 20 = 3xl ✓
-  scrollView: { backgroundColor: Colors.screenBg },
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.white },
+  scrollView: { backgroundColor: colors.screenBg },
   content: { padding: Spacing.screenH },
-  sectionTitle: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: Colors.textMuted, letterSpacing: 0, marginBottom: Spacing.lg, marginTop: Spacing.screenH },  // 13 = base ✓
-  settingsGroup: { backgroundColor: Colors.white, borderRadius: BorderRadius.lg, overflow: 'hidden' },  // 16 = lg ✓
-  settingItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing['3xl'], gap: Spacing.xl },
-  dangerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing['3xl'], gap: Spacing.xl },
+  sectionTitle: {
+    fontSize: FontSize.base,
+    fontWeight: FontWeight.bold,
+    color: colors.textMuted,
+    letterSpacing: 0,
+    marginBottom: Spacing.lg,
+    marginTop: Spacing.screenH,
+  },
+  settingsGroup: {
+    backgroundColor: colors.white,
+    borderRadius: BorderRadius.lg,
+    overflow: 'hidden',
+  },
+  settingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: Spacing['3xl'],
+    gap: Spacing.xl,
+  },
+  dangerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: Spacing['3xl'],
+    gap: Spacing.xl,
+  },
   settingLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xl, flex: 1 },
   settingText: { flex: 1 },
-  iconContainer: { width: 40, height: 40, borderRadius: BorderRadius.md, backgroundColor: Colors.screenBg, alignItems: 'center', justifyContent: 'center' },  // 12 = md ✓
-  settingLabel: { fontSize: FontSize.lg, fontWeight: FontWeight.semibold, color: Colors.textPrimary, marginBottom: Spacing.micro },  // 15 = lg ✓
-  settingDesc: { fontSize: FontSize.sm, color: Colors.textMuted },  // 12 = sm ✓
-  separator: { height: 1, backgroundColor: Colors.surfaceBg, marginLeft: 68 },
+  iconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: BorderRadius.md,
+    backgroundColor: colors.screenBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconContainerActive: {
+    backgroundColor: colors.primaryBg,
+  },
+  settingLabel: {
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.semibold,
+    color: colors.textPrimary,
+    marginBottom: Spacing.micro,
+  },
+  settingLabelActive: {
+    color: colors.primary,
+  },
+  settingDesc: { fontSize: FontSize.sm, color: colors.textMuted },
+  separator: { height: 1, backgroundColor: colors.surfaceBg, marginLeft: 68 },
+  radioOuter: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioOuterActive: {
+    borderColor: colors.primary,
+  },
+  radioInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.primary,
+  },
 });

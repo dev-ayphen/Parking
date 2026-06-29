@@ -1,4 +1,5 @@
 import { db } from '../config/database';
+import { AppError } from '../utils/errors';
 import { storageService } from './storage.service';
 import { BUCKETS } from '../config/supabase';
 
@@ -115,9 +116,9 @@ export const caseEvidenceService = {
     ]);
 
     const abuseMap = new Map<number, number>();
-    abuseByUser.forEach((r: any) => abuseMap.set(r.reportedUserId, r._count));
+    abuseByUser.forEach((r) => abuseMap.set(r.reportedUserId, r._count));
     const roadsideMap = new Map<string, number>();
-    roadsideByBooking.forEach((r: any) => {
+    roadsideByBooking.forEach((r) => {
       if (r.bookingId) roadsideMap.set(r.bookingId, r._count);
     });
 
@@ -203,7 +204,7 @@ export const caseEvidenceService = {
     });
 
     if (!booking) {
-      throw Object.assign(new Error('Booking not found'), { statusCode: 404 });
+      throw new AppError('Booking not found', 404);
     }
 
     const spaceId = booking.spaceId;
@@ -415,7 +416,7 @@ export const caseEvidenceService = {
         ownerConsent: booking.space.ownerConsent,
         roadsideAcknowledgments: roadsideAcks,
         documents: await Promise.all(
-          booking.space.documents.map(async (doc: any) => ({
+          booking.space.documents.map(async (doc) => ({
             ...doc,
             fileUrl: doc.fileUrl
               ? await storageService.resolveUrl(doc.fileUrl, BUCKETS.PRIVATE).catch(() => doc.fileUrl)

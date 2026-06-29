@@ -1,14 +1,97 @@
 import { Request, Response } from 'express';
 import PDFDocument from 'pdfkit';
+import crypto from 'crypto';
+import { BookingStatus } from '@prisma/client';
 import { db } from '../config/database';
+import { redis } from '../config/redis';
+
+const INVOICE_TOKEN_TTL = 60; // seconds — single-use, expires in 1 minute
 
 export const invoiceController = {
+  /**
+   * POST /bookings/:id/invoice-token
+   * Issues a short-lived (60s), single-use signed download token.
+   * The mobile client exchanges its session JWT for this token, then opens
+   * the invoice URL with ?signed_token= — the session JWT never hits a URL.
+   */
+  issueToken: async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.id;
+      const bookingId = req.params.id;
+
+      // Verify the booking exists and the caller is the parker or owner
+      const booking = await db.booking.findUnique({
+        where: { id: bookingId },
+        select: { parkerId: true, space: { select: { ownerId: true } } },
+      });
+      if (!booking) {
+        res.status(404).json({ error: 'Booking not found' });
+        return;
+      }
+      const isParker = booking.parkerId === userId;
+      const isOwner = booking.space.ownerId === userId;
+      const isAdmin = req.user!.role === 'ADMIN';
+      if (!isParker && !isOwner && !isAdmin) {
+        res.status(403).json({ error: 'Access denied' });
+        return;
+      }
+
+      // Generate a cryptographically random token and store its SHA-256 hash
+      // in Redis with a TTL. The plaintext token goes to the client; only the
+      // hash lives server-side so a Redis breach doesn't expose usable tokens.
+      const plainToken = crypto.randomBytes(32).toString('hex');
+      const tokenHash = crypto.createHash('sha256').update(plainToken).digest('hex');
+      const redisKey = `invoice_token:${tokenHash}`;
+
+      await redis.set(redisKey, `${userId}:${bookingId}`, 'EX', INVOICE_TOKEN_TTL);
+
+      res.json({ token: plainToken, expiresIn: INVOICE_TOKEN_TTL });
+    } catch {
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+
   /** GET /bookings/:id/invoice — streams a PDF invoice for a completed booking */
   download: async (req: Request, res: Response) => {
     try {
-      // authenticate middleware already validated the token (supports ?token= query param too)
-      const userId = req.user!.id;
+      let userId: number;
       const bookingId = req.params.id;
+
+      // Prefer the short-lived signed_token over the session JWT in ?token=.
+      // signed_token is single-use: consumed from Redis before the PDF is streamed.
+      const signedToken = req.query.signed_token as string | undefined;
+      if (signedToken) {
+        const tokenHash = crypto.createHash('sha256').update(signedToken).digest('hex');
+        const redisKey = `invoice_token:${tokenHash}`;
+        let stored: string | null;
+        try {
+          stored = await redis.get(redisKey);
+        } catch {
+          res.status(503).json({ error: 'Service temporarily unavailable' });
+          return;
+        }
+        if (!stored) {
+          res.status(401).json({ error: 'Invalid or expired download token' });
+          return;
+        }
+        // Consume immediately — single use. Fire-and-forget del; if it fails the
+        // 60s TTL will still expire the token naturally.
+        redis.del(redisKey).catch(() => {});
+        const [storedUserId, storedBookingId] = stored.split(':');
+        if (storedBookingId !== bookingId) {
+          res.status(403).json({ error: 'Token is not valid for this booking' });
+          return;
+        }
+        userId = parseInt(storedUserId, 10);
+      } else {
+        // Legacy path: session JWT via ?token= query param (still supported for
+        // backward compat but deprecated — mobile should use signed_token).
+        if (!req.user) {
+          res.status(401).json({ error: 'Authentication required' });
+          return;
+        }
+        userId = req.user.id;
+      }
 
       const booking = await db.booking.findUnique({
         where: { id: bookingId },
@@ -29,12 +112,14 @@ export const invoiceController = {
         return;
       }
 
-      // Only the parker or the actual space owner can download this invoice.
+      // Only the parker, the actual space owner, or an admin can download this invoice.
       // (Previously this checked `parkerId !== userId`, which let ANY logged-in
       // user who wasn't the parker pull the invoice — an info-disclosure bug.)
       const isParker = booking.parkerId === userId;
       const isOwner = booking.space.ownerId === userId;
-      if (!isParker && !isOwner) {
+      const callerRole = (req as any).user?.role;
+      const isAdmin = callerRole === 'ADMIN';
+      if (!isParker && !isOwner && !isAdmin) {
         res.status(403).json({ error: 'Access denied' });
         return;
       }
@@ -102,7 +187,7 @@ export const invoiceController = {
         .text(booking.parker.phone || '—', col1, y + 12);
 
       label('Booking Status', col2, y);
-      const statusColor = booking.status === 'COMPLETED' ? '#16a34a' : '#dc2626';
+      const statusColor = booking.status === BookingStatus.COMPLETED ? '#16a34a' : '#dc2626';
       doc.fontSize(11).fillColor(statusColor).font('Helvetica-Bold').text(booking.status, col2, y + 12);
 
       y += 55;
@@ -143,10 +228,18 @@ export const invoiceController = {
       label('Duration (Booked)', col1, y);
       value(`${booking.duration} hour${booking.duration !== 1 ? 's' : ''}`, col1, y + 12);
 
-      label('Payment Mode', col2, y);
-      value(booking.paymentMode.replace(/_/g, ' '), col2, y + 12);
+      label('Payment Method', col2, y);
+      value('Direct Payment to Space Owner', col2, y + 12);
 
-      y += 60;
+      y += 50;
+
+      const paymentStatus = (booking as any).parkerMarkedPaidAt
+        ? 'Confirmed by Owner'
+        : 'Pending Owner Confirmation';
+      label('Payment Status', col1, y);
+      value(paymentStatus, col1, y + 12);
+
+      y += 40;
 
       // ── Amount box ───────────────────────────────────────────────────────
       doc.rect(50, y, 495, 65).fillColor('#fdf2f8').fill();
@@ -172,9 +265,10 @@ export const invoiceController = {
       doc.text('ParkSwift — Smart Parking Platform | support@parkswift.in', 50, y + 14, { align: 'center', width: 495 });
 
       doc.end();
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (!res.headersSent) {
-        res.status(err.statusCode || 500).json({ error: err.message || 'Failed to generate invoice' });
+        const status = (err as any)?.statusCode || 500;
+        res.status(status).json({ error: 'Failed to generate invoice' });
       }
     }
   },

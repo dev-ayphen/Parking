@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, StatusBar, TouchableOpacity,
   ActivityIndicator, Alert, ScrollView, Platform, Linking, DeviceEventEmitter, Image,
@@ -10,7 +10,9 @@ import PageHeader from '../../components/PageHeader';
 import { api } from '../../services/api';
 import { useNetworkStore } from '../../store/networkStore';
 import { useRealtime } from '../../hooks/useRealtime';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
+import type { ColorsType } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 import { toast } from '../../utils/toast';
 
 const APPROVAL_WINDOW_SEC = 120; // 2 minutes
@@ -25,6 +27,8 @@ export default function BookingRequestScreen() {
   const router = useRouter();
   const { bookingId } = useLocalSearchParams<{ bookingId: string }>();
   const { onEvent } = useRealtime();
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [booking, setBooking] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -73,6 +77,16 @@ export default function BookingRequestScreen() {
     return unsub;
   }, [bookingId, fetchBooking, onEvent]);
 
+  // Real-time: parker marked themselves as arrived — refetch so the APPROVED
+  // view flips from "on the way" to "Parker has arrived" banner immediately.
+  useEffect(() => {
+    const unsub = onEvent('parker:arrived', (d: any) => {
+      if (String(d.bookingId) !== String(bookingId)) return;
+      fetchBooking();
+    });
+    return unsub;
+  }, [bookingId, fetchBooking, onEvent]);
+
   const createdAt = booking?.createdAt ? new Date(booking.createdAt).getTime() : null;
   const elapsedSec = createdAt ? Math.floor((nowTs - createdAt) / 1000) : 0;
   const remainingSec = Math.max(0, APPROVAL_WINDOW_SEC - elapsedSec);
@@ -114,7 +128,7 @@ export default function BookingRequestScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <PageHeader title="Booking Request" onBack={() => router.replace('/(my-spaces)')} />
-        <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>
+        <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>
       </SafeAreaView>
     );
   }
@@ -159,7 +173,7 @@ export default function BookingRequestScreen() {
     };
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" />
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
         <PageHeader title="Approved Booking" onBack={() => router.replace('/(my-spaces)')} />
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {/* Status banner */}
@@ -179,19 +193,19 @@ export default function BookingRequestScreen() {
           <View style={styles.detailsCard}>
             <Text style={styles.cardTitle}>Booking Details</Text>
             <View style={styles.detailRow}>
-              <View style={styles.detailLabelWrap}><User size={16} color={Colors.textSecondary} /><Text style={styles.detailLabel}>Parker</Text></View>
+              <View style={styles.detailLabelWrap}><User size={16} color={colors.textSecondary} /><Text style={styles.detailLabel}>Parker</Text></View>
               <Text style={styles.detailValue}>{parkerName}</Text>
             </View>
             <View style={styles.detailRow}>
-              <View style={styles.detailLabelWrap}><MapPin size={16} color={Colors.textSecondary} /><Text style={styles.detailLabel}>Space</Text></View>
+              <View style={styles.detailLabelWrap}><MapPin size={16} color={colors.textSecondary} /><Text style={styles.detailLabel}>Space</Text></View>
               <Text style={styles.detailValue}>{spaceName}</Text>
             </View>
             <View style={styles.detailRow}>
-              <View style={styles.detailLabelWrap}><Car size={16} color={Colors.textSecondary} /><Text style={styles.detailLabel}>Vehicle</Text></View>
+              <View style={styles.detailLabelWrap}><Car size={16} color={colors.textSecondary} /><Text style={styles.detailLabel}>Vehicle</Text></View>
               <Text style={styles.detailValue}>{booking.vehicle?.licensePlate || '—'}</Text>
             </View>
             <View style={styles.detailRow}>
-              <View style={styles.detailLabelWrap}><Clock size={16} color={Colors.textSecondary} /><Text style={styles.detailLabel}>Expected Arrival</Text></View>
+              <View style={styles.detailLabelWrap}><Clock size={16} color={colors.textSecondary} /><Text style={styles.detailLabel}>Expected Arrival</Text></View>
               <Text style={styles.detailValue}>{etaStr}</Text>
             </View>
           </View>
@@ -219,14 +233,14 @@ export default function BookingRequestScreen() {
     // neutral amber (nothing went "wrong", the window just passed), cancelled =
     // muted grey. Each gets its own icon + tint instead of one generic red box.
     const result = isRejected
-      ? { title: 'Request Rejected', sub: 'You declined this booking. The parker has been notified.', Icon: Ban, tint: Colors.error, soft: Colors.errorBg }
+      ? { title: 'Request Rejected', sub: 'You declined this booking. The parker has been notified.', Icon: Ban, tint: colors.error, soft: colors.errorBg }
       : isCancelled
-        ? { title: 'Booking Cancelled', sub: 'This booking was cancelled and is no longer active.', Icon: XCircle, tint: Colors.textSecondary, soft: Colors.surfaceBg }
-        : { title: 'Request Expired', sub: 'This request expired before any action was taken. The parker can send a new one.', Icon: TimerOff, tint: Colors.warningAlt, soft: Colors.warningBgAlt };
+        ? { title: 'Booking Cancelled', sub: 'This booking was cancelled and is no longer active.', Icon: XCircle, tint: colors.textSecondary, soft: colors.surfaceBg }
+        : { title: 'Request Expired', sub: 'This request expired before any action was taken. The parker can send a new one.', Icon: TimerOff, tint: colors.warningAlt, soft: colors.warningBgAlt };
 
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" />
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
         <PageHeader title="Booking Request" onBack={() => router.replace('/(my-spaces)')} />
         <View style={styles.resultWrap}>
           <View style={styles.resultBody}>
@@ -242,7 +256,7 @@ export default function BookingRequestScreen() {
 
           {/* Primary action pinned to the bottom of the screen */}
           <TouchableOpacity style={styles.resultBtn} onPress={() => router.back()} activeOpacity={0.85}>
-            <ChevronLeft size={18} color={Colors.white} strokeWidth={2.5} />
+            <ChevronLeft size={18} color={colors.white} strokeWidth={2.5} />
             <Text style={styles.resultBtnText}>Go Back</Text>
           </TouchableOpacity>
         </View>
@@ -253,21 +267,21 @@ export default function BookingRequestScreen() {
   // --- Active pending request ---
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <PageHeader title="Booking Request" onBack={() => router.replace('/(my-spaces)')} />
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Countdown pill */}
         {!isExpired ? (
           <View style={[styles.countdownBanner, remainingSec < 30 && styles.countdownBannerUrgent]}>
-            <Clock size={16} color={remainingSec < 30 ? Colors.error : Colors.warning} />
+            <Clock size={16} color={remainingSec < 30 ? colors.error : colors.warning} />
             <Text style={[styles.countdownText, remainingSec < 30 && styles.countdownTextUrgent]}>
               Respond within {fmt(remainingSec)}
             </Text>
           </View>
         ) : (
           <View style={styles.expiredBanner}>
-            <Clock size={16} color={Colors.textSecondary} />
+            <Clock size={16} color={colors.textSecondary} />
             <Text style={styles.expiredBannerText}>This request has expired</Text>
           </View>
         )}
@@ -277,7 +291,7 @@ export default function BookingRequestScreen() {
           <View style={styles.cardRow}>
             <View style={styles.avatarCircle}>
               {parkerPhotoUrl ? (
-                <Image source={{ uri: parkerPhotoUrl }} style={styles.avatarImg} resizeMode="cover" />
+                <Image source={{ uri: parkerPhotoUrl }} style={styles.avatarImg} resizeMode="cover" onError={() => {}} />
               ) : (
                 <Text style={styles.avatarText}>{parkerName.charAt(0).toUpperCase()}</Text>
               )}
@@ -287,14 +301,14 @@ export default function BookingRequestScreen() {
               <View style={styles.ratingRow}>
                 {hasParkerRating ? (
                   <>
-                    <Star size={14} color={Colors.warning} fill={Colors.warning} />
+                    <Star size={14} color={colors.warning} fill={colors.warning} />
                     <Text style={styles.ratingText}>
                       {parkerRatingAvg.toFixed(1)} ({parkerRatingCount} {parkerRatingCount === 1 ? 'rating' : 'ratings'})
                     </Text>
                   </>
                 ) : (
                   <>
-                    <Star size={14} color={Colors.textMuted} />
+                    <Star size={14} color={colors.textMuted} />
                     <Text style={styles.ratingTextMuted}>New parker</Text>
                   </>
                 )}
@@ -308,30 +322,30 @@ export default function BookingRequestScreen() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Booking Details</Text>
           <View style={styles.detailRow}>
-            <MapPin size={16} color={Colors.textSecondary} />
+            <MapPin size={16} color={colors.textSecondary} />
             <Text style={styles.detailLabel}>Space</Text>
             <Text style={styles.detailValue}>{spaceName}</Text>
           </View>
           <View style={styles.detailRow}>
-            <Car size={16} color={Colors.textSecondary} />
+            <Car size={16} color={colors.textSecondary} />
             <Text style={styles.detailLabel}>Vehicle</Text>
             <Text style={styles.detailValue}>
               {booking.vehicle?.licensePlate || '-'} ({booking.vehicle?.vehicleType || '-'})
             </Text>
           </View>
           <View style={styles.detailRow}>
-            <Clock size={16} color={Colors.textSecondary} />
+            <Clock size={16} color={colors.textSecondary} />
             <Text style={styles.detailLabel}>Duration</Text>
             <Text style={styles.detailValue}>{duration}</Text>
           </View>
           <View style={styles.detailRow}>
-            <User size={16} color={Colors.textSecondary} />
+            <User size={16} color={colors.textSecondary} />
             <Text style={styles.detailLabel}>Arrival ETA</Text>
             <Text style={styles.detailValue}>{etaStr}</Text>
           </View>
           <View style={[styles.detailRow, { borderBottomWidth: 0 }]}>
             <Text style={styles.detailLabel}>Amount</Text>
-            <Text style={[styles.detailValue, { color: Colors.primary, fontWeight: FontWeight.extrabold, fontSize: FontSize.xl }]}>
+            <Text style={[styles.detailValue, { color: colors.primary, fontWeight: FontWeight.extrabold, fontSize: FontSize.xl }]}>
               ₹{booking.totalAmount}
             </Text>
           </View>
@@ -345,6 +359,7 @@ export default function BookingRequestScreen() {
               source={{ uri: booking.vehicle.frontPhotoUrl }}
               style={styles.vehiclePhotoImg}
               resizeMode="cover"
+              onError={() => {}}
             />
           ) : (
             <View style={styles.vehiclePhotoPlaceholder}>
@@ -363,14 +378,14 @@ export default function BookingRequestScreen() {
             onPress={() => handleAction('decline')}
             disabled={actioning}
           >
-            {actioning ? <ActivityIndicator color={Colors.error} /> : <Text style={styles.rejectBtnText}>Reject</Text>}
+            {actioning ? <ActivityIndicator color={colors.error} /> : <Text style={styles.rejectBtnText}>Reject</Text>}
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.acceptBtn}
             onPress={() => handleAction('accept')}
             disabled={actioning}
           >
-            {actioning ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.acceptBtnText}>Accept</Text>}
+            {actioning ? <ActivityIndicator color={colors.white} /> : <Text style={styles.acceptBtnText}>Accept</Text>}
           </TouchableOpacity>
         </View>
       )}
@@ -378,110 +393,110 @@ export default function BookingRequestScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.white },
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.white },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing['4xl'] },
-  errText: { color: Colors.textSecondary, fontSize: FontSize.lg },   // 15 = lg ✓
+  errText: { color: colors.textSecondary, fontSize: FontSize.lg },   // 15 = lg ✓
 
   content: { padding: Spacing.screenH, gap: Spacing['2xl'], paddingBottom: 120 },
 
   countdownBanner: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-    backgroundColor: Colors.warningBgAlt, borderRadius: BorderRadius.md, padding: Spacing['2xl'],  // 12 = md ✓
-    borderLeftWidth: 4, borderLeftColor: Colors.warning,
+    backgroundColor: colors.warningBgAlt, borderRadius: BorderRadius.md, padding: Spacing['2xl'],  // 12 = md ✓
+    borderLeftWidth: 4, borderLeftColor: colors.warning,
   },
-  countdownBannerUrgent: { backgroundColor: Colors.errorBg, borderLeftColor: Colors.error },
-  countdownText: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.warning, flex: 1 },  // 14 = md ✓
-  countdownTextUrgent: { color: Colors.error },
+  countdownBannerUrgent: { backgroundColor: colors.errorBg, borderLeftColor: colors.error },
+  countdownText: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: colors.warning, flex: 1 },  // 14 = md ✓
+  countdownTextUrgent: { color: colors.error },
   expiredBanner: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-    backgroundColor: Colors.surfaceBg, borderRadius: BorderRadius.md, padding: Spacing['2xl'],  // 12 = md ✓
-    borderLeftWidth: 4, borderLeftColor: Colors.textMuted,
+    backgroundColor: colors.surfaceBg, borderRadius: BorderRadius.md, padding: Spacing['2xl'],  // 12 = md ✓
+    borderLeftWidth: 4, borderLeftColor: colors.textMuted,
   },
-  expiredBannerText: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.textSecondary },  // 14 = md ✓
+  expiredBannerText: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: colors.textSecondary },  // 14 = md ✓
 
   card: {
-    backgroundColor: Colors.white, borderRadius: BorderRadius.button, padding: Spacing['3xl'],  // 14 = button ✓
-    borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: colors.white, borderRadius: BorderRadius.button, padding: Spacing['3xl'],  // 14 = button ✓
+    borderWidth: 1, borderColor: colors.border,
   },
-  cardTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.xl },  // 14 = md ✓
+  cardTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: colors.textPrimary, marginBottom: Spacing.xl },  // 14 = md ✓
   cardRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xl },
   avatarCircle: {
     width: 48, height: 48, borderRadius: 24,
-    backgroundColor: Colors.primaryBg, alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+    backgroundColor: colors.primaryBg, alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
   },
   avatarImg: { width: '100%', height: '100%', borderRadius: 24 },
-  avatarText: { fontSize: FontSize['3xl'], fontWeight: FontWeight.extrabold, color: Colors.primary },  // 20 = 3xl ✓
-  parkerName: { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: Colors.textPrimary },  // 16 = xl ✓
-  parkerSub: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: Spacing.micro },  // 12 = sm ✓
+  avatarText: { fontSize: FontSize['3xl'], fontWeight: FontWeight.extrabold, color: colors.primary },  // 20 = 3xl ✓
+  parkerName: { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: colors.textPrimary },  // 16 = xl ✓
+  parkerSub: { fontSize: FontSize.sm, color: colors.textSecondary, marginTop: Spacing.micro },  // 12 = sm ✓
   ratingRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.micro, marginTop: Spacing.micro },
-  ratingText: { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: Colors.textPrimary },  // 13 = base ✓
-  ratingTextMuted: { fontSize: FontSize.base, fontWeight: FontWeight.medium, color: Colors.textMuted },  // 13 = base ✓
+  ratingText: { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: colors.textPrimary },  // 13 = base ✓
+  ratingTextMuted: { fontSize: FontSize.base, fontWeight: FontWeight.medium, color: colors.textMuted },  // 13 = base ✓
 
   detailRow: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.lg,
-    paddingVertical: Spacing.lg, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBg,
+    paddingVertical: Spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.surfaceBg,
   },
-  detailLabel: { fontSize: FontSize.base, color: Colors.textSecondary, fontWeight: FontWeight.medium, flex: 1 },  // 13 = base ✓
-  detailValue: { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: Colors.textPrimary, textAlign: 'right', flex: 2 },  // 13 = base ✓
-  detailValueLink: { color: Colors.primary, textDecorationLine: 'underline' },
+  detailLabel: { fontSize: FontSize.base, color: colors.textSecondary, fontWeight: FontWeight.medium, flex: 1 },  // 13 = base ✓
+  detailValue: { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: colors.textPrimary, textAlign: 'right', flex: 2 },  // 13 = base ✓
+  detailValueLink: { color: colors.primary, textDecorationLine: 'underline' },
   vehiclePhotoCard: {
-    backgroundColor: Colors.white, borderRadius: BorderRadius.xl,
-    borderWidth: 1, borderColor: Colors.borderLight,
+    backgroundColor: colors.white, borderRadius: BorderRadius.xl,
+    borderWidth: 1, borderColor: colors.borderLight,
     overflow: 'hidden', marginBottom: Spacing['3xl'],
   },
   vehiclePhotoTitle: {
-    fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.textSecondary,
+    fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: colors.textSecondary,
     paddingHorizontal: Spacing['3xl'], paddingVertical: Spacing['2xl'],
   },
   vehiclePhotoImg: { width: '100%', height: 200 },
   vehiclePhotoPlaceholder: {
     height: 120, alignItems: 'center', justifyContent: 'center', gap: Spacing.md,
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
   },
   vehiclePhotoPlaceholderIcon: { fontSize: 32 },
-  vehiclePhotoPlaceholderText: { fontSize: FontSize.sm, color: Colors.textMuted },
+  vehiclePhotoPlaceholderText: { fontSize: FontSize.sm, color: colors.textMuted },
 
   // ── Approved-booking status view ──────────────────────────────────────
   detailLabelWrap: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, flex: 1 },
   detailsCard: {
-    backgroundColor: Colors.white, borderRadius: BorderRadius.lg,
-    padding: Spacing.screenH, borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: colors.white, borderRadius: BorderRadius.lg,
+    padding: Spacing.screenH, borderWidth: 1, borderColor: colors.border,
   },
   approvedBanner: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.lg,
-    backgroundColor: Colors.infoBg, borderRadius: BorderRadius.lg, padding: Spacing.screenH,
+    backgroundColor: colors.infoBg, borderRadius: BorderRadius.lg, padding: Spacing.screenH,
   },
-  approvedBannerGate: { backgroundColor: Colors.warningBg },
+  approvedBannerGate: { backgroundColor: colors.warningBg },
   approvedBannerIcon: { fontSize: 28 },
-  approvedBannerTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textPrimary },  // 15 = lg
-  approvedBannerSub: { fontSize: FontSize.base, color: Colors.textSecondary, marginTop: 2 },  // 13 = base
+  approvedBannerTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: colors.textPrimary },  // 15 = lg
+  approvedBannerSub: { fontSize: FontSize.base, color: colors.textSecondary, marginTop: 2 },  // 13 = base
   contactBtn: {
-    backgroundColor: Colors.white, borderWidth: 1.5, borderColor: Colors.primary,
+    backgroundColor: colors.white, borderWidth: 1.5, borderColor: colors.primary,
     borderRadius: BorderRadius.md, paddingVertical: Spacing['2xl'], alignItems: 'center',
   },
-  contactBtnText: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.primary },  // 15 = lg
+  contactBtnText: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: colors.primary },  // 15 = lg
   verifyBtn: {
-    backgroundColor: Colors.primary, borderRadius: BorderRadius.md,
+    backgroundColor: colors.primary, borderRadius: BorderRadius.md,
     paddingVertical: Spacing['2xl'], alignItems: 'center',
   },
-  verifyBtnText: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.white },  // 15 = lg
+  verifyBtnText: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: colors.white },  // 15 = lg
 
   footer: {
     flexDirection: 'row', gap: Spacing.xl, paddingHorizontal: Spacing.screenH, paddingTop: Spacing['3xl'],
     paddingBottom: Platform.OS === 'ios' ? 32 : 20,
-    backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: Colors.border,
+    backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.border,
   },
   rejectBtn: {
     flex: 1, paddingVertical: Spacing['2xl'], borderRadius: BorderRadius.md,  // 12 = md ✓
-    borderWidth: 1.5, borderColor: Colors.error, alignItems: 'center',
+    borderWidth: 1.5, borderColor: colors.error, alignItems: 'center',
   },
-  rejectBtnText: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.error },  // 15 = lg ✓
+  rejectBtnText: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: colors.error },  // 15 = lg ✓
   acceptBtn: {
     flex: 1, paddingVertical: Spacing['2xl'], borderRadius: BorderRadius.md,  // 12 = md ✓
-    backgroundColor: Colors.success, alignItems: 'center',
+    backgroundColor: colors.success, alignItems: 'center',
   },
-  acceptBtnText: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.white },  // 15 = lg ✓
+  acceptBtnText: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: colors.white },  // 15 = lg ✓
 
   // ── Terminal result (rejected / cancelled / expired) — clean centered state ──
   resultWrap: {
@@ -515,13 +530,13 @@ const styles = StyleSheet.create({
   resultTitle: {
     fontSize: FontSize['4xl'],
     fontWeight: FontWeight.extrabold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     textAlign: 'center',
     letterSpacing: -0.4,
   },
   resultSub: {
     fontSize: FontSize.md,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
     paddingHorizontal: Spacing.xl,
@@ -531,10 +546,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.xs,
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     paddingVertical: Spacing['2xl'],
     borderRadius: BorderRadius.button,
     width: '100%',
   },
-  resultBtnText: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.white },
+  resultBtnText: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: colors.white },
 });

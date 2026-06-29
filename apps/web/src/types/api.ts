@@ -59,6 +59,8 @@ export interface AdminUserDetails {
   suspendedUntil: string | null;
   banReason: string | null;
   bannedAt: string | null;
+  deletedAt: string | null;
+  deletedReason: string | null;
   isProfileComplete: boolean;
   createdAt: string;
   lastLoginAt: string | null;
@@ -69,6 +71,7 @@ export interface AdminUserDetails {
     billingEmail: string | null;
     billingAddress: string | null;
     gstin: string | null;
+    upiId: string | null;
   } | null;
   stats: {
     totalBookings: number;

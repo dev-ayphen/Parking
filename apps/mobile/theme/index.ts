@@ -103,78 +103,86 @@ export const Colors = {
 } as const;
 
 /**
- * DarkColors — exact same keys as Colors, dark-mode values.
- * Brand pink never changes. Backgrounds invert. Text inverts.
- * Status tints are darkened. Borders become subtle dark lines.
+ * DarkColors — neutral dark palette matching Uber / Zomato / Spotify production standard.
+ *
+ * Design principles:
+ *   1. NEUTRAL grays (no blue tint) — brand pink pops cleanly on neutral dark
+ *   2. Three clear depth levels: base (#111) → card (#1C1C1E) → elevated (#2C2C2E)
+ *   3. Text hierarchy: bright white → medium gray → dim gray
+ *   4. Status colors vivid enough to read without bg tints fighting the theme
+ *   5. Borders barely-visible hairlines — depth via bg contrast, not heavy lines
  */
 export const DarkColors = {
   // Brand — unchanged
   primary: '#DC0159',
-  primaryLight: '#FF006B',
+  primaryLight: '#FF4D8F',
   primaryDark: '#A8003F',
   primaryGradient: '#FF3D7F',
-  primaryBg: '#3D0015',       // dark pink tint
-  primaryBgLight: '#2D0010',
+  primaryBg: '#2A0015',       // very dark wine — visible but not garish
+  primaryBgLight: '#1F000F',
 
-  // Backgrounds — inverted
-  white: '#1E293B',           // cards / headers become dark card
-  screenBg: '#0F172A',        // screen bg = near-black
-  surfaceBg: '#1E293B',       // chips / badges
-  inputBg: '#1E293B',
+  // ── 3-level neutral depth (iOS/Android system dark standard) ─────
+  // Level 0 — base screen background
+  screenBg: '#111111',        // near-black neutral (Uber, Zomato base)
+  // Level 1 — cards, headers, modals, drawers (clearly above base)
+  white: '#1C1C1E',           // Apple system dark card — +11 stops from base
+  // Level 2 — chips, badges, tab bars, inputs (topmost, pops off cards)
+  surfaceBg: '#2C2C2E',       // Apple system elevated surface — +10 stops from card
+  inputBg: '#252525',         // inputs — between card and elevated
 
-  // Text — inverted
-  textPrimary: '#F1F5F9',     // headings / key values → near-white
-  textSecondary: '#94A3B8',   // body / meta → medium gray
-  textMuted: '#64748B',       // placeholders → slate
-  textDark: '#CBD5E1',        // back-button icons
-  textBody: '#94A3B8',        // body paragraphs
-  textAuth: '#F9FAFB',
+  // Text — clean three-tier hierarchy
+  textPrimary: '#F5F5F5',     // near-white — headings, key values (not harsh #FFF)
+  textSecondary: '#ABABAB',   // medium gray — body, meta (Spotify body text)
+  textMuted: '#636366',       // dim gray — placeholders, captions
+  textDark: '#C7C7CC',        // light gray — icons, support text
+  textBody: '#ABABAB',        // body paragraphs
+  textAuth: '#F5F5F5',        // auth screen inputs
 
-  // Borders — darkened
-  borderLight: '#1E293B',     // light dividers
-  border: '#334155',          // standard borders
-  borderMuted: '#475569',     // radio/dashed borders
+  // Borders — hairlines only, depth comes from bg contrast
+  borderLight: '#2C2C2E',     // intra-card separators (same as surfaceBg — seamless)
+  border: '#3A3A3C',          // standard card/input borders
+  borderMuted: '#48484A',     // radio buttons, dashed borders
 
-  // Status backgrounds — darkened tints
-  successBg: '#052E16',
-  successBgAlt: '#064E3B',
-  errorBg: '#450A0A',
-  warningBg: '#1C1506',
-  warningBgAlt: '#1C1203',
-  infoBg: '#172554',
-  pendingBg: '#1C1003',
+  // Status backgrounds — dark enough for dark mode, saturated enough to read
+  successBg: '#0D2B1A',       // dark green tint
+  successBgAlt: '#0A2416',
+  errorBg: '#2B0D0D',         // dark red tint
+  warningBg: '#2B1A00',       // dark amber tint
+  warningBgAlt: '#241500',
+  infoBg: '#0D1A2B',          // dark blue tint
+  pendingBg: '#2B1800',       // dark orange tint
 
-  // Status text/icon — slightly brightened for dark bg
-  success: '#34D399',
-  successAlt: '#10B981',
-  error: '#F87171',
-  errorAlt: '#FC8181',
-  warning: '#FBBF24',
-  warningAlt: '#F59E0B',
-  info: '#60A5FA',
-  amber: '#FBBF24',
-  amberWarning: '#F59E0B',        // warning accent for min charge alert
+  // Status text/icon — vivid, WCAG AA on dark backgrounds
+  success: '#30D158',         // Apple system green (vivid, not washed)
+  successAlt: '#32D583',
+  error: '#FF453A',           // Apple system red
+  errorAlt: '#FF6961',
+  warning: '#FFD60A',         // Apple system yellow
+  warningAlt: '#FFCC00',
+  info: '#0A84FF',            // Apple system blue
+  amber: '#FFD60A',
+  amberWarning: '#FFCC00',
 
-  // Overlays — heavier on dark
-  overlay: 'rgba(0,0,0,0.7)',
+  // Overlays
+  overlay: 'rgba(0,0,0,0.75)',
   overlayLight: 'rgba(0,0,0,0.5)',
 
   // Borders (extra)
-  borderLighter: '#1E293B',
-  borderMedium: '#475569',
+  borderLighter: '#2C2C2E',   // hairline within cards
+  borderMedium: '#48484A',    // medium borders
 
   // Text (extra)
-  textPlaceholder: '#64748B',
+  textPlaceholder: '#636366',
 
   // Stars / ratings
-  starYellow: '#FBBF24',
+  starYellow: '#FFD60A',
 
   // Error extra
-  errorLight: '#450A0A',
+  errorLight: '#2B0D0D',
 
   // Disabled
-  disabled: '#475569',
-  disabledBg: '#1E293B',
+  disabled: '#48484A',
+  disabledBg: '#1C1C1E',
 } as const;
 
 export type ColorsType = typeof Colors;

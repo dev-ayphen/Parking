@@ -10,6 +10,7 @@ import { io as createSocket } from 'socket.io-client';
 import { adminApi } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
 import { SOCKET_URL } from '@/lib/config';
+import { Badge } from '@/components/ui/Badge';
 
 interface LegalDocument {
   id: number;
@@ -217,7 +218,7 @@ export default function LegalCompliancePage() {
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between"
+        className="sticky top-0 z-10 bg-gray-50 -mx-6 px-6 py-4 -mt-4 mb-2 flex items-center justify-between border-b border-gray-200"
       >
         <div>
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Legal & Compliance</h1>
@@ -296,11 +297,11 @@ export default function LegalCompliancePage() {
                           </p>
                         </div>
                         {doc.isActive ? (
-                          <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">
-                            <CheckCircle2 size={14} /> Active
-                          </span>
+                          <Badge className="bg-emerald-100 text-emerald-700" icon={<CheckCircle2 size={14} />}>
+                            Active
+                          </Badge>
                         ) : (
-                          <span className="bg-gray-100 text-gray-600 text-xs font-bold px-3 py-1 rounded-full">Inactive</span>
+                          <Badge className="bg-gray-100 text-gray-600">Inactive</Badge>
                         )}
                       </div>
                       <div className="p-6 flex-1 space-y-4">
@@ -464,9 +465,9 @@ export default function LegalCompliancePage() {
                                 </div>
                               </td>
                               <td className="px-5 py-4">
-                                <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${TYPE_BADGE[log.type] || 'bg-gray-100 text-gray-700'}`}>
+                                <Badge className={TYPE_BADGE[log.type] || 'bg-gray-100 text-gray-700'}>
                                   {TYPE_LABEL[log.type] || log.type}
-                                </span>
+                                </Badge>
                                 {log.document && (
                                   <p className="text-xs text-gray-400 mt-1">{log.document.title}</p>
                                 )}

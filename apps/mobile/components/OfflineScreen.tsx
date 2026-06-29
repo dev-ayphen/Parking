@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WifiOff, RefreshCw } from 'lucide-react-native';
 import { useNetworkStore } from '../store/networkStore';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing } from '../theme';
+import type { ColorsType } from '../theme';
+import { useTheme } from '../hooks/useTheme';
 
 /**
  * Full-screen "No internet connection" page that takes over the ENTIRE app while
@@ -15,6 +17,8 @@ import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../theme';
  * back online, the gate unmounts and the app reappears exactly where it was.
  */
 const OfflineScreen: React.FC = () => {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const refresh = useNetworkStore((s) => s.refresh);
   const [checking, setChecking] = useState(false);
 
@@ -32,7 +36,7 @@ const OfflineScreen: React.FC = () => {
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
         <View style={styles.iconCircle}>
-          <WifiOff size={44} color={Colors.errorAlt} strokeWidth={1.75} />
+          <WifiOff size={44} color={colors.errorAlt} strokeWidth={1.75} />
         </View>
         <Text style={styles.title}>No internet connection</Text>
         <Text style={styles.message}>
@@ -40,10 +44,10 @@ const OfflineScreen: React.FC = () => {
         </Text>
         <TouchableOpacity style={styles.retryBtn} onPress={onRetry} activeOpacity={0.85} disabled={checking}>
           {checking ? (
-            <ActivityIndicator color={Colors.white} />
+            <ActivityIndicator color={colors.white} />
           ) : (
             <>
-              <RefreshCw size={16} color={Colors.white} strokeWidth={2.5} />
+              <RefreshCw size={16} color={colors.white} strokeWidth={2.5} />
               <Text style={styles.retryBtnText}>Try Again</Text>
             </>
           )}
@@ -53,8 +57,8 @@ const OfflineScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.screenBg },
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.screenBg },
   container: {
     flex: 1,
     alignItems: 'center',
@@ -65,7 +69,7 @@ const styles = StyleSheet.create({
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: Colors.errorBg,
+    backgroundColor: colors.errorBg,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing['3xl'],
@@ -73,12 +77,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: FontSize['3xl'],
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     textAlign: 'center',
   },
   message: {
     fontSize: FontSize.md,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
     marginTop: Spacing.md,
@@ -89,14 +93,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.md,
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     paddingHorizontal: Spacing['5xl'],
     paddingVertical: Spacing.xl,
     borderRadius: BorderRadius.button,
     minWidth: 160,
   },
   retryBtnText: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: FontSize.lg,
     fontWeight: FontWeight.bold,
   },

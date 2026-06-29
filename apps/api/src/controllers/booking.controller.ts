@@ -1,9 +1,10 @@
 import { Request, Response } from 'express';
-import { bookingService } from '../services/booking.service';
+import { BookingStatus } from '@prisma/client';
+import { bookingService } from '../services/booking';
 import { emitToAdmin, emitToUser } from '../app';
 import { adminService } from '../services/admin.service';
 import { logEvent } from '../services/log.service';
-import { sendError, Unauthorized, assertAuth } from '../utils/errors';
+import { sendError, Unauthorized, assertAuth, AppError } from '../utils/errors';
 import { getRequestIdentity } from '../utils/requestIdentity';
 
 export const bookingController = {
@@ -76,10 +77,10 @@ export const bookingController = {
     try {
       assertAuth(req);
       const result = await bookingService.acceptBooking(req.params.id, req.user.id, req);
-      emitToAdmin('bookings', 'booking:update', { bookingId: req.params.id, status: 'APPROVED' });
+      emitToAdmin('bookings', 'booking:update', { bookingId: req.params.id, status: BookingStatus.APPROVED });
       const parkerId = (result as any)?.booking?.parkerId;
       if (parkerId) {
-        emitToUser(parkerId, 'booking:approved', { bookingId: req.params.id, status: 'APPROVED' });
+        emitToUser(parkerId, 'booking:approved', { bookingId: req.params.id, status: BookingStatus.APPROVED });
         await adminService.notifyUser(parkerId, {
           title: 'Booking Approved',
           message: 'Your parking booking has been approved. You can now proceed.',
@@ -98,10 +99,10 @@ export const bookingController = {
       assertAuth(req);
       const reason = req.body?.reason?.trim() || 'Booking was declined by the owner';
       const result = await bookingService.declineBooking(req.params.id, req.user.id, req);
-      emitToAdmin('bookings', 'booking:update', { bookingId: req.params.id, status: 'REJECTED' });
+      emitToAdmin('bookings', 'booking:update', { bookingId: req.params.id, status: BookingStatus.REJECTED });
       const parkerId = (result as any)?.booking?.parkerId;
       if (parkerId) {
-        emitToUser(parkerId, 'booking:rejected', { bookingId: req.params.id, status: 'REJECTED', reason });
+        emitToUser(parkerId, 'booking:rejected', { bookingId: req.params.id, status: BookingStatus.REJECTED, reason });
         await adminService.notifyUser(parkerId, {
           title: 'Booking Rejected',
           message: `Your booking was declined. Reason: ${reason}`,
@@ -120,7 +121,7 @@ export const bookingController = {
       assertAuth(req);
       const reason = req.body?.reason?.trim() || undefined;
       const result = await bookingService.cancelBooking(req.params.id, req.user.id, req.user.role, reason, req);
-      emitToAdmin('bookings', 'booking:update', { bookingId: req.params.id, status: 'CANCELLED' });
+      emitToAdmin('bookings', 'booking:update', { bookingId: req.params.id, status: BookingStatus.CANCELLED });
 
       const { ownerId, parkerId, spaceName, cancelledBy } = result as any;
       const bookingId = req.params.id;
@@ -227,9 +228,9 @@ export const bookingController = {
       // open Exit Verification screen can close — the session is already finalized,
       // so the owner no longer needs to enter an exit time. Also refresh admin.
       const ownerId = (result as any)?.booking?.ownerId ?? (result as any)?.ownerId;
-      emitToAdmin('bookings', 'booking:update', { bookingId, status: 'COMPLETED' });
+      emitToAdmin('bookings', 'booking:update', { bookingId, status: BookingStatus.COMPLETED });
       if (ownerId) {
-        emitToUser(ownerId, 'session:completed', { bookingId, status: 'COMPLETED', totalAmount, byParker: true });
+        emitToUser(ownerId, 'session:completed', { bookingId, status: BookingStatus.COMPLETED, totalAmount, byParker: true });
         await adminService.notifyUser(ownerId, {
           title: 'Session completed by parker',
           message: 'The parker completed the parking session because the exit wasn\'t confirmed in time. No action is needed.',
@@ -243,17 +244,19 @@ export const bookingController = {
     }
   },
 
-  // Parker taps "I've paid" after scanning the owner's UPI QR. Notifies the owner.
-  markBookingPaid: async (req: Request, res: Response) => {
+  // Owner taps "Payment Received" after the parker pays directly. Flips the
+  // booking's paymentStatus to PAID and notifies the parker (informational only —
+  // ParkSwift never verifies the actual transfer).
+  markPaymentReceived: async (req: Request, res: Response) => {
     try {
       assertAuth(req);
-      const result = await bookingService.markBookingPaid(req.params.id, req.user.id, req);
+      const result = await bookingService.markPaymentReceived(req.params.id, req.user.id, req);
       const bookingId = req.params.id;
-      if (result.ownerId) {
-        emitToUser(result.ownerId, 'booking:paid-marked', { bookingId });
-        await adminService.notifyUser(result.ownerId, {
-          title: 'Parker marked payment done',
-          message: `${result.parkerName} marked their payment as completed for ${result.spaceName}. Please confirm you received it in your UPI app.`,
+      if (result.parkerId) {
+        emitToUser(result.parkerId, 'booking:payment-received', { bookingId });
+        await adminService.notifyUser(result.parkerId, {
+          title: 'Payment confirmed',
+          message: `The owner confirmed receiving your payment for ${result.spaceName}.`,
           category: 'BOOKING',
           metadata: { bookingId },
         });
@@ -268,7 +271,7 @@ export const bookingController = {
     try {
       assertAuth(req);
       const result = await bookingService.releaseSpace(req.params.id, req.user.id, req.body, req);
-      emitToAdmin('bookings', 'booking:update', { bookingId: req.params.id, status: 'COMPLETED' });
+      emitToAdmin('bookings', 'booking:update', { bookingId: req.params.id, status: BookingStatus.COMPLETED });
       // Notify parker that session is complete — triggers navigation to session-complete screen
       const parkerId = (result as any)?.booking?.parkerId ?? (result as any)?.parkerId;
       if (parkerId) {
@@ -372,7 +375,7 @@ export const bookingController = {
     try {
       assertAuth(req);
       const { eta } = req.body;
-      if (!eta) return res.status(400).json({ success: false, error: 'eta is required' });
+      if (!eta) return sendError(res, new AppError('eta is required', 400, 'VALIDATION_ERROR'));
       const result = await bookingService.updateEta(req.params.id, req.user.id, new Date(eta), req);
       if (result.ownerId) {
         const etaTime = new Date(result.eta).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });

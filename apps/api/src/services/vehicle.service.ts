@@ -1,4 +1,5 @@
 import { db } from '../config/database';
+import { AppError } from '../utils/errors';
 import { CreateVehicleInput } from '../validations/vehicle.validation';
 import { storageService } from './storage.service';
 import { BUCKETS } from '../config/supabase';
@@ -16,7 +17,7 @@ export const vehicleService = {
     files: { frontPhoto?: VehicleFile; sidePhoto?: VehicleFile; rcBook?: VehicleFile }
   ) => {
     const vehicle = await db.vehicle.findFirst({ where: { id: vehicleId, userId } });
-    if (!vehicle) throw { status: 403, message: 'Vehicle not found or access denied' };
+    if (!vehicle) throw new AppError('Vehicle not found or access denied', 403);
 
     const folder = `vehicles/${vehicleId}`;
     const data: Record<string, string> = {};
@@ -35,7 +36,7 @@ export const vehicleService = {
       data.rcBookUrl = s.key;
     }
 
-    if (Object.keys(data).length === 0) throw { status: 400, message: 'No media files provided' };
+    if (Object.keys(data).length === 0) throw new AppError('No media files provided', 400);
 
     const updated = await db.vehicle.update({
       where: { id: vehicleId },

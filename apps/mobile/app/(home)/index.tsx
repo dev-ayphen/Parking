@@ -25,7 +25,7 @@ import { ActivityType } from '../../components/Activity/ActivityItem';
 import NavigationDrawer from '../../components/Navigation/NavigationDrawer';
 import MagnifyingGlassSvg from '../../components/Illustrations/MagnifyingGlassSvg';
 import { MapPin, CarFront } from 'lucide-react-native';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 import { NETWORK_RECONNECTED } from '../../store/networkStore';
 
 // Relative timestamps: "15m ago", "2h ago", "Yesterday", "3 days ago", then a date.
@@ -67,6 +67,7 @@ const HomeScreen = () => {
     todayEarnings: '-', activeBookings: '-', spacesListed: '-', monthEarnings: '-',
   });
   const [unreadCount, setUnreadCount] = useState(0);
+  const [loadError, setLoadError] = useState(false);
 
   // ── Data fetching ─────────────────────────────────────────────────
   const loadDashboardData = useCallback(async () => {
@@ -102,10 +103,10 @@ const HomeScreen = () => {
         const mapped: Activity[] = (json.bookings || []).map((b: any) => {
           const isOwner = currentUser?.id && b.space?.ownerId === currentUser.id;
           const isCompleted = b.status === 'COMPLETED';
-          
+
           let title = 'Parking Booked';
           let type: ActivityType = 'booking';
-          
+
           if (isOwner) {
             title = isCompleted ? 'Earnings Received' : 'Space Booked';
             type = isCompleted ? 'payment' : 'approval';
@@ -116,7 +117,7 @@ const HomeScreen = () => {
             else if (b.status === 'APPROVED') { title = 'Booking Approved'; type = 'otp'; }
             else { title = 'Parking Booked'; type = 'booking'; }
           }
-          
+
           return {
             id: String(b.id),
             type,
@@ -141,7 +142,7 @@ const HomeScreen = () => {
     try {
       const json = await api.get('/home/stats');
       if (json.success) {
-        const { parker, owner } = json.stats;
+        const { parker, owner } = json.stats ?? {};
         setHomeStats({
           spotsNearby: String(parker.spotsNearby),
           available: String(parker.available),
@@ -410,10 +411,13 @@ const HomeScreen = () => {
   }, [syncSessionBar, loadUnreadCount]);
 
   useEffect(() => {
-    loadDashboardData();
-    loadRecentActivity();
-    loadHomeStats();
-    loadUnreadCount(true); // mount — fresh
+    setLoadError(false);
+    Promise.all([
+      loadDashboardData(),
+      loadRecentActivity(),
+      loadHomeStats(),
+      loadUnreadCount(true),
+    ]).catch(() => setLoadError(true));
   }, [loadDashboardData, loadRecentActivity, loadHomeStats, loadUnreadCount]);
 
   // Re-load the whole dashboard when connectivity is restored (offline banner's
@@ -503,6 +507,13 @@ const HomeScreen = () => {
       StyleSheet.create({
         container: { flex: 1, backgroundColor: colors.white },
         scrollView: { flex: 1, backgroundColor: colors.screenBg },
+        errorBanner: {
+          marginHorizontal: Spacing.screenH, marginTop: Spacing.md,
+          borderRadius: BorderRadius.md, borderWidth: 1,
+          paddingVertical: Spacing.lg, paddingHorizontal: Spacing['3xl'],
+          alignItems: 'center',
+        },
+        errorBannerText: { fontSize: FontSize.base, fontWeight: FontWeight.semibold },
         activityHeader: {
           flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
           paddingHorizontal: Spacing['4xl'], marginTop: Spacing.md, marginBottom: Spacing.xs,
@@ -510,6 +521,23 @@ const HomeScreen = () => {
         activityTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: colors.textPrimary, letterSpacing: 0 },
         activitySeeAll: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: colors.primary },
         statPlaceholder: { width: 40, height: 14, borderRadius: BorderRadius.xs, backgroundColor: colors.surfaceBg, marginBottom: Spacing.micro },
+        bellButton: {
+          width: 36, height: 36, borderRadius: 18,
+          backgroundColor: colors.white, borderWidth: 1, borderColor: colors.borderLight,
+          alignItems: 'center', justifyContent: 'center',
+          overflow: 'visible',
+          shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
+        },
+        bellBadge: {
+          position: 'absolute', top: -5, right: -5,
+          backgroundColor: colors.primary,
+          minWidth: 16, height: 16, borderRadius: 8,
+          paddingHorizontal: 3,
+          alignItems: 'center', justifyContent: 'center',
+          borderWidth: 1.5, borderColor: colors.white,
+        },
+        bellBadgeText: { color: colors.white, fontSize: 9, fontWeight: '700', lineHeight: 12 },
       }),
     [colors]
   );
@@ -539,13 +567,13 @@ const HomeScreen = () => {
         right={
           <TouchableOpacity
             activeOpacity={0.7}
-            style={headerStyles.bellButton}
+            style={styles.bellButton}
             onPress={() => router.push('/(home)/notifications')}
           >
-            <Bell size={18} color={Colors.textDark} strokeWidth={2.5} />
+            <Bell size={18} color={colors.textDark} strokeWidth={2.5} />
             {unreadCount > 0 && (
-              <View style={headerStyles.bellBadge}>
-                <Text style={headerStyles.bellBadgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+              <View style={styles.bellBadge}>
+                <Text style={styles.bellBadgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
               </View>
             )}
           </TouchableOpacity>
@@ -565,6 +593,23 @@ const HomeScreen = () => {
           />
         }
       >
+        {/* Network error banner */}
+        {loadError && (
+          <TouchableOpacity
+            style={[styles.errorBanner, { backgroundColor: colors.errorBg, borderColor: colors.error }]}
+            onPress={() => {
+              setLoadError(false);
+              Promise.all([loadDashboardData(), loadRecentActivity(), loadHomeStats(), loadUnreadCount(true)])
+                .catch(() => setLoadError(true));
+            }}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.errorBannerText, { color: colors.error }]}>
+              Could not load data. Tap to retry.
+            </Text>
+          </TouchableOpacity>
+        )}
+
         {/* Personalized Greeting */}
         <PersonalizedGreeting userName={userName || 'User'} />
 
@@ -582,7 +627,6 @@ const HomeScreen = () => {
           buttonText="Find Parking Now"
           buttonColor={colors.primary}
           onPressButton={() => router.push('/(find-space)')}
-          cardBgColor="#FFFFFF"
         />
 
         {/* My Space Card */}
@@ -606,7 +650,6 @@ const HomeScreen = () => {
           buttonText="Manage Spaces & Bookings"
           buttonColor="#059669"
           onPressButton={() => router.push('/(my-spaces)')}
-          cardBgColor="#FFFFFF"
         />
 
         {/* Activity Feed Header */}
@@ -631,25 +674,5 @@ const HomeScreen = () => {
     </SafeAreaView>
   );
 };
-
-const headerStyles = StyleSheet.create({
-  bellButton: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.borderLight,
-    alignItems: 'center', justifyContent: 'center',
-    overflow: 'visible',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
-  },
-  bellBadge: {
-    position: 'absolute', top: -5, right: -5,
-    backgroundColor: Colors.primary,
-    minWidth: 16, height: 16, borderRadius: 8,
-    paddingHorizontal: 3,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1.5, borderColor: Colors.white,
-  },
-  bellBadgeText: { color: Colors.white, fontSize: 9, fontWeight: '700', lineHeight: 12 },
-});
 
 export default HomeScreen;

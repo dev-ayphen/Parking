@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { vehicleController } from '../controllers/vehicle.controller';
 import { authenticate } from '../middleware/auth';
 import { uploadVehicleMedia, verifyUploadSignature } from '../middleware/upload';
+import { validate } from '../middleware/validate';
+import { createVehicleSchema } from '../validations/vehicle.validation';
 
 const router = Router();
 
@@ -9,8 +11,8 @@ const router = Router();
 router.use(authenticate);
 
 router.get('/', vehicleController.listVehicles);
-router.post('/', vehicleController.addVehicle);
-router.put('/:id', vehicleController.updateVehicle);
+router.post('/', validate(createVehicleSchema), vehicleController.addVehicle);
+router.put('/:id', validate(createVehicleSchema.partial()), vehicleController.updateVehicle);
 router.put('/:id/default', vehicleController.setDefaultVehicle);
 router.delete('/:id', vehicleController.deleteVehicle);
 router.post('/:id/media', uploadVehicleMedia, verifyUploadSignature, vehicleController.uploadMedia);

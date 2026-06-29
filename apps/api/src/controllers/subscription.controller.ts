@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { subscriptionService } from '../services/subscription.service';
+import { sendError } from '../utils/errors';
 
 export const subscriptionController = {
   getMyTransactions: async (req: Request, res: Response) => {
@@ -7,7 +8,7 @@ export const subscriptionController = {
       const result = await subscriptionService.getMyTransactions(req.user?.id || 0);
       res.json(result);
     } catch (error) {
-      res.status(500).json({ error: (error as Error).message });
+      sendError(res, error);
     }
   },
 
@@ -16,7 +17,7 @@ export const subscriptionController = {
       const result = await subscriptionService.getAvailablePlans();
       res.json(result);
     } catch (error) {
-      res.status(500).json({ error: (error as Error).message });
+      sendError(res, error);
     }
   },
 
@@ -25,7 +26,7 @@ export const subscriptionController = {
       const result = await subscriptionService.getSubscription(req.user?.id || 0);
       res.json(result);
     } catch (error) {
-      res.status(500).json({ error: (error as Error).message });
+      sendError(res, error);
     }
   },
 
@@ -37,8 +38,7 @@ export const subscriptionController = {
       });
       res.json(result);
     } catch (error) {
-      const status = (error as any)?.statusCode || 500;
-      res.status(status).json({ error: (error as Error).message });
+      sendError(res, error);
     }
   },
 
@@ -49,8 +49,7 @@ export const subscriptionController = {
       const result = await subscriptionService.cancelSubscription(id, req.user?.id || 0);
       res.json(result);
     } catch (error) {
-      const status = (error as any)?.statusCode || 500;
-      res.status(status).json({ error: (error as Error).message });
+      sendError(res, error);
     }
   },
 };

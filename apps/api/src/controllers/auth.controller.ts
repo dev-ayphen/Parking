@@ -20,6 +20,11 @@ const refreshTokenSchema = z.object({
   refreshToken: z.string().min(1, 'Refresh token is required'),
 });
 
+const adminLoginSchema = z.object({
+  email: z.string().min(1, 'Email is required'),
+  password: z.string().min(1, 'Password is required'),
+});
+
 export const authController = {
   requestOtp: async (req: Request, res: Response) => {
     try {
@@ -55,6 +60,19 @@ export const authController = {
     try {
       const { refreshToken } = refreshTokenSchema.parse(req.body);
       const result = await authService.refreshToken(refreshToken);
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
+  adminLogin: async (req: Request, res: Response) => {
+    try {
+      const { email, password } = adminLoginSchema.parse(req.body);
+      const result = await authService.adminLogin(email, password, {
+        ipAddress: req.ip || '127.0.0.1',
+        userAgent: req.headers['user-agent'] || 'admin-web',
+      });
       res.json(result);
     } catch (error) {
       sendError(res, error);

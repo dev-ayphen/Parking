@@ -11,6 +11,7 @@ import {
 import { adminApi } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
 import { SOCKET_URL } from '@/lib/config';
+import { Badge } from '@/components/ui/Badge';
 
 interface ModerationUser {
   id: number;
@@ -189,7 +190,7 @@ export default function ModerationPage() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-8">
-      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between">
+      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="sticky top-0 z-10 bg-gray-50 -mx-6 px-6 py-4 -mt-4 mb-2 flex items-center justify-between border-b border-gray-200">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Moderation & Security</h1>
           <p className="text-gray-500 mt-1">Manage user verifications, suspensions, and flagged content.</p>
@@ -252,7 +253,7 @@ export default function ModerationPage() {
               <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
                 <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                   <h2 className="text-lg font-bold text-gray-900">Pending Verifications</h2>
-                  <span className="bg-amber-100 text-amber-700 text-xs font-bold px-3 py-1 rounded-full">{pendingUsers.length} Pending</span>
+                  <Badge className="bg-amber-100 text-amber-700">{pendingUsers.length} Pending</Badge>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
@@ -312,7 +313,7 @@ export default function ModerationPage() {
               <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
                 <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                   <h2 className="text-lg font-bold text-gray-900">Suspended & Banned Users</h2>
-                  <span className="bg-rose-100 text-rose-700 text-xs font-bold px-3 py-1 rounded-full">{suspendedUsers.length} Active</span>
+                  <Badge className="bg-rose-100 text-rose-700">{suspendedUsers.length} Active</Badge>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
@@ -361,7 +362,7 @@ export default function ModerationPage() {
               <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
                 <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                   <h2 className="text-lg font-bold text-gray-900">Blocked Spaces</h2>
-                  <span className="bg-rose-100 text-rose-700 text-xs font-bold px-3 py-1 rounded-full">{blockedSpaces.length}</span>
+                  <Badge className="bg-rose-100 text-rose-700">{blockedSpaces.length}</Badge>
                 </div>
                 {blockedSpaces.length === 0 ? (
                   <div className="p-16 flex flex-col items-center justify-center text-center">
@@ -459,21 +460,17 @@ export default function ModerationPage() {
                             </td>
                             <td className="px-5 py-4">
                               <p className="text-sm font-semibold text-gray-900">{r.space?.name || '—'}</p>
-                              <span className={`mt-1 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                r.direction === 'PARKER_RATED_OWNER'
-                                  ? 'bg-indigo-50 text-indigo-700'
-                                  : 'bg-amber-50 text-amber-700'
-                              }`}>
+                              <Badge className={`mt-1 ${r.direction === 'PARKER_RATED_OWNER' ? 'bg-indigo-50 text-indigo-700' : 'bg-amber-50 text-amber-700'}`}>
                                 {r.direction === 'PARKER_RATED_OWNER' ? 'Parker → Owner' : 'Owner → Parker'}
-                              </span>
+                              </Badge>
                             </td>
                             <td className="px-5 py-4">
-                              <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold ${
-                                r.rating >= 4 ? 'bg-emerald-50 text-emerald-700' :
-                                r.rating >= 3 ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700'
-                              }`}>
-                                <Star size={11} className="fill-current" />{r.rating}
-                              </div>
+                              <Badge
+                                className={r.rating >= 4 ? 'bg-emerald-50 text-emerald-700' : r.rating >= 3 ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700'}
+                                icon={<Star size={11} className="fill-current" />}
+                              >
+                                {r.rating}
+                              </Badge>
                             </td>
                             <td className="px-5 py-4 max-w-xs">
                               <p className="text-sm text-gray-700 line-clamp-2">{r.review || <span className="text-gray-400 italic">No text</span>}</p>

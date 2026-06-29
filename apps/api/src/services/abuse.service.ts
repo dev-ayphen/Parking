@@ -1,4 +1,5 @@
 import { db } from '../config/database';
+import { AppError } from '../utils/errors';
 import { storageService } from './storage.service';
 import { BUCKETS } from '../config/supabase';
 
@@ -26,6 +27,9 @@ const VALID_TYPES = [
   'UNSAFE_AREA',
   'OFFLINE_PAYMENT_DEMAND',
   'MISLEADING_LISTING',
+  'UPI_NOT_WORKING',
+  'PAYMENT_NOT_RECEIVED',
+  'LEFT_WITHOUT_PAYING',
   'OTHER',
 ];
 
@@ -39,17 +43,17 @@ export const abuseService = {
     evidenceUrls?: string[];
   }) => {
     if (!VALID_TYPES.includes(data.abuseType)) {
-      throw Object.assign(new Error('Invalid report type'), { statusCode: 400 });
+      throw new AppError('Invalid report type', 400);
     }
     if (!data.description?.trim()) {
-      throw Object.assign(new Error('Description is required'), { statusCode: 400 });
+      throw new AppError('Description is required', 400);
     }
     if (reportedByUserId === data.reportedUserId) {
-      throw Object.assign(new Error('You cannot report yourself'), { statusCode: 400 });
+      throw new AppError('You cannot report yourself', 400);
     }
 
     const reported = await db.user.findUnique({ where: { id: data.reportedUserId } });
-    if (!reported) throw Object.assign(new Error('Reported user not found'), { statusCode: 404 });
+    if (!reported) throw new AppError('Reported user not found', 404);
 
     // Idempotency guard — if this reporter already has an OPEN report against the
     // same user, return it instead of stacking duplicates (repeat taps / restarts).
@@ -125,7 +129,7 @@ export const abuseService = {
         reportedByUser: { select: { id: true, firstName: true, lastName: true, phone: true } },
       },
     });
-    if (!report) throw Object.assign(new Error('Report not found'), { statusCode: 404 });
+    if (!report) throw new AppError('Report not found', 404);
     return {
       success: true,
       report: { ...report, evidenceUrls: await resolveEvidenceUrls((report as any).evidenceUrls) },
@@ -138,11 +142,11 @@ export const abuseService = {
     suspendedUntil?: string;
   }) => {
     if (!VALID_ACTIONS.includes(data.action)) {
-      throw Object.assign(new Error('Invalid action'), { statusCode: 400 });
+      throw new AppError('Invalid action', 400);
     }
 
     const report = await db.abuseReport.findUnique({ where: { id: reportId } });
-    if (!report) throw Object.assign(new Error('Report not found'), { statusCode: 404 });
+    if (!report) throw new AppError('Report not found', 404);
 
     const isBan = data.action === 'BANNED';
     const isSuspend = data.action === 'SUSPENDED_TEMP';

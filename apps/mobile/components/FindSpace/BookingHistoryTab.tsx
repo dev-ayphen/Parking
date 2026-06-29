@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,8 +8,9 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { Calendar } from 'lucide-react-native';
-import { Colors } from '../../theme';
-import { styles } from './findSpaceStyles';
+import { useTheme } from '../../hooks/useTheme';
+import type { ColorsType } from '../../theme';
+import { makeFindSpaceStyles } from './findSpaceStyles';
 
 interface BookingHistoryTabProps {
   historyBookings: any[];
@@ -28,10 +29,13 @@ const BookingHistoryTab: React.FC<BookingHistoryTabProps> = ({
   onRetry,
   onRefresh,
 }) => {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeFindSpaceStyles(colors), [colors]);
+
   if (loading) {
     return (
       <View style={styles.emptyTabContent}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -40,7 +44,7 @@ const BookingHistoryTab: React.FC<BookingHistoryTabProps> = ({
   if (error) {
     return (
       <View style={styles.emptyTabContent}>
-        <Calendar size={56} color={Colors.error} strokeWidth={1.5} />
+        <Calendar size={56} color={colors.error} strokeWidth={1.5} />
         <Text style={styles.emptyStateHeading}>Couldn't load history</Text>
         <Text style={styles.emptyStateSubtext}>{error}</Text>
         <TouchableOpacity style={styles.exploreBtn} onPress={onRetry}>
@@ -59,15 +63,15 @@ const BookingHistoryTab: React.FC<BookingHistoryTabProps> = ({
         <RefreshControl
           refreshing={refreshing}
           onRefresh={onRefresh}
-          tintColor={Colors.primary}
-          colors={[Colors.primary]}
+          tintColor={colors.primary}
+          colors={[colors.primary]}
         />
       }
     >
       <Text style={styles.sectionHeading}>Past Reservations</Text>
       {historyBookings.length === 0 ? (
         <View style={styles.emptyTabContent}>
-          <Calendar size={56} color={Colors.borderMedium} strokeWidth={1.5} />
+          <Calendar size={56} color={colors.border} strokeWidth={1.5} />
           <Text style={styles.emptyStateHeading}>No History Logged</Text>
           <Text style={styles.emptyStateSubtext}>Your completed parking session receipts will display here.</Text>
         </View>

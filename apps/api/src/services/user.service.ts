@@ -1,5 +1,7 @@
 import { z } from 'zod';
+import { BookingStatus } from '@prisma/client';
 import { db } from '../config/database';
+import { AppError } from '../utils/errors';
 import { storageService } from './storage.service';
 import { BUCKETS } from '../config/supabase';
 
@@ -44,9 +46,7 @@ const updateProfileSchema = completeProfileSchema.partial().extend({
 export const userService = {
   getProfile: async (userId: number) => {
     if (!userId) {
-      const error = new Error('User ID is required');
-      (error as any).status = 400;
-      throw error;
+      throw new AppError('User ID is required', 400);
     }
 
     const user = await db.user.findUnique({
@@ -58,9 +58,7 @@ export const userService = {
     });
 
     if (!user) {
-      const error = new Error('User not found');
-      (error as any).status = 404;
-      throw error;
+      throw new AppError('User not found', 404);
     }
 
     const photoUrl = user.photoUrl
@@ -89,9 +87,7 @@ export const userService = {
 
   updateProfile: async (userId: number, data: any) => {
     if (!userId) {
-      const error = new Error('User ID is required');
-      (error as any).status = 400;
-      throw error;
+      throw new AppError('User ID is required', 400);
     }
 
     try {
@@ -104,9 +100,7 @@ export const userService = {
         });
 
         if (existingUser && existingUser.id !== userId) {
-          const error = new Error('This email is already registered');
-          (error as any).status = 400;
-          throw error;
+          throw new AppError('This email is already registered', 400);
         }
       }
 
@@ -139,9 +133,7 @@ export const userService = {
       };
     } catch (error) {
       if (error instanceof z.ZodError) {
-        const err = new Error(error.errors[0]?.message || 'Validation error');
-        (err as any).status = 400;
-        throw err;
+        throw new AppError(error.errors[0]?.message || 'Validation error', 400);
       }
       throw error;
     }
@@ -185,9 +177,7 @@ export const userService = {
 
   completeProfile: async (userId: number, data: any) => {
     if (!userId) {
-      const error = new Error('User ID is required');
-      (error as any).status = 400;
-      throw error;
+      throw new AppError('User ID is required', 400);
     }
 
     try {
@@ -199,9 +189,7 @@ export const userService = {
       });
 
       if (existingUser && existingUser.id !== userId) {
-        const error = new Error('This email is already registered');
-        (error as any).status = 400;
-        throw error;
+        throw new AppError('This email is already registered', 400);
       }
 
       // Build the update payload — upiId is optional, so only set it if provided and non-empty.
@@ -242,9 +230,7 @@ export const userService = {
       };
     } catch (error) {
       if (error instanceof z.ZodError) {
-        const err = new Error(error.errors[0]?.message || 'Validation error');
-        (err as any).status = 400;
-        throw err;
+        throw new AppError(error.errors[0]?.message || 'Validation error', 400);
       }
       throw error;
     }
@@ -259,7 +245,7 @@ export const userService = {
         billingName: true, billingEmail: true, billingAddress: true, gstin: true, upiId: true,
       },
     });
-    if (!user) throw Object.assign(new Error('User not found'), { statusCode: 404 });
+    if (!user) throw new AppError('User not found', 404);
     const fallbackName = [user.firstName, user.lastName].filter(Boolean).join(' ') || '';
     return {
       success: true,
@@ -283,19 +269,19 @@ export const userService = {
     // Only require billingName if it's being updated alongside other billing details.
     // If ONLY upiId is being updated (e.g., from the active-session modal), skip this check.
     const isFullBillingUpdate = data.billingName || data.billingEmail || data.billingAddress || data.gstin;
-    if (isFullBillingUpdate && !name) throw Object.assign(new Error('Billing name is required'), { statusCode: 400 });
+    if (isFullBillingUpdate && !name) throw new AppError('Billing name is required', 400);
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      throw Object.assign(new Error('Enter a valid billing email'), { statusCode: 400 });
+      throw new AppError('Enter a valid billing email', 400);
     }
     const gstin = (data.gstin || '').trim().toUpperCase();
     // India GSTIN is 15 chars; validate only if provided.
     if (gstin && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[0-9A-Z]{1}[Z]{1}[0-9A-Z]{1}$/.test(gstin)) {
-      throw Object.assign(new Error('Enter a valid 15-character GSTIN'), { statusCode: 400 });
+      throw new AppError('Enter a valid 15-character GSTIN', 400);
     }
     // UPI ID format: handle@bank (e.g. name@okhdfcbank, user-123@okaxis). Optional.
     const upiId = (data.upiId || '').trim().toLowerCase();
     if (upiId && !/^[a-z0-9.\-_]{2,256}@[a-z]{2,64}$/.test(upiId)) {
-      throw Object.assign(new Error('Enter a valid UPI ID (e.g. name@okhdfcbank)'), { statusCode: 400 });
+      throw new AppError('Enter a valid UPI ID (e.g. name@okhdfcbank)', 400);
     }
     await db.user.update({
       where: { id: userId },
@@ -336,22 +322,23 @@ export const userService = {
    * flight (active bookings as a parker, or live bookings on their spaces).
    */
   deleteOwnAccount: async (userId: number) => {
-    const IN_FLIGHT = ['PENDING_APPROVAL', 'APPROVED', 'ACTIVE'];
+    const IN_FLIGHT = [BookingStatus.PENDING_APPROVAL, BookingStatus.APPROVED, BookingStatus.ACTIVE];
 
     const [parkerActive, ownerActive] = await Promise.all([
       db.booking.count({ where: { parkerId: userId, status: { in: IN_FLIGHT } } }),
       db.booking.count({ where: { space: { ownerId: userId }, status: { in: IN_FLIGHT } } }),
     ]);
     if (parkerActive > 0) {
-      throw Object.assign(new Error('You have an active or pending booking. Complete or cancel it before deleting your account.'), { statusCode: 400 });
+      throw new AppError('You have an active or pending booking. Complete or cancel it before deleting your account.', 400);
     }
     if (ownerActive > 0) {
-      throw Object.assign(new Error('You have active bookings on your spaces. Wait for them to finish before deleting your account.'), { statusCode: 400 });
+      throw new AppError('You have active bookings on your spaces. Wait for them to finish before deleting your account.', 400);
     }
 
     const user = await db.user.findUnique({ where: { id: userId }, select: { phone: true } });
-    if (!user) throw Object.assign(new Error('User not found'), { statusCode: 404 });
+    if (!user) throw new AppError('User not found', 404);
 
+    const now = new Date();
     await db.$transaction([
       db.session.deleteMany({ where: { userId } }),
       // Soft-delete + free the phone (suffix so the @unique constraint releases it
@@ -359,7 +346,7 @@ export const userService = {
       db.user.update({
         where: { id: userId },
         data: {
-          deletedAt: new Date(),
+          deletedAt: now,
           deletedReason: 'USER_REQUESTED',
           status: 'BANNED',
           expoPushToken: null,
@@ -367,7 +354,13 @@ export const userService = {
         },
       }),
       // Soft-delete the user's spaces so they stop appearing in search.
-      db.space.updateMany({ where: { ownerId: userId, deletedAt: null }, data: { deletedAt: new Date() } }),
+      db.space.updateMany({ where: { ownerId: userId, deletedAt: null }, data: { deletedAt: now } }),
+      // Hard-cancel any live subscription: flip status off ACTIVE and kill auto-renewal
+      // so the daily expiry job can never roll it forward (no refund — paid period is forfeit).
+      db.subscription.updateMany({
+        where: { userId, status: 'ACTIVE' },
+        data: { status: 'CANCELLED', autoRenewal: false, scheduledDowngradePlanId: null },
+      }),
     ]);
 
     return { success: true, message: 'Your account has been deleted.' };
@@ -375,9 +368,7 @@ export const userService = {
 
   getPublicProfile: async (userId: number) => {
     if (!userId || isNaN(userId)) {
-      const error = new Error('Invalid user ID');
-      (error as any).status = 400;
-      throw error;
+      throw new AppError('Invalid user ID', 400);
     }
 
     const user = await db.user.findUnique({
@@ -389,9 +380,7 @@ export const userService = {
     });
 
     if (!user) {
-      const error = new Error('User not found');
-      (error as any).status = 404;
-      throw error;
+      throw new AppError('User not found', 404);
     }
 
     // Return only public information

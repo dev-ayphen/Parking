@@ -12,11 +12,13 @@ import { useSearchParams } from 'next/navigation';
 import { io as createSocket } from 'socket.io-client';
 import { adminApi } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
-import { SOCKET_URL } from '@/lib/config';
+import { SOCKET_URL, API_BASE } from '@/lib/config';
 import { TableSkeleton } from '@/components/Skeleton';
 import { ExportRangeModal } from '@/components/ExportRangeModal';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import Link from 'next/link';
+import { Badge } from '@/components/ui/Badge';
+import { BOOKING_STATUS_STYLES } from '@/lib/statusStyles';
 
 interface AdminBooking {
   id: string;
@@ -112,6 +114,8 @@ const DISPUTE_ACTIONS = [
 ] as const;
 
 export default function BookingsPage() {
+  const { user: authUser } = useAuthStore();
+  const canMutate = authUser?.adminRole !== 'SUPPORT_AGENT';
   const searchParams = useSearchParams();
   const focusId = searchParams.get('focus');
   const focusHandledRef = useRef(false);
@@ -220,7 +224,7 @@ export default function BookingsPage() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="sticky top-0 z-10 bg-gray-50 -mx-6 px-6 py-4 -mt-4 mb-2 flex items-center justify-between border-b border-gray-200">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Bookings & Sessions</h1>
           <p className="text-gray-500 mt-1">Monitor active parking sessions and historical bookings.</p>
@@ -347,7 +351,17 @@ export default function BookingsPage() {
                       <span className="text-sm font-bold text-gray-900">{booking.amount}</span>
                     </td>
                     <td className="px-6 py-4">
-                      <StatusBadge status={booking.status} />
+                      <Badge
+                        map={BOOKING_STATUS_STYLES}
+                        statusKey={booking.status}
+                        icon={
+                          booking.status === 'Completed' ? <CheckCircle2 size={12} /> :
+                          booking.status === 'Active' || booking.status === 'Upcoming' || booking.status === 'Pending' ? <Clock size={12} /> :
+                          <XCircle size={12} />
+                        }
+                      >
+                        {booking.status}
+                      </Badge>
                       {booking.cancelReason && (
                         <p className="text-[11px] text-gray-400 mt-1">{booking.cancelReason}</p>
                       )}
@@ -418,6 +432,7 @@ export default function BookingsPage() {
             onClose={() => setViewingBooking(null)}
             onCancelled={handleBookingCancelled}
             onDisputeCreated={handleDisputeCreated}
+            canMutate={canMutate}
           />
         )}
       </AnimatePresence>
@@ -478,33 +493,19 @@ export default function BookingsPage() {
   );
 }
 
-// ──────────────────── Status Badge ────────────────────
-function StatusBadge({ status }: { status: string }) {
-  const config =
-    status === 'Active' ? { bg: 'bg-indigo-50 text-indigo-700', icon: Clock } :
-    status === 'Completed' ? { bg: 'bg-emerald-50 text-emerald-700', icon: CheckCircle2 } :
-    status === 'Upcoming' || status === 'Pending' ? { bg: 'bg-amber-50 text-amber-700', icon: Clock } :
-    { bg: 'bg-rose-50 text-rose-700', icon: XCircle };
-
-  return (
-    <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${config.bg}`}>
-      <config.icon size={12} />
-      {status}
-    </div>
-  );
-}
-
 // ──────────────────── Booking Details Modal ────────────────────
 function BookingDetailsModal({
   booking,
   onClose,
   onCancelled,
   onDisputeCreated,
+  canMutate,
 }: {
   booking: BookingDetails;
   onClose: () => void;
   onCancelled: (bookingId: string) => void;
   onDisputeCreated: () => void;
+  canMutate: boolean;
 }) {
   const [consent, setConsent] = useState<BookingConsent | null>(booking.consent || null);
   const [loadingConsent, setLoadingConsent] = useState(!booking.consent);
@@ -517,6 +518,26 @@ function BookingDetailsModal({
 
   // Dispute state
   const [showDisputeModal, setShowDisputeModal] = useState(false);
+
+  // Invoice download
+  const [downloadingInvoice, setDownloadingInvoice] = useState(false);
+  const downloadInvoice = async () => {
+    try {
+      setDownloadingInvoice(true);
+      const token = useAuthStore.getState().token;
+      const res = await fetch(`${API_BASE}/bookings/${booking.id}/invoice-token`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) throw new Error('Failed');
+      const data: { token: string } = await res.json();
+      window.open(`${API_BASE}/bookings/${booking.id}/invoice?signed_token=${data.token}`, '_blank');
+    } catch {
+      alert('Could not generate invoice. Please try again.');
+    } finally {
+      setDownloadingInvoice(false);
+    }
+  };
 
   const formatDate = (d?: string | null) =>
     d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
@@ -578,7 +599,17 @@ function BookingDetailsModal({
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <StatusBadge status={booking.status} />
+              <Badge
+                map={BOOKING_STATUS_STYLES}
+                statusKey={booking.status}
+                icon={
+                  booking.status === 'Completed' ? <CheckCircle2 size={12} /> :
+                  booking.status === 'Active' || booking.status === 'Upcoming' || booking.status === 'Pending' ? <Clock size={12} /> :
+                  <XCircle size={12} />
+                }
+              >
+                {booking.status}
+              </Badge>
               <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg"><X size={18} /></button>
             </div>
           </div>
@@ -727,8 +758,8 @@ function BookingDetailsModal({
               )}
             </div>
 
-            {/* Force Cancel section — only for cancellable statuses */}
-            {isCancellable && (
+            {/* Force Cancel section — only for cancellable statuses and super admins */}
+            {isCancellable && canMutate && (
               <div className="border border-rose-200 bg-rose-50 rounded-2xl p-4">
                 <div className="flex items-center gap-2 mb-3">
                   <Ban size={16} className="text-rose-600" />
@@ -782,12 +813,28 @@ function BookingDetailsModal({
 
           {/* Footer */}
           <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex items-center justify-between rounded-b-3xl">
-            <button
-              onClick={() => setShowDisputeModal(true)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-sm font-semibold rounded-xl transition-colors"
-            >
-              <AlertTriangle size={14} /> Open Dispute
-            </button>
+            <div className="flex items-center gap-2">
+              {canMutate && (
+                <button
+                  onClick={() => setShowDisputeModal(true)}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-sm font-semibold rounded-xl transition-colors"
+                >
+                  <AlertTriangle size={14} /> Open Dispute
+                </button>
+              )}
+              {booking.rawStatus === 'COMPLETED' && (
+                <button
+                  onClick={downloadInvoice}
+                  disabled={downloadingInvoice}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 text-sm font-semibold rounded-xl transition-colors disabled:opacity-60"
+                >
+                  {downloadingInvoice
+                    ? <Loader2 size={14} className="animate-spin" />
+                    : <Download size={14} />}
+                  Download Invoice
+                </button>
+              )}
+            </div>
             <button
               onClick={onClose}
               className="px-5 py-2.5 bg-indigo-600 hover:bg-primaryDark text-white text-sm font-semibold rounded-xl transition-colors"

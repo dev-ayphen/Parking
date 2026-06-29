@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,9 @@ import { useRouter } from 'expo-router';
 import { CheckCircle2, Star, Zap } from 'lucide-react-native';
 import PageHeader from '../../components/PageHeader';
 import { api } from '../../services/api';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
+import type { ColorsType } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 import { toast } from '../../utils/toast';
 
 interface Plan {
@@ -70,6 +72,8 @@ const calcSavings = (monthly: number, yearly: number): number | null => {
 
 export default function SubscriptionPlansScreen() {
   const router = useRouter();
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [activePlanId, setActivePlanId] = useState<number | null>(null);
@@ -149,10 +153,10 @@ export default function SubscriptionPlansScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <StatusBar barStyle="dark-content" />
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
         <PageHeader title="Choose a Plan"  onBack={() => router.replace('/(my-spaces)')} />
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Loading plans...</Text>
         </View>
       </SafeAreaView>
@@ -162,10 +166,10 @@ export default function SubscriptionPlansScreen() {
   if (plans.length === 0) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <StatusBar barStyle="dark-content" />
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
         <PageHeader title="Choose a Plan"  onBack={() => router.replace('/(my-spaces)')} />
         <View style={styles.emptyContainer}>
-          <Zap size={56} color={Colors.borderMuted} />
+          <Zap size={56} color={colors.borderMuted} />
           <Text style={styles.emptyTitle}>No Plans Available</Text>
           <Text style={styles.emptyDesc}>
             No subscription plans are available at this time. Please check back later.
@@ -177,7 +181,7 @@ export default function SubscriptionPlansScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <PageHeader title="Choose a Plan"  onBack={() => router.replace('/(my-spaces)')} />
 
       <ScrollView
@@ -244,7 +248,7 @@ export default function SubscriptionPlansScreen() {
                     )}
                     {isFeatured && (
                       <View style={styles.featuredBadge}>
-                        <Star size={10} color={Colors.primary} fill={Colors.primary} />
+                        <Star size={10} color={colors.primary} fill={colors.primary} />
                         <Text style={styles.featuredBadgeText}>POPULAR</Text>
                       </View>
                     )}
@@ -276,7 +280,7 @@ export default function SubscriptionPlansScreen() {
               <View style={styles.featuresSection}>
                 {spacesLimitLabel(plan.maxSpaces) && (
                   <View style={styles.featureRow}>
-                    <CheckCircle2 size={15} color={Colors.successAlt} strokeWidth={2.5} />
+                    <CheckCircle2 size={15} color={colors.successAlt} strokeWidth={2.5} />
                     <Text style={[styles.featureText, styles.featureTextStrong]}>
                       {spacesLimitLabel(plan.maxSpaces)}
                     </Text>
@@ -284,7 +288,7 @@ export default function SubscriptionPlansScreen() {
                 )}
                 {(plan.features ?? []).map((feature, idx) => (
                   <View key={idx} style={styles.featureRow}>
-                    <CheckCircle2 size={15} color={Colors.successAlt} strokeWidth={2.5} />
+                    <CheckCircle2 size={15} color={colors.successAlt} strokeWidth={2.5} />
                     <Text style={styles.featureText}>{feature}</Text>
                   </View>
                 ))}
@@ -303,7 +307,7 @@ export default function SubscriptionPlansScreen() {
                 activeOpacity={0.8}
               >
                 {isSubscribing ? (
-                  <ActivityIndicator size="small" color={isFeatured ? Colors.primary : Colors.white} />
+                  <ActivityIndicator size="small" color={isFeatured ? colors.primary : colors.white} />
                 ) : (
                   <Text
                     style={[
@@ -326,14 +330,14 @@ export default function SubscriptionPlansScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
   },
   scrollView: {
     flex: 1,
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
   },
   content: {
     padding: Spacing['3xl'],
@@ -346,7 +350,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: FontSize.md,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     fontWeight: FontWeight.medium,
   },
   emptyContainer: {
@@ -359,18 +363,18 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: FontSize['2xl'],
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     textAlign: 'center',
   },
   emptyDesc: {
     fontSize: FontSize.md,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
   },
   toggleContainer: {
     flexDirection: 'row',
-    backgroundColor: Colors.surfaceBg,
+    backgroundColor: colors.surfaceBg,
     borderRadius: BorderRadius.md,
     padding: Spacing.xs,
     marginBottom: Spacing['4xl'],
@@ -385,7 +389,7 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
   },
   toggleOptionActive: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -401,13 +405,13 @@ const styles = StyleSheet.create({
   toggleOptionText: {
     fontSize: FontSize.md,
     fontWeight: FontWeight.semibold,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   toggleOptionTextActive: {
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   savingsChip: {
-    backgroundColor: Colors.successBg,
+    backgroundColor: colors.successBg,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.micro,
     borderRadius: BorderRadius.badge,
@@ -415,13 +419,13 @@ const styles = StyleSheet.create({
   savingsChipText: {
     fontSize: FontSize.xs,
     fontWeight: FontWeight.bold,
-    color: Colors.successAlt,
+    color: colors.successAlt,
   },
   planCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: BorderRadius.lg,
     borderWidth: 1.5,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     marginBottom: Spacing['3xl'],
     overflow: 'hidden',
     ...Platform.select({
@@ -437,7 +441,7 @@ const styles = StyleSheet.create({
     }),
   },
   planCardFeatured: {
-    borderColor: Colors.primary,
+    borderColor: colors.primary,
     borderWidth: 1.5,
   },
   badgeContainer: {
@@ -449,24 +453,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.xs,
-    backgroundColor: Colors.primaryBg,
+    backgroundColor: colors.primaryBg,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.badge,
     borderWidth: 1,
-    borderColor: Colors.primary,
+    borderColor: colors.primary,
   },
   featuredBadgeText: {
     fontSize: FontSize.xs - 1,
     fontWeight: FontWeight.bold,
-    color: Colors.primary,
+    color: colors.primary,
     letterSpacing: 0.5,
   },
   planCardHeader: {
     padding: Spacing['3xl'],
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
+    borderBottomColor: colors.borderLight,
   },
   planHeaderTop: {
     flexDirection: 'row',
@@ -477,21 +481,21 @@ const styles = StyleSheet.create({
   planName: {
     fontSize: FontSize['2xl'],
     fontWeight: FontWeight.extrabold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     letterSpacing: -0.3,
   },
   currentBadge: {
-    backgroundColor: Colors.successBg,
+    backgroundColor: colors.successBg,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.badge,
     borderWidth: 1,
-    borderColor: Colors.success,
+    borderColor: colors.success,
   },
   currentBadgeText: {
     fontSize: FontSize.xs - 1,
     fontWeight: FontWeight.bold,
-    color: Colors.success,
+    color: colors.success,
     letterSpacing: 0.5,
   },
   priceRow: {
@@ -503,15 +507,15 @@ const styles = StyleSheet.create({
   planPrice: {
     fontSize: FontSize['4xl'],
     fontWeight: FontWeight.extrabold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   planPriceCycle: {
     fontSize: FontSize.md,
     fontWeight: FontWeight.medium,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   savingsBadge: {
-    backgroundColor: Colors.successBg,
+    backgroundColor: colors.successBg,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.badge,
@@ -520,11 +524,11 @@ const styles = StyleSheet.create({
   savingsBadgeText: {
     fontSize: FontSize.xs,
     fontWeight: FontWeight.bold,
-    color: Colors.success,
+    color: colors.success,
   },
   planDescription: {
     fontSize: FontSize.sm,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     marginTop: Spacing.md,
     lineHeight: 18,
   },
@@ -540,7 +544,7 @@ const styles = StyleSheet.create({
   featureText: {
     fontSize: FontSize.md,
     fontWeight: FontWeight.medium,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     flex: 1,
   },
   featureTextStrong: {
@@ -556,24 +560,24 @@ const styles = StyleSheet.create({
     height: 48,
   },
   selectButtonStandard: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderWidth: 1.5,
-    borderColor: Colors.primary,
+    borderColor: colors.primary,
   },
   selectButtonStandardText: {
-    color: Colors.primary,
+    color: colors.primary,
   },
   selectButtonFeatured: {
-    backgroundColor: Colors.primaryBg,
+    backgroundColor: colors.primaryBg,
   },
   selectButtonFeaturedText: {
-    color: Colors.primary,
+    color: colors.primary,
   },
   selectButtonLoading: {
     opacity: 0.7,
   },
   currentPlanButton: {
-    backgroundColor: Colors.surfaceBg,
+    backgroundColor: colors.surfaceBg,
     borderWidth: 0,
   },
   selectButtonText: {
@@ -581,6 +585,6 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.bold,
   },
   currentPlanButtonText: {
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
 });

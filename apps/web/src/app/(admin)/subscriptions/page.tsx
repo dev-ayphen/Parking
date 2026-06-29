@@ -15,6 +15,7 @@ import { ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, 
 import { adminApi } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
 import { SOCKET_URL } from '@/lib/config';
+import { Badge } from '@/components/ui/Badge';
 
 interface Plan {
   id: number;
@@ -270,7 +271,7 @@ export default function SubscriptionsPage() {
   return (
     <div className="max-w-7xl mx-auto space-y-8">
       {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      <div className="sticky top-0 z-10 bg-gray-50 -mx-6 px-6 py-4 -mt-4 mb-2 flex items-center justify-between border-b border-gray-200">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Subscriptions</h1>
           <p className="text-gray-500 mt-1">Manage pricing tiers and user subscriptions.</p>
@@ -551,16 +552,20 @@ export default function SubscriptionsPage() {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${
-                        sub.status === 'Active' ? 'bg-emerald-50 text-emerald-700' :
-                        sub.status === 'Expired' ? 'bg-amber-50 text-amber-700' :
-                        sub.status === 'Suspended' ? 'bg-orange-50 text-orange-700' :
-                        'bg-rose-50 text-rose-700'
-                      }`}>
-                        {sub.status === 'Active' ? <CheckCircle2 size={12} /> :
-                         sub.status === 'Suspended' ? <PauseCircle size={12} /> : <XCircle size={12} />}
+                      <Badge
+                        className={
+                          sub.status === 'Active' ? 'bg-emerald-50 text-emerald-700' :
+                          sub.status === 'Expired' ? 'bg-amber-50 text-amber-700' :
+                          sub.status === 'Suspended' ? 'bg-orange-50 text-orange-700' :
+                          'bg-rose-50 text-rose-700'
+                        }
+                        icon={
+                          sub.status === 'Active' ? <CheckCircle2 size={12} /> :
+                          sub.status === 'Suspended' ? <PauseCircle size={12} /> : <XCircle size={12} />
+                        }
+                      >
                         {sub.status}
-                      </div>
+                      </Badge>
                     </td>
                     <td className="px-6 py-4 text-sm font-medium text-gray-600">{sub.renewal}</td>
                     <td className="px-6 py-4">

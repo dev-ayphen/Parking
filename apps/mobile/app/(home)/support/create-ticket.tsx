@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {View,
   Text,
   StyleSheet,
@@ -18,7 +18,9 @@ import { Paperclip, ChevronDown, CheckCircle2, X } from 'lucide-react-native';
 import PageHeader from '../../../components/PageHeader';
 import ReportSubmitted from '../../../components/ReportSubmitted';
 import { api } from '../../../services/api';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing } from '../../../theme';
+import type { ColorsType } from '../../../theme';
+import { useTheme } from '../../../hooks/useTheme';
 
 
 const CATEGORIES: { label: string; value: string }[] = [
@@ -38,6 +40,8 @@ const PRIORITIES: { label: string; value: string }[] = [
 
 export default function CreateTicketScreen() {
   const router = useRouter();
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -149,7 +153,7 @@ export default function CreateTicketScreen() {
   if (submittedRef) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" />
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
         <PageHeader title="Ticket Created" onBack={() => router.replace('/(home)/support/tickets')} />
         <View style={styles.successWrap}>
           <ReportSubmitted
@@ -172,7 +176,7 @@ export default function CreateTicketScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <PageHeader title="Create Ticket" onBack={() => router.replace('/(home)/help-support')} />
 
       <KeyboardAvoidingView
@@ -240,7 +244,7 @@ export default function CreateTicketScreen() {
                   }}
                 >
                   <Text style={styles.dropdownText}>{category.label}</Text>
-                  <ChevronDown size={16} color={Colors.textSecondary} />
+                  <ChevronDown size={16} color={colors.textSecondary} />
                 </TouchableOpacity>
                 {showCategoryDropdown && (
                   <View style={styles.dropdownMenu}>
@@ -253,8 +257,8 @@ export default function CreateTicketScreen() {
                           setShowCategoryDropdown(false);
                         }}
                       >
-                        <Text style={[styles.dropdownItemText, category.value === c.value && { color: Colors.textPrimary, fontWeight: FontWeight.semibold }]}>{c.label}</Text>
-                        {category.value === c.value && <CheckCircle2 size={16} color={Colors.successAlt} />}
+                        <Text style={[styles.dropdownItemText, category.value === c.value && { color: colors.textPrimary, fontWeight: FontWeight.semibold }]}>{c.label}</Text>
+                        {category.value === c.value && <CheckCircle2 size={16} color={colors.successAlt} />}
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -271,7 +275,7 @@ export default function CreateTicketScreen() {
                   }}
                 >
                   <Text style={styles.dropdownText}>{priority.label}</Text>
-                  <ChevronDown size={16} color={Colors.textSecondary} />
+                  <ChevronDown size={16} color={colors.textSecondary} />
                 </TouchableOpacity>
                 {showPriorityDropdown && (
                   <View style={styles.dropdownMenu}>
@@ -284,8 +288,8 @@ export default function CreateTicketScreen() {
                           setShowPriorityDropdown(false);
                         }}
                       >
-                        <Text style={[styles.dropdownItemText, priority.value === p.value && { color: Colors.textPrimary, fontWeight: FontWeight.semibold }]}>{p.label}</Text>
-                        {priority.value === p.value && <CheckCircle2 size={16} color={Colors.successAlt} />}
+                        <Text style={[styles.dropdownItemText, priority.value === p.value && { color: colors.textPrimary, fontWeight: FontWeight.semibold }]}>{p.label}</Text>
+                        {priority.value === p.value && <CheckCircle2 size={16} color={colors.successAlt} />}
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -322,7 +326,7 @@ export default function CreateTicketScreen() {
               onPress={handlePickAttachment}
               disabled={attachments.length >= 5}
             >
-              <Paperclip size={18} color={Colors.textSecondary} />
+              <Paperclip size={18} color={colors.textSecondary} />
               <Text style={styles.attachmentText}>
                 {attachments.length >= 5 ? 'Maximum 5 files' : 'Attach File/Screenshot (Optional)'}
               </Text>
@@ -332,7 +336,7 @@ export default function CreateTicketScreen() {
               <View style={styles.attachmentThumbs}>
                 {attachments.map((uri) => (
                   <View key={uri} style={styles.thumbWrap}>
-                    <Image source={{ uri }} style={styles.thumb} />
+                    <Image source={{ uri }} style={styles.thumb} onError={() => {}} />
                     <TouchableOpacity
                       style={styles.thumbRemove}
                       onPress={() => removeAttachment(uri)}
@@ -355,7 +359,7 @@ export default function CreateTicketScreen() {
           disabled={submitting}
         >
           {submitting ? (
-            <ActivityIndicator size="small" color={Colors.white} />
+            <ActivityIndicator size="small" color={colors.white} />
           ) : (
             <Text style={styles.submitButtonText}>Submit Ticket</Text>
           )}
@@ -365,49 +369,49 @@ export default function CreateTicketScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
   },
   successWrap: {
     flex: 1,
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
     padding: Spacing.screenH,
   },
   successHint: {
     fontSize: FontSize.sm,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     lineHeight: 19,
     marginTop: Spacing.xl,
     paddingHorizontal: Spacing.xs,
   },
   successBtn: {
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     borderRadius: BorderRadius.button,
     paddingVertical: Spacing['3xl'],
     alignItems: 'center',
     marginTop: Spacing['3xl'],
   },
   successBtnText: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: FontSize.lg,
     fontWeight: FontWeight.bold,
   },
   scrollView: {
     flex: 1,
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
   },
   content: {
     padding: Spacing.screenH,
   },
   section: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: BorderRadius.lg,
     padding: Spacing['3xl'],
     marginBottom: Spacing['3xl'],
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     ...Platform.select({
       ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.03, shadowRadius: 4 },
       android: { elevation: 1 },
@@ -416,7 +420,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: FontSize.xl,
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: Spacing.xl,
   },
   row: {
@@ -428,18 +432,18 @@ const styles = StyleSheet.create({
   label: {
     fontSize: FontSize.base,
     fontWeight: FontWeight.semibold,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     marginBottom: Spacing.sm,
   },
   input: {
     height: 48,
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     borderRadius: BorderRadius.input,
     paddingHorizontal: Spacing['3xl'],
     fontSize: FontSize.md,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   textArea: {
     height: 100,
@@ -451,24 +455,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     height: 48,
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     borderRadius: BorderRadius.input,
     paddingHorizontal: Spacing['3xl'],
   },
   dropdownText: {
     fontSize: FontSize.md,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   dropdownMenu: {
     position: 'absolute',
     top: '100%',
     left: 0,
     right: 0,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     borderRadius: BorderRadius.input,
     marginTop: Spacing.xs,
     ...Platform.select({
@@ -483,16 +487,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing['3xl'],
     paddingVertical: Spacing.xl,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceBg,
+    borderBottomColor: colors.surfaceBg,
   },
   dropdownItemText: {
     fontSize: FontSize.md,                          // 14 = md ✓
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   skeletonField: {
     height: 48,
     borderRadius: BorderRadius.input,
-    backgroundColor: Colors.surfaceBg,
+    backgroundColor: colors.surfaceBg,
   },
   attachmentThumbs: {
     flexDirection: 'row',
@@ -507,7 +511,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: BorderRadius.md,
-    backgroundColor: Colors.surfaceBg,
+    backgroundColor: colors.surfaceBg,
   },
   thumbRemove: {
     position: 'absolute',
@@ -516,7 +520,7 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: Colors.textPrimary,
+    backgroundColor: colors.textPrimary,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -526,34 +530,34 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: Spacing.xl,
     borderWidth: 1,
-    borderColor: Colors.borderMuted,
+    borderColor: colors.borderMuted,
     borderStyle: 'dashed',
     borderRadius: BorderRadius.input,
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
     gap: Spacing.md,
     marginTop: Spacing.md,
   },
   attachmentText: {
     fontSize: FontSize.md,                          // 14 = md ✓
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     fontWeight: FontWeight.medium,
   },
   footer: {
     padding: Spacing.screenH,
     paddingBottom: Platform.OS === 'ios' ? 34 : Spacing.screenH,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
+    borderTopColor: colors.border,
   },
   submitButton: {
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     height: 46,
     borderRadius: BorderRadius.input,
     alignItems: 'center',
     justifyContent: 'center',
   },
   submitButtonText: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: FontSize.md,
     fontWeight: FontWeight.semibold,
   },

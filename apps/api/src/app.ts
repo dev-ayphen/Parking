@@ -4,6 +4,7 @@ import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { env } from './config/env';
+import { db } from './config/database';
 import apiRoutes from './routes';
 import { generalApiLimiter } from './middleware/rateLimit';
 
@@ -114,19 +115,28 @@ const errorHandler: ErrorRequestHandler = (
   _next: NextFunction
 ) => {
   const status = err.statusCode ?? err.status ?? 500;
-  console.error('❌ Error:', {
-    message: err.message,
-    status,
-    code: err.code,
-    path: req.path,
-    method: req.method,
-    timestamp: new Date().toISOString(),
-  });
+  if (env.NODE_ENV !== 'production') {
+    console.error('❌ Error:', {
+      message: err.message,
+      status,
+      code: err.code,
+      path: req.path,
+      method: req.method,
+      timestamp: new Date().toISOString(),
+    });
+  } else {
+    console.error('❌ Error:', { status, code: err.code, path: req.path, method: req.method });
+  }
+
+  // Never leak internal messages (Prisma SQL detail, stack traces) to clients in production
+  const clientMessage = status < 500
+    ? (err.message || 'Bad request')
+    : 'Internal server error';
 
   res.status(status).json({
     success: false,
     error: {
-      message: err.message || 'Internal Server Error',
+      message: clientMessage,
       code: err.code || 'INTERNAL_ERROR',
       status,
       ...(err.details ? { details: err.details } : {}),
@@ -154,7 +164,7 @@ export const setupSocketIO = (server: any): SocketIOServer => {
   socketServer = io;
 
   // JWT auth middleware — runs on every socket connection
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     const token =
       (socket.handshake.auth && (socket.handshake.auth as any).token) ||
       (socket.handshake.query && (socket.handshake.query as any).token);
@@ -163,10 +173,26 @@ export const setupSocketIO = (server: any): SocketIOServer => {
     }
     try {
       const decoded = jwt.verify(token, env.JWT_SECRET) as any;
-      (socket as any).data.user = {
-        id: parseInt(String(decoded.sub ?? decoded.id), 10),
-        role: decoded.role || 'PARKER',
-      };
+      const userId = parseInt(String(decoded.sub ?? decoded.id), 10);
+
+      // Verify the session is still active in DB (catches logged-out tokens)
+      const session = await db.session.findFirst({
+        where: { token, userId, expiresAt: { gt: new Date() } },
+        select: { id: true },
+      });
+      if (!session) return next(new Error('Session expired or logged out'));
+
+      // Defense-in-depth: reject banned or deleted accounts even if a session
+      // row somehow survived (e.g. a race between ban and deleteMany).
+      const user = await db.user.findFirst({
+        where: { id: userId },
+        select: { status: true, deletedAt: true },
+      });
+      if (!user || user.deletedAt || user.status === 'BANNED') {
+        return next(new Error('Account is not active'));
+      }
+
+      (socket as any).data.user = { id: userId, role: decoded.role || 'PARKER' };
       next();
     } catch {
       next(new Error('Invalid or expired token'));
@@ -179,10 +205,18 @@ export const setupSocketIO = (server: any): SocketIOServer => {
     // Enforce: users can only join their own room or admin rooms (if ADMIN)
     const authUser = (socket as any).data?.user;
 
-    // Client joins a ticket room to receive real-time replies
-    socket.on('support:join', (ticketId: string | number) => {
-      const room = `support_ticket_${ticketId}`;
-      socket.join(room);
+    // Client joins a ticket room — verify the requesting user owns the ticket or is ADMIN
+    socket.on('support:join', async (ticketId: string | number) => {
+      if (!authUser) return;
+      try {
+        const ticket = await db.supportTicket.findUnique({
+          where: { id: Number(ticketId) },
+          select: { userId: true },
+        });
+        if (!ticket) return;
+        if (ticket.userId !== authUser.id && authUser.role !== 'ADMIN') return;
+        socket.join(`support_ticket_${ticketId}`);
+      } catch { /* ignore — socket stays out of the room */ }
     });
 
     socket.on('support:leave', (ticketId: string | number) => {

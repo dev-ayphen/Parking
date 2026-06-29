@@ -1,4 +1,5 @@
 import { db } from '../config/database';
+import { AppError } from '../utils/errors';
 import { transactionService } from './transaction.service';
 import { entitlementService } from './entitlement.service';
 
@@ -175,13 +176,13 @@ export const subscriptionService = {
     const billingCycle = data.billingCycle === 'YEARLY' ? 'YEARLY' : 'MONTHLY';
 
     const planId = Number(data.planId);
-    if (!planId || Number.isNaN(planId)) throw Object.assign(new Error('planId is required'), { statusCode: 400 });
+    if (!planId || Number.isNaN(planId)) throw new AppError('planId is required', 400);
 
     const plan = await db.subscriptionPlan.findUnique({ where: { id: planId } });
-    if (!plan || !plan.isActive) throw Object.assign(new Error('Subscription plan not found or unavailable'), { statusCode: 404 });
+    if (!plan || !plan.isActive) throw new AppError('Subscription plan not found or unavailable', 404);
 
     const finalPrice = priceForCycle(plan, billingCycle);
-    if (typeof finalPrice !== 'number' || finalPrice < 0) throw Object.assign(new Error('Invalid plan price'), { statusCode: 400 });
+    if (typeof finalPrice !== 'number' || finalPrice < 0) throw new AppError('Invalid plan price', 400);
 
     const current = await db.subscription.findFirst({
       where: { userId, status: 'ACTIVE' },
@@ -203,26 +204,28 @@ export const subscriptionService = {
       };
     }
 
-    // IMMEDIATE: new sub or same/upgrade → expire any current active sub and
-    // create a fresh ACTIVE one starting today.
-    if (current) {
-      await db.subscription.update({
-        where: { id: current.id },
-        data: { status: 'EXPIRED', autoRenewal: false, scheduledDowngradePlanId: null },
+    // IMMEDIATE: new sub or same/upgrade → atomically expire any current active
+    // sub and create a fresh ACTIVE one. Both writes are in one transaction so a
+    // crash between them can never leave the user with no active subscription.
+    const subscription = await db.$transaction(async (tx) => {
+      if (current) {
+        await tx.subscription.update({
+          where: { id: current.id },
+          data: { status: 'EXPIRED', autoRenewal: false, scheduledDowngradePlanId: null },
+        });
+      }
+      return tx.subscription.create({
+        data: {
+          userId,
+          planId: plan.id,
+          planName: plan.name,
+          plan: billingCycle,
+          price: finalPrice,
+          status: 'ACTIVE',
+          renewalDate: nextRenewal(billingCycle),
+          autoRenewal: true,
+        },
       });
-    }
-
-    const subscription = await db.subscription.create({
-      data: {
-        userId,
-        planId: plan.id,
-        planName: plan.name,
-        plan: billingCycle,
-        price: finalPrice,
-        status: 'ACTIVE',
-        renewalDate: nextRenewal(billingCycle),
-        autoRenewal: true,
-      },
     });
 
     // Bookkeeping inflow (no real charge yet — payment gateway is future work).
@@ -250,7 +253,7 @@ export const subscriptionService = {
       data: { autoRenewal: false, scheduledDowngradePlanId: null },
     });
     if (result.count === 0) {
-      throw Object.assign(new Error('Active subscription not found'), { statusCode: 404 });
+      throw new AppError('Active subscription not found', 404);
     }
     const subscription = await db.subscription.findUnique({ where: { id: subscriptionId } });
     return {

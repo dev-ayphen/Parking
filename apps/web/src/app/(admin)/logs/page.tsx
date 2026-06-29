@@ -152,7 +152,7 @@ function SystemLogsView() {
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"
+        className="sticky top-0 z-10 bg-gray-50 -mx-6 px-6 py-4 -mt-4 mb-2 flex items-center justify-between border-b border-gray-200"
       >
         <div>
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">System Logs</h1>
@@ -457,7 +457,7 @@ function AdminAuditView() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="sticky top-0 z-10 bg-gray-50 -mx-6 px-6 py-4 -mt-4 mb-2 flex items-center justify-between border-b border-gray-200">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Admin Actions</h1>
           <p className="text-gray-500 mt-1 text-sm">Immutable audit trail of every moderation action taken by admins.</p>

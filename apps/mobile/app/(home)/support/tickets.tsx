@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {View,
   Text,
   StyleSheet,
@@ -13,7 +13,9 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { Ticket, Clock, CheckCircle2, ChevronRight, XCircle, MessageSquare, Pause } from 'lucide-react-native';
 import { api } from '../../../services/api';
 import PageHeader from '../../../components/PageHeader';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../../theme';
+import type { ColorsType } from '../../../theme';
+import { useTheme } from '../../../hooks/useTheme';
 
 
 const TABS: { label: string; value: string | undefined }[] = [
@@ -25,13 +27,13 @@ const TABS: { label: string; value: string | undefined }[] = [
   { label: 'Closed', value: 'CLOSED' },
 ];
 
-const STATUS_DISPLAY: Record<string, { label: string; color: string }> = {
-  OPEN: { label: 'Open', color: Colors.info },
-  IN_PROGRESS: { label: 'In Progress', color: Colors.warningAlt },
+const makeStatusDisplay = (colors: ColorsType): Record<string, { label: string; color: string }> => ({
+  OPEN: { label: 'Open', color: colors.info },
+  IN_PROGRESS: { label: 'In Progress', color: colors.warningAlt },
   WAITING_FOR_USER: { label: 'Waiting for You', color: ExtendedColors.purpleText },
-  RESOLVED: { label: 'Resolved', color: Colors.successAlt },
-  CLOSED: { label: 'Closed', color: Colors.textSecondary },
-};
+  RESOLVED: { label: 'Resolved', color: colors.successAlt },
+  CLOSED: { label: 'Closed', color: colors.textSecondary },
+});
 
 const CATEGORY_LABELS: Record<string, string> = {
   BOOKING: 'Booking',
@@ -59,6 +61,9 @@ interface ApiTicket {
 
 export default function MySupportTicketsScreen() {
   const router = useRouter();
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const STATUS_DISPLAY = useMemo(() => makeStatusDisplay(colors), [colors]);
   const [activeTab, setActiveTab] = useState(TABS[0]);
   const [tickets, setTickets] = useState<ApiTicket[]>([]);
   const [loading, setLoading] = useState(true);
@@ -107,7 +112,7 @@ export default function MySupportTicketsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <PageHeader title="My Support Tickets" onBack={() => router.replace('/(home)/help-support')} />
 
       <View style={styles.tabsContainer}>
@@ -126,15 +131,15 @@ export default function MySupportTicketsScreen() {
 
       {loading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : (
         <ScrollView
           contentContainerStyle={styles.content}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchTickets(true)} tintColor={Colors.primary} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchTickets(true)} tintColor={colors.primary} />}
         >
           {error ? (
-            <View style={{ padding: Spacing['3xl'], backgroundColor: Colors.errorBg, borderRadius: BorderRadius.md, marginBottom: Spacing.xl }}>
+            <View style={{ padding: Spacing['3xl'], backgroundColor: colors.errorBg, borderRadius: BorderRadius.md, marginBottom: Spacing.xl }}>
               <Text style={{ color: ExtendedColors.redTextMid, fontSize: FontSize.base }}>{error}</Text>
             </View>
           ) : null}
@@ -169,12 +174,12 @@ export default function MySupportTicketsScreen() {
                       <Text style={styles.dateText}>{formatDate(ticket.lastReplyAt)}</Text>
                       {ticket.replyCount > 0 && (
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginLeft: Spacing.md }}>
-                          <MessageSquare size={11} color={Colors.textMuted} />
+                          <MessageSquare size={11} color={colors.textMuted} />
                           <Text style={[styles.dateText, { marginLeft: 0 }]}>{ticket.replyCount}</Text>
                         </View>
                       )}
                     </View>
-                    <ChevronRight size={20} color={Colors.borderMuted} />
+                    <ChevronRight size={20} color={colors.borderMuted} />
                   </View>
                 </TouchableOpacity>
               );
@@ -182,7 +187,7 @@ export default function MySupportTicketsScreen() {
           ) : (
             <View style={styles.emptyState}>
               <View style={styles.emptyIconBox}>
-                <Ticket size={32} color={Colors.textMuted} />
+                <Ticket size={32} color={colors.textMuted} />
               </View>
               <Text style={styles.emptyTitle}>No tickets found</Text>
               <Text style={styles.emptyDesc}>
@@ -205,15 +210,15 @@ export default function MySupportTicketsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
   },
   tabsContainer: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceBg,
+    borderBottomColor: colors.surfaceBg,
   },
   tabsScroll: {
     paddingHorizontal: Spacing['3xl'],
@@ -224,30 +229,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing['3xl'],
     paddingVertical: Spacing.md,
     borderRadius: BorderRadius.circleXl,            // 20 = circleXl ✓
-    backgroundColor: Colors.surfaceBg,
+    backgroundColor: colors.surfaceBg,
   },
   tabButtonActive: {
-    backgroundColor: Colors.textPrimary,
+    backgroundColor: colors.textPrimary,
   },
   tabText: {
     fontSize: FontSize.md,                          // 14 = md ✓
     fontWeight: FontWeight.medium,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   tabTextActive: {
-    color: Colors.white,
+    color: colors.white,
   },
   content: {
     padding: Spacing.screenH,
     paddingBottom: 100,
   },
   ticketCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: BorderRadius.lg,                  // 16 = lg ✓
     padding: Spacing['3xl'],
     marginBottom: Spacing['3xl'],
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     ...Platform.select({
       ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 8 },
       android: { elevation: 1 },
@@ -262,7 +267,7 @@ const styles = StyleSheet.create({
   ticketId: {
     fontSize: FontSize.md,                          // 14 = md ✓
     fontWeight: FontWeight.semibold,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   statusBadge: {
     flexDirection: 'row',
@@ -279,7 +284,7 @@ const styles = StyleSheet.create({
   ticketSubject: {
     fontSize: FontSize.xl,                          // 16 = xl ✓
     fontWeight: FontWeight.semibold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: Spacing['3xl'],
     lineHeight: 22,
   },
@@ -289,7 +294,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: Spacing.xl,
     borderTopWidth: 1,
-    borderTopColor: Colors.surfaceBg,
+    borderTopColor: colors.surfaceBg,
   },
   footerInfo: {
     flexDirection: 'row',
@@ -297,7 +302,7 @@ const styles = StyleSheet.create({
     gap: Spacing.xl,
   },
   categoryBadge: {
-    backgroundColor: Colors.surfaceBg,
+    backgroundColor: colors.surfaceBg,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.badge,               // 6 = badge ✓
@@ -305,11 +310,11 @@ const styles = StyleSheet.create({
   categoryText: {
     fontSize: FontSize.sm,                          // 12 = sm ✓
     fontWeight: FontWeight.medium,
-    color: Colors.textBody,
+    color: colors.textBody,
   },
   dateText: {
     fontSize: FontSize.sm,                          // 12 = sm ✓
-    color: Colors.textMuted,
+    color: colors.textMuted,
   },
   emptyState: {
     alignItems: 'center',
@@ -320,7 +325,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: Colors.surfaceBg,
+    backgroundColor: colors.surfaceBg,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing['3xl'],
@@ -328,12 +333,12 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: FontSize['2xl'],                      // 18 = 2xl ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: Spacing.md,
   },
   emptyDesc: {
     fontSize: FontSize.md,                          // 14 = md ✓
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     textAlign: 'center',
     paddingHorizontal: Spacing['6xl'],
   },
@@ -346,17 +351,17 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   fab: {
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     paddingVertical: Spacing['3xl'],
     borderRadius: BorderRadius.md,                  // 12 = md ✓
     alignItems: 'center',
     ...Platform.select({
-      ios: { shadowColor: Colors.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
+      ios: { shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
       android: { elevation: 6 },
     }),
   },
   fabText: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: FontSize.xl,                          // 16 = xl ✓
     fontWeight: FontWeight.semibold,
   },

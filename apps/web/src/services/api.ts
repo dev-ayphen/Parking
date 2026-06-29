@@ -35,13 +35,15 @@ apiClient.interceptors.request.use((config) => {
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    console.error('API Error:', {
-      url: error.config?.url,
-      method: error.config?.method,
-      status: error.response?.status,
-      data: error.response?.data,
-      message: error.message,
-    });
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('API Error:', {
+        url: error.config?.url,
+        method: error.config?.method,
+        status: error.response?.status,
+        data: error.response?.data,
+        message: error.message,
+      });
+    }
     // A request with no HTTP response is a connectivity failure (server
     // unreachable / dropped wifi). Broadcast it so the OfflineBanner can show,
     // even when the browser's navigator.onLine hasn't flipped yet.
@@ -178,6 +180,20 @@ export const adminApi = {
   },
   listBroadcastHistory: async (params?: { page?: number; limit?: number }) => {
     const res = await apiClient.get('/admin/communications/history', { params });
+    return res.data;
+  },
+
+  // Broadcast templates (DB-backed)
+  listBroadcastTemplates: async () => {
+    const res = await apiClient.get('/admin/broadcast-templates');
+    return res.data;
+  },
+  createBroadcastTemplate: async (payload: { name: string; title: string; body: string; audience: string; category: string }) => {
+    const res = await apiClient.post('/admin/broadcast-templates', payload);
+    return res.data;
+  },
+  deleteBroadcastTemplate: async (id: number) => {
+    const res = await apiClient.delete(`/admin/broadcast-templates/${id}`);
     return res.data;
   },
 
@@ -422,6 +438,32 @@ export const adminApi = {
   // Signed URL for a vehicle's RC-book document (admin user detail view).
   getVehicleRcBookUrl: async (vehicleId: number) => {
     const res = await apiClient.get(`/admin/vehicles/${vehicleId}/rcbook-url`);
+    return res.data;
+  },
+
+  // ─── Staff management (SUPER_ADMIN only) ───────────────────────────────────
+  listStaff: async () => {
+    const res = await apiClient.get('/admin/staff');
+    return res.data;
+  },
+
+  createStaff: async (data: { email: string; password: string; name: string; adminRole: 'SUPER_ADMIN' | 'SUPPORT_AGENT' }) => {
+    const res = await apiClient.post('/admin/staff', data);
+    return res.data;
+  },
+
+  deactivateStaff: async (id: number) => {
+    const res = await apiClient.put(`/admin/staff/${id}/deactivate`);
+    return res.data;
+  },
+
+  reactivateStaff: async (id: number) => {
+    const res = await apiClient.put(`/admin/staff/${id}/reactivate`);
+    return res.data;
+  },
+
+  resetStaffPassword: async (id: number, password: string) => {
+    const res = await apiClient.put(`/admin/staff/${id}/reset-password`, { password });
     return res.data;
   },
 };

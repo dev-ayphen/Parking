@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {View,
   Text,
   StyleSheet,
@@ -21,17 +21,19 @@ import { API_BASE } from '../../../../config/api.config';
 import { api } from '../../../../services/api';
 import { getAuthToken } from '../../../../utils/secureStorage';
 import PageHeader from '../../../../components/PageHeader';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../../../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../../../theme';
+import type { ColorsType } from '../../../../theme';
+import { useTheme } from '../../../../hooks/useTheme';
 
 const SOCKET_URL = (API_BASE || '').replace(/\/api\/?$/, '');
 
-const STATUS_DISPLAY: Record<string, { label: string; color: string; bg: string }> = {
-  OPEN: { label: 'Open', color: Colors.info, bg: Colors.infoBg },
-  IN_PROGRESS: { label: 'In Progress', color: Colors.warningAlt, bg: Colors.warningBg },
+const makeStatusDisplay = (colors: ColorsType): Record<string, { label: string; color: string; bg: string }> => ({
+  OPEN: { label: 'Open', color: colors.info, bg: colors.infoBg },
+  IN_PROGRESS: { label: 'In Progress', color: colors.warningAlt, bg: colors.warningBg },
   WAITING_FOR_USER: { label: 'Waiting for You', color: ExtendedColors.purpleText, bg: ExtendedColors.purpleBg },
-  RESOLVED: { label: 'Resolved', color: Colors.successAlt, bg: Colors.successBg },
-  CLOSED: { label: 'Closed', color: Colors.textSecondary, bg: Colors.surfaceBg },
-};
+  RESOLVED: { label: 'Resolved', color: colors.successAlt, bg: colors.successBg },
+  CLOSED: { label: 'Closed', color: colors.textSecondary, bg: colors.surfaceBg },
+});
 
 const CATEGORY_LABELS: Record<string, string> = {
   BOOKING: 'Booking', SPACE_OWNER: 'Space Owner', SUBSCRIPTION: 'Subscription',
@@ -82,6 +84,10 @@ export default function TicketDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const numericId = parseInt(id || '', 10);
+
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const STATUS_DISPLAY = useMemo(() => makeStatusDisplay(colors), [colors]);
 
   const [ticket, setTicket] = useState<TicketData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -244,10 +250,10 @@ export default function TicketDetailScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" />
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
         <PageHeader title="Ticket Details" onBack={() => router.replace('/(home)/support/tickets')} />
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       </SafeAreaView>
     );
@@ -256,10 +262,10 @@ export default function TicketDetailScreen() {
   if (!ticket) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" />
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
         <PageHeader title="Ticket Details" onBack={() => router.replace('/(home)/support/tickets')} />
         <View style={{ flex: 1, padding: Spacing['4xl'], alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ color: Colors.textSecondary, fontSize: FontSize.md, textAlign: 'center' }}>
+          <Text style={{ color: colors.textSecondary, fontSize: FontSize.md, textAlign: 'center' }}>
             {error || 'Ticket not found.'}
           </Text>
         </View>
@@ -272,7 +278,7 @@ export default function TicketDetailScreen() {
   const isResolvedOrClosed = ticket.status === 'RESOLVED' || ticket.status === 'CLOSED';
   const allMessages: Array<{ id: string; isAdmin: boolean; text: string; createdAt: string; isOriginal?: boolean }> = [
     { id: 'original', isAdmin: false, text: ticket.description, createdAt: ticket.createdAt, isOriginal: true },
-    ...ticket.replies.map((r) => ({ id: `r${r.id}`, isAdmin: r.isAdmin, text: r.message, createdAt: r.createdAt })),
+    ...(ticket.replies ?? []).map((r) => ({ id: `r${r.id}`, isAdmin: r.isAdmin, text: r.message, createdAt: r.createdAt })),
   ];
 
   const formatTime = (d: string) =>
@@ -280,7 +286,7 @@ export default function TicketDetailScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <PageHeader title={ticket.ticketNumber} onBack={() => router.replace('/(home)/support/tickets')} />
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -324,7 +330,7 @@ export default function TicketDetailScreen() {
                       activeOpacity={0.85}
                       onPress={() => handleOpenAttachment(url)}
                     >
-                      <Image source={{ uri: url }} style={styles.attachmentThumb} resizeMode="cover" />
+                      <Image source={{ uri: url }} style={styles.attachmentThumb} resizeMode="cover" onError={() => {}} />
                     </TouchableOpacity>
                   ) : (
                     <TouchableOpacity
@@ -333,7 +339,7 @@ export default function TicketDetailScreen() {
                       activeOpacity={0.7}
                       onPress={() => handleOpenAttachment(url)}
                     >
-                      <FileText size={22} color={Colors.textSecondary} />
+                      <FileText size={22} color={colors.textSecondary} />
                       <Text style={styles.attachmentFileName} numberOfLines={1}>
                         {fileNameFromUrl(url)}
                       </Text>
@@ -346,8 +352,8 @@ export default function TicketDetailScreen() {
 
           {/* Resolution note banner */}
           {ticket.resolutionNote && (
-            <View style={[styles.escalationBanner, { backgroundColor: Colors.successBg, borderColor: ExtendedColors.greenBorderFine }]}>
-              <CheckCircle2 size={18} color={Colors.success} />
+            <View style={[styles.escalationBanner, { backgroundColor: colors.successBg, borderColor: ExtendedColors.greenBorderFine }]}>
+              <CheckCircle2 size={18} color={colors.success} />
               <Text style={[styles.escalationText, { color: ExtendedColors.greenTextDark }]}>{ticket.resolutionNote}</Text>
             </View>
           )}
@@ -359,20 +365,20 @@ export default function TicketDetailScreen() {
               <Text style={styles.actionsDesc}>Rate your support experience or reopen if you still need help.</Text>
               <View style={styles.actionsRow}>
                 <TouchableOpacity
-                  style={[styles.actionButton, { backgroundColor: Colors.white, borderColor: Colors.border }]}
+                  style={[styles.actionButton, { backgroundColor: colors.white, borderColor: colors.border }]}
                   onPress={handleReopen}
                   disabled={reopening}
                 >
-                  <RotateCcw size={14} color={Colors.textPrimary} />
-                  <Text style={[styles.actionButtonText, { color: Colors.textPrimary }]}>
+                  <RotateCcw size={14} color={colors.textPrimary} />
+                  <Text style={[styles.actionButtonText, { color: colors.textPrimary }]}>
                     {reopening ? 'Reopening…' : 'Reopen Ticket'}
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.actionButton, { backgroundColor: Colors.primary }]}
+                  style={[styles.actionButton, { backgroundColor: colors.primary }]}
                   onPress={() => setShowRating(true)}
                 >
-                  <Star size={14} color={Colors.white} />
+                  <Star size={14} color={colors.white} />
                   <Text style={styles.actionButtonText}>Rate Support</Text>
                 </TouchableOpacity>
               </View>
@@ -381,8 +387,8 @@ export default function TicketDetailScreen() {
 
           {/* Existing rating display */}
           {ticket.rating && (
-            <View style={[styles.escalationBanner, { backgroundColor: Colors.warningBg, borderColor: ExtendedColors.warningStarBorder }]}>
-              <Star size={18} color={Colors.warning} fill={Colors.warning} />
+            <View style={[styles.escalationBanner, { backgroundColor: colors.warningBg, borderColor: ExtendedColors.warningStarBorder }]}>
+              <Star size={18} color={colors.warning} fill={colors.warning} />
               <Text style={[styles.escalationText, { color: ExtendedColors.warningAmber }]}>
                 You rated {ticket.rating}/5{ticket.ratingComment ? ` — "${ticket.ratingComment}"` : ''}
               </Text>
@@ -396,12 +402,12 @@ export default function TicketDetailScreen() {
               <View style={{ flexDirection: 'row', justifyContent: 'center', gap: Spacing.sm, marginVertical: Spacing.lg }}>
                 {[1, 2, 3, 4, 5].map((s) => (
                   <TouchableOpacity key={s} onPress={() => setRatingStars(s)}>
-                    <Star size={28} color={Colors.warningAlt} fill={s <= ratingStars ? Colors.warningAlt : 'transparent'} />
+                    <Star size={28} color={colors.warningAlt} fill={s <= ratingStars ? colors.warningAlt : 'transparent'} />
                   </TouchableOpacity>
                 ))}
               </View>
               <TextInput
-                style={[styles.replyInput, { borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.input, padding: Spacing.lg, minHeight: 60, maxHeight: 100, marginBottom: Spacing.lg }]}
+                style={[styles.replyInput, { borderWidth: 1, borderColor: colors.border, borderRadius: BorderRadius.input, padding: Spacing.lg, minHeight: 60, maxHeight: 100, marginBottom: Spacing.lg }]}
                 placeholder="Optional feedback…"
                 value={ratingComment}
                 onChangeText={setRatingComment}
@@ -409,18 +415,18 @@ export default function TicketDetailScreen() {
               />
               <View style={styles.actionsRow}>
                 <TouchableOpacity
-                  style={[styles.actionButton, { backgroundColor: Colors.white, borderColor: Colors.border }]}
+                  style={[styles.actionButton, { backgroundColor: colors.white, borderColor: colors.border }]}
                   onPress={() => setShowRating(false)}
                 >
-                  <Text style={[styles.actionButtonText, { color: Colors.textPrimary }]}>Cancel</Text>
+                  <Text style={[styles.actionButtonText, { color: colors.textPrimary }]}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.actionButton, { backgroundColor: Colors.primary }]}
+                  style={[styles.actionButton, { backgroundColor: colors.primary }]}
                   onPress={handleSubmitRating}
                   disabled={submittingRating}
                 >
                   {submittingRating ? (
-                    <ActivityIndicator size="small" color={Colors.white} />
+                    <ActivityIndicator size="small" color={colors.white} />
                   ) : (
                     <Text style={styles.actionButtonText}>Submit Rating</Text>
                   )}
@@ -432,7 +438,7 @@ export default function TicketDetailScreen() {
           {/* Response-time notice */}
           {!isResolvedOrClosed && (
             <View style={styles.escalationBanner}>
-              <Info size={18} color={Colors.textPrimary} />
+              <Info size={18} color={colors.textPrimary} />
               <Text style={styles.escalationText}>Our team replies within 2 hours during business hours.</Text>
             </View>
           )}
@@ -468,7 +474,7 @@ export default function TicketDetailScreen() {
             <TextInput
               style={styles.replyInput}
               placeholder="Type a reply…"
-              placeholderTextColor={Colors.textMuted}
+              placeholderTextColor={colors.textMuted}
               value={replyText}
               onChangeText={setReplyText}
               multiline
@@ -479,7 +485,7 @@ export default function TicketDetailScreen() {
               onPress={handleSend}
               disabled={!replyText.trim() || sending}
             >
-              {sending ? <ActivityIndicator size="small" color={Colors.white} /> : <Send size={18} color={Colors.white} />}
+              {sending ? <ActivityIndicator size="small" color={colors.white} /> : <Send size={18} color={colors.white} />}
             </TouchableOpacity>
           </View>
         )}
@@ -507,10 +513,10 @@ export default function TicketDetailScreen() {
             onPress={() => setPreviewImage(null)}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
-            <X size={24} color={Colors.white} />
+            <X size={24} color={colors.white} />
           </TouchableOpacity>
           {previewImage && (
-            <Image source={{ uri: previewImage }} style={styles.previewImage} resizeMode="contain" />
+            <Image source={{ uri: previewImage }} style={styles.previewImage} resizeMode="contain" onError={() => {}} />
           )}
         </View>
       </Modal>
@@ -518,21 +524,21 @@ export default function TicketDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
   },
   content: {
     padding: Spacing['3xl'],
   },
   ticketInfoCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: BorderRadius.lg,                  // 16 = lg ✓
     padding: Spacing.screenH,
     marginBottom: Spacing['3xl'],
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     ...Platform.select({
       ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 8 },
       android: { elevation: 1 },
@@ -547,12 +553,12 @@ const styles = StyleSheet.create({
   ticketId: {
     fontSize: FontSize.xl,                          // 16 = xl ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.warningBg,
+    backgroundColor: colors.warningBg,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.md,                  // 12 = md ✓
@@ -561,19 +567,19 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: FontSize.sm,                          // 12 = sm ✓
     fontWeight: FontWeight.semibold,
-    color: Colors.warningAlt,
+    color: colors.warningAlt,
   },
   ticketSubject: {
     fontSize: FontSize['2xl'],                      // 18 = 2xl ✓
     fontWeight: FontWeight.semibold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: Spacing.screenH,
     lineHeight: 24,
   },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
     padding: Spacing.xl,
     borderRadius: BorderRadius.sm,                  // 8 = sm ✓
   },
@@ -582,24 +588,24 @@ const styles = StyleSheet.create({
   },
   metaLabel: {
     fontSize: FontSize.sm,                          // 12 = sm ✓
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     marginBottom: Spacing.xs,
   },
   metaValue: {
     fontSize: FontSize.md,                          // 14 = md ✓
     fontWeight: FontWeight.medium,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   metaDivider: {
     width: 1,
     height: '100%',
-    backgroundColor: Colors.border,
+    backgroundColor: colors.border,
     marginHorizontal: Spacing['3xl'],
   },
   escalationBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surfaceBg,
+    backgroundColor: colors.surfaceBg,
     padding: Spacing['3xl'],
     borderRadius: BorderRadius.md,                  // 12 = md ✓
     marginBottom: Spacing['4xl'],
@@ -608,7 +614,7 @@ const styles = StyleSheet.create({
   escalationText: {
     flex: 1,
     fontSize: FontSize.base,                        // 13 = base ✓
-    color: Colors.textDark,
+    color: colors.textDark,
     lineHeight: 18,
   },
   attachmentsSection: {
@@ -617,7 +623,7 @@ const styles = StyleSheet.create({
   attachmentsTitle: {
     fontSize: FontSize.lg,                           // 15 = lg ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: Spacing.xl,
   },
   attachmentsGrid: {
@@ -630,16 +636,16 @@ const styles = StyleSheet.create({
     height: 72,
     borderRadius: BorderRadius.md,                   // 12 = md ✓
     borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.surfaceBg,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceBg,
   },
   attachmentFileCard: {
     width: 110,
     height: 72,
     borderRadius: BorderRadius.md,                   // 12 = md ✓
     borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.screenBg,
+    borderColor: colors.border,
+    backgroundColor: colors.screenBg,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: Spacing.md,
@@ -647,7 +653,7 @@ const styles = StyleSheet.create({
   },
   attachmentFileName: {
     fontSize: FontSize.xs,                           // 11 = xs ✓
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     textAlign: 'center',
   },
   previewBackdrop: {
@@ -678,7 +684,7 @@ const styles = StyleSheet.create({
   conversationTitle: {
     fontSize: FontSize.xl,                          // 16 = xl ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: Spacing['3xl'],
   },
   messageWrapper: {
@@ -696,14 +702,14 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: BorderRadius.lg,                  // 16 = lg ✓
-    backgroundColor: Colors.textPrimary,
+    backgroundColor: colors.textPrimary,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: Spacing.md,
     marginTop: Spacing.xs,
   },
   avatarTextSupport: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: FontSize.sm,                          // 12 = sm ✓
     fontWeight: FontWeight.bold,
   },
@@ -712,24 +718,24 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.lg,                  // 16 = lg ✓
   },
   messageBubbleUser: {
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     borderTopRightRadius: BorderRadius.xs,          // 4 = xs ✓
   },
   messageBubbleSupport: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderTopLeftRadius: BorderRadius.xs,           // 4 = xs ✓
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
   },
   messageText: {
     fontSize: FontSize.lg,                          // 15 = lg ✓
     lineHeight: 22,
   },
   messageTextUser: {
-    color: Colors.white,
+    color: colors.white,
   },
   messageTextSupport: {
-    color: Colors.textDark,
+    color: colors.textDark,
   },
   messageTime: {
     fontSize: FontSize.xs,                          // 11 = xs ✓
@@ -740,25 +746,25 @@ const styles = StyleSheet.create({
     color: ExtendedColors.whiteAlpha70,             // 'rgba(255,255,255,0.7)' ✓
   },
   messageTimeSupport: {
-    color: Colors.textMuted,
+    color: colors.textMuted,
   },
   replyArea: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     padding: Spacing.xl,
     paddingBottom: Platform.OS === 'ios' ? 34 : Spacing.xl,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
+    borderTopColor: colors.border,
   },
   attachButton: {
     padding: Spacing.xl,
   },
   replyInput: {
     flex: 1,
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     borderRadius: BorderRadius.circleXl,            // 20 = circleXl ✓
     paddingHorizontal: Spacing['3xl'],
     paddingTop: Spacing.xl,
@@ -769,7 +775,7 @@ const styles = StyleSheet.create({
     marginHorizontal: Spacing.md,
   },
   sendButton: {
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     width: 44,
     height: 44,
     borderRadius: 22,
@@ -777,25 +783,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sendButtonDisabled: {
-    backgroundColor: Colors.surfaceBg,
+    backgroundColor: colors.surfaceBg,
   },
   actionsCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: BorderRadius.lg,                  // 16 = lg ✓
     padding: Spacing['3xl'],
     marginBottom: Spacing['3xl'],
     borderWidth: 1,
-    borderColor: Colors.surfaceBg,
+    borderColor: colors.surfaceBg,
   },
   actionsTitle: {
     fontSize: FontSize.lg,                          // 15 = lg ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: Spacing.xs,
   },
   actionsDesc: {
     fontSize: FontSize.base,                        // 13 = base ✓
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     marginBottom: Spacing.xl,
   },
   actionsRow: {
@@ -816,23 +822,23 @@ const styles = StyleSheet.create({
   actionButtonText: {
     fontSize: FontSize.base,                        // 13 = base ✓
     fontWeight: FontWeight.bold,
-    color: Colors.white,
+    color: colors.white,
   },
   closedFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: Colors.surfaceBg,
+    backgroundColor: colors.surfaceBg,
     padding: Spacing['2xl'],
     paddingHorizontal: Spacing.screenH,
   },
   closedFooterText: {
     fontSize: FontSize.base,                        // 13 = base ✓
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   closedFooterAction: {
     fontSize: FontSize.base,                        // 13 = base ✓
-    color: Colors.primary,
+    color: colors.primary,
     fontWeight: FontWeight.bold,
   },
 });

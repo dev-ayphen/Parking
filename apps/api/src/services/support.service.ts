@@ -1,4 +1,5 @@
 import { db } from '../config/database';
+import { AppError } from '../utils/errors';
 import { storageService } from './storage.service';
 import { BUCKETS } from '../config/supabase';
 
@@ -103,7 +104,7 @@ export const supportService = {
     // Attachment count cap (size is enforced by the upload middleware).
     const attachmentUrls = Array.isArray(data.attachmentUrls) ? data.attachmentUrls : [];
     if (attachmentUrls.length > 5) {
-      throw Object.assign(new Error('A ticket can have at most 5 attachments.'), { statusCode: 400 });
+      throw new AppError('A ticket can have at most 5 attachments.', 400);
     }
 
     // ── Anti-spam rate limits (per user) ──────────────────────────────────

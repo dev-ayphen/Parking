@@ -1,4 +1,5 @@
 import jwt, { SignOptions } from 'jsonwebtoken';
+import bcrypt from 'bcrypt';
 import { db } from '../config/database';
 import { redis } from '../config/redis';
 import { env } from '../config/env';
@@ -8,13 +9,14 @@ import {
   isValidIndianPhone,
   formatPhoneNumber,
 } from '../utils/otp.utils';
+import { AppError } from '../utils/errors';
 
 const OTP_VALIDITY_MINUTES = 10;
 const RATE_LIMIT_WINDOW_MINUTES = 15;
 // Cap OTP *requests* per window. Each request mints a fresh OTP and resets the
 // wrong-guess counter, so a high cap effectively multiplies the brute-force
 // space (5 guesses × N requests). Keep this low. Allow more in dev for testing.
-const MAX_OTP_REQUESTS = process.env.NODE_ENV === 'production' ? 5 : 20;
+const MAX_OTP_REQUESTS = env.NODE_ENV === 'production' ? 5 : 20;
 const MAX_OTP_ATTEMPTS = 5;
 
 // Redis key prefixes
@@ -29,7 +31,7 @@ const getOTPFromRedis = async (phone: string): Promise<{ otp: string; attempts: 
     const data = await redis.get(`${OTP_KEY_PREFIX}${phone}`);
     return data ? JSON.parse(data) : null;
   } catch (error) {
-    if (process.env.NODE_ENV !== 'production') console.error('[REDIS] Error getting OTP');
+    if (env.NODE_ENV !== 'production') console.error('[REDIS] Error getting OTP');
     return null;
   }
 };
@@ -55,7 +57,7 @@ const setOTPInRedis = async (
       JSON.stringify(otpData)
     );
   } catch (error) {
-    if (process.env.NODE_ENV !== 'production') console.error('[REDIS] Error setting OTP');
+    if (env.NODE_ENV !== 'production') console.error('[REDIS] Error setting OTP');
     throw error;
   }
 };
@@ -67,7 +69,7 @@ const deleteOTPFromRedis = async (phone: string) => {
   try {
     await redis.del(`${OTP_KEY_PREFIX}${phone}`);
   } catch (error) {
-    if (process.env.NODE_ENV !== 'production') console.error('[REDIS] Error deleting OTP');
+    if (env.NODE_ENV !== 'production') console.error('[REDIS] Error deleting OTP');
   }
 };
 
@@ -97,7 +99,7 @@ const setRateLimitInRedis = async (phone: string, count: number) => {
       JSON.stringify(rateLimitData)
     );
   } catch (error) {
-    if (process.env.NODE_ENV !== 'production') console.error('[REDIS] Error setting rate limit');
+    if (env.NODE_ENV !== 'production') console.error('[REDIS] Error setting rate limit');
   }
 };
 
@@ -107,17 +109,13 @@ export const authService = {
 
     // Validate phone format
     if (!phone || typeof phone !== 'string') {
-      const error = new Error('Phone number is required');
-      (error as any).status = 400;
-      throw error;
+      throw new AppError('Phone number is required', 400);
     }
 
     const formattedPhone = formatPhoneNumber(phone);
 
     if (!isValidIndianPhone(formattedPhone)) {
-      const error = new Error('Invalid Indian phone number format');
-      (error as any).status = 400;
-      throw error;
+      throw new AppError('Invalid Indian phone number format', 400);
     }
 
     try {
@@ -129,9 +127,7 @@ export const authService = {
         // Check if window is still active
         if (now - requestData.windowStart <= RATE_LIMIT_WINDOW_MINUTES * 60 * 1000) {
           if (requestData.count >= MAX_OTP_REQUESTS) {
-            const error = new Error('Too many OTP requests. Please try again later.');
-            (error as any).status = 429;
-            throw error;
+            throw new AppError('Too many OTP requests. Please try again later.', 429);
           }
           // Increment count
           await setRateLimitInRedis(formattedPhone, requestData.count + 1);
@@ -148,18 +144,18 @@ export const authService = {
       const otp = generateOTP();
       await setOTPInRedis(formattedPhone, otp, 0);
 
-      // OTP delivery. Stays in 'development' (console) until MSG91 is wired up;
-      // switch to NODE_ENV-based once SMS is configured. sendOTPViaSMS THROWS on
-      // a real delivery failure, so we never report success without sending.
-      await sendOTPViaSMS(formattedPhone, otp, 'development');
+      // OTP delivery: in development, log to console instead of calling MSG91.
+      // sendOTPViaSMS THROWS on a real delivery failure, so we never report success
+      // without delivering. Switch to 'production' when MSG91 keys are configured.
+      await sendOTPViaSMS(formattedPhone, otp, env.NODE_ENV === 'production' ? 'production' : 'development');
 
       return {
         success: true,
         message: 'OTP sent successfully',
-        ...(process.env.NODE_ENV !== 'production' && { devOtp: otp }),
+        ...(env.NODE_ENV !== 'production' && { devOtp: otp }),
       };
     } catch (error) {
-      if (process.env.NODE_ENV !== 'production') console.error('[AUTH_OTP] Error requesting OTP');
+      if (env.NODE_ENV !== 'production') console.error('[AUTH_OTP] Error requesting OTP');
       throw error;
     }
   },
@@ -169,15 +165,11 @@ export const authService = {
 
     // Validate inputs
     if (!phone || typeof phone !== 'string') {
-      const error = new Error('Phone number is required');
-      (error as any).status = 400;
-      throw error;
+      throw new AppError('Phone number is required', 400);
     }
 
     if (!otp || typeof otp !== 'string') {
-      const error = new Error('OTP is required');
-      (error as any).status = 400;
-      throw error;
+      throw new AppError('OTP is required', 400);
     }
 
     const formattedPhone = formatPhoneNumber(phone);
@@ -186,17 +178,13 @@ export const authService = {
       // Check if OTP exists
       const otpData = await getOTPFromRedis(formattedPhone);
       if (!otpData) {
-        const error = new Error('OTP not found or expired');
-        (error as any).status = 400;
-        throw error;
+        throw new AppError('OTP not found or expired', 400);
       }
 
       // Check attempt limit
       if (otpData.attempts >= MAX_OTP_ATTEMPTS) {
         await deleteOTPFromRedis(formattedPhone);
-        const error = new Error('Too many wrong attempts. Please request a new OTP.');
-        (error as any).status = 429;
-        throw error;
+        throw new AppError('Too many wrong attempts. Please request a new OTP.', 429);
       }
 
       // Verify OTP
@@ -204,11 +192,10 @@ export const authService = {
         // Increment attempts
         otpData.attempts++;
         await setOTPInRedis(formattedPhone, otpData.otp, otpData.attempts);
-        const error = new Error(
-          `Invalid OTP. ${MAX_OTP_ATTEMPTS - otpData.attempts} attempts remaining.`
+        throw new AppError(
+          `Invalid OTP. ${MAX_OTP_ATTEMPTS - otpData.attempts} attempts remaining.`,
+          400
         );
-        (error as any).status = 400;
-        throw error;
       }
 
       // OTP verified, remove from store and clear rate limit
@@ -251,13 +238,12 @@ export const authService = {
 
       // Block banned users
       if (user.status === 'BANNED') {
-        const error = new Error(
+        throw new AppError(
           user.banReason
             ? `This account has been banned: ${user.banReason}`
-            : 'This account has been banned. Contact support for assistance.'
+            : 'This account has been banned. Contact support for assistance.',
+          403
         );
-        (error as any).status = 403;
-        throw error;
       }
 
       // Block currently suspended users (auto-expire temporary suspensions on the fly)
@@ -267,11 +253,10 @@ export const authService = {
           const untilStr = user.suspendedUntil
             ? ` until ${new Date(user.suspendedUntil).toLocaleDateString('en-IN')}`
             : ' indefinitely';
-          const error = new Error(
-            `Your account is suspended${untilStr}. Reason: ${user.suspendReason || 'No reason provided'}`
+          throw new AppError(
+            `Your account is suspended${untilStr}. Reason: ${user.suspendReason || 'No reason provided'}`,
+            403
           );
-          (error as any).status = 403;
-          throw error;
         }
         // Suspension expired — auto-reinstate
         await db.user.update({
@@ -347,9 +332,7 @@ export const authService = {
 
   logout: async (userId: number) => {
     if (!userId) {
-      const error = new Error('User ID is required');
-      (error as any).status = 401;
-      throw error;
+      throw new AppError('User ID is required', 401);
     }
 
     try {
@@ -372,9 +355,7 @@ export const authService = {
 
   refreshToken: async (refreshToken: string) => {
     if (!refreshToken) {
-      const error = new Error('Refresh token is required');
-      (error as any).status = 400;
-      throw error;
+      throw new AppError('Refresh token is required', 400);
     }
 
     try {
@@ -382,9 +363,7 @@ export const authService = {
       const decoded = jwt.verify(refreshToken, env.JWT_SECRET) as any;
 
       if (decoded.type !== 'refresh') {
-        const error = new Error('Invalid token type');
-        (error as any).status = 401;
-        throw error;
+        throw new AppError('Invalid token type', 401);
       }
 
       const userId = parseInt(String(decoded.sub), 10);
@@ -396,16 +375,12 @@ export const authService = {
       });
 
       if (!session) {
-        const error = new Error('Session not found');
-        (error as any).status = 401;
-        throw error;
+        throw new AppError('Session not found', 401);
       }
 
       // Check if refresh token has expired
       if (new Date(session.refreshTokenExpiresAt) < new Date()) {
-        const error = new Error('Refresh token expired');
-        (error as any).status = 401;
-        throw error;
+        throw new AppError('Refresh token expired', 401);
       }
 
       // Generate new access token
@@ -442,17 +417,133 @@ export const authService = {
       };
     } catch (error) {
       if (error instanceof jwt.TokenExpiredError) {
-        const err = new Error('Refresh token expired');
-        (err as any).status = 401;
-        throw err;
+        throw new AppError('Refresh token expired', 401);
       }
       if (error instanceof jwt.JsonWebTokenError) {
-        const err = new Error('Invalid refresh token');
-        (err as any).status = 401;
-        throw err;
+        throw new AppError('Invalid refresh token', 401);
       }
       throw error;
     }
+  },
+
+  /**
+   * Admin email+password login.
+   *
+   * Priority:
+   *  1. Check AdminStaff table (individual staff accounts with hashed passwords).
+   *  2. Fall back to the env SUPER_ADMIN credentials (bootstrap / disaster recovery).
+   *
+   * Returns token + { id, email, name, adminRole } for the admin web app.
+   * The JWT carries `adminRole` so the web can gate UI without an extra API call.
+   */
+  adminLogin: async (
+    email: string,
+    password: string,
+    meta: { ipAddress: string; userAgent: string },
+  ) => {
+    // ── 1. Look up in AdminStaff table ────────────────────────────────────────
+    const staff = await db.adminStaff.findUnique({ where: { email } });
+
+    if (staff) {
+      if (!staff.isActive) {
+        throw new AppError('This account has been deactivated. Contact your administrator.', 403, 'AUTH_DEACTIVATED');
+      }
+      const passwordOk = await bcrypt.compare(password, staff.passwordHash);
+      if (!passwordOk) {
+        throw new AppError('Invalid credentials', 401, 'AUTH_INVALID_CREDENTIALS');
+      }
+
+      // Stamp last login
+      await db.adminStaff.update({ where: { id: staff.id }, data: { lastLoginAt: new Date() } });
+
+      // We still need a User row so the existing Session table (userId FK) works.
+      // Upsert by a stable synthetic phone key.
+      const syntheticPhone = `staff_${staff.id}`;
+      const userRow = await db.user.upsert({
+        where: { phone: syntheticPhone },
+        update: { email, role: 'ADMIN' },
+        create: {
+          phone: syntheticPhone,
+          email,
+          firstName: staff.name.split(' ')[0] || staff.name,
+          lastName: staff.name.split(' ').slice(1).join(' ') || undefined,
+          role: 'ADMIN',
+          isProfileComplete: true,
+        },
+      });
+
+      const token = jwt.sign(
+        { sub: userRow.id, staffId: staff.id, email, adminRole: staff.adminRole, role: 'ADMIN', type: 'access' },
+        env.JWT_SECRET,
+        { expiresIn: '7d' },
+      );
+      const refreshToken = jwt.sign({ sub: userRow.id, type: 'refresh' }, env.JWT_SECRET, { expiresIn: '30d' });
+
+      await db.session.deleteMany({ where: { userId: userRow.id } });
+      await db.session.create({
+        data: {
+          userId: userRow.id,
+          token,
+          refreshToken,
+          refreshTokenExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          ipAddress: meta.ipAddress,
+          userAgent: meta.userAgent,
+        },
+      });
+
+      return {
+        success: true,
+        token,
+        user: { id: staff.id, email, name: staff.name, adminRole: staff.adminRole, role: 'ADMIN' },
+      };
+    }
+
+    // ── 2. Fall back to env superadmin (bootstrap account) ───────────────────
+    if (email !== env.ADMIN_EMAIL || password !== env.ADMIN_PASSWORD) {
+      throw new AppError('Invalid credentials', 401, 'AUTH_INVALID_CREDENTIALS');
+    }
+
+    const adminUser = await db.user.upsert({
+      where: { phone: 'admin' },
+      update: { email, role: 'ADMIN' },
+      create: {
+        phone: 'admin',
+        email,
+        firstName: 'Super',
+        lastName: 'Admin',
+        role: 'ADMIN',
+        isProfileComplete: true,
+      },
+    });
+
+    await db.user.update({ where: { id: adminUser.id }, data: { lastLoginAt: new Date() } });
+
+    const token = jwt.sign(
+      { sub: adminUser.id, email, adminRole: 'SUPER_ADMIN', role: 'ADMIN', type: 'access' },
+      env.JWT_SECRET,
+      { expiresIn: '7d' },
+    );
+    const refreshToken = jwt.sign({ sub: adminUser.id, type: 'refresh' }, env.JWT_SECRET, { expiresIn: '30d' });
+
+    await db.session.deleteMany({ where: { userId: adminUser.id } });
+    await db.session.create({
+      data: {
+        userId: adminUser.id,
+        token,
+        refreshToken,
+        refreshTokenExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        ipAddress: meta.ipAddress,
+        userAgent: meta.userAgent,
+      },
+    });
+
+    return {
+      success: true,
+      token,
+      user: { id: adminUser.id, email, name: 'Super Admin', adminRole: 'SUPER_ADMIN', role: 'ADMIN' },
+    };
   },
 };
 

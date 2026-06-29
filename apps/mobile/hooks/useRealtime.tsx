@@ -111,6 +111,20 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         }
       });
 
+      // If the socket auth middleware rejects the connection (banned/deleted account
+      // or session already invalidated), log the user out immediately rather than
+      // silently retrying forever with a token the server will never accept.
+      socket.on('connect_error', async (err: Error) => {
+        if (
+          err.message === 'Account is not active' ||
+          err.message === 'Session expired or logged out'
+        ) {
+          socket.disconnect();
+          await clearAuthData();
+          router.replace('/(auth)');
+        }
+      });
+
       // Broadcast events to listening screens
       socket.on('space:status', (payload: any) => DeviceEventEmitter.emit('space:status', payload));
       socket.on('space:rejected', (payload: any) => DeviceEventEmitter.emit('space:rejected', payload));
@@ -121,7 +135,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       socket.on('booking:rejected',  (payload: any) => DeviceEventEmitter.emit('booking:rejected',  payload));
       socket.on('booking:expired',   (payload: any) => DeviceEventEmitter.emit('booking:expired',   payload));
       socket.on('booking:cancelled', (payload: any) => DeviceEventEmitter.emit('booking:cancelled', payload));
-      socket.on('booking:paid-marked', (payload: any) => DeviceEventEmitter.emit('booking:paid-marked', payload));
+      socket.on('booking:payment-received', (payload: any) => DeviceEventEmitter.emit('booking:payment-received', payload));
       // Owner-facing arrival / ETA / departure
       socket.on('parker:arrived', (payload: any) => DeviceEventEmitter.emit('parker:arrived', payload));
       socket.on('parker:eta-update', (payload: any) => DeviceEventEmitter.emit('parker:eta-update', payload));

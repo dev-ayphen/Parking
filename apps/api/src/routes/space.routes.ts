@@ -55,7 +55,7 @@ router.post(
   authenticate,
   (req: Request, res: Response, next: NextFunction) => {
     uploadDoc(req, res, (err) => {
-      if (err) return res.status(400).json({ success: false, error: err.message });
+      if (err) return res.status(400).json({ success: false, error: 'File upload failed. Check file type and size.' });
       next();
     });
   },

@@ -5,11 +5,11 @@ import {View,
   TextInput,
   TouchableOpacity,
   StatusBar,
-  Dimensions,
   Animated,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator} from 'react-native';
+  ActivityIndicator,
+  useWindowDimensions} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -17,8 +17,6 @@ import Svg, { Path, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { api } from '../../services/api';
 import { FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
 import { useTheme, type AppTheme } from '../../hooks/useTheme';
-
-const { width } = Dimensions.get('window');
 
 const PinIcon = ({ size = 80 }: { size?: number }) => (
   <Svg width={size} height={size} viewBox="0 0 512 512">
@@ -39,6 +37,7 @@ const LoginScreen = () => {
   const router = useRouter();
   const theme = useTheme();
   const { colors, isDark } = theme;
+  const { width } = useWindowDimensions();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
 
@@ -46,7 +45,7 @@ const LoginScreen = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const styles = useMemo(() => makeStyles(theme), [theme]);
+  const styles = useMemo(() => makeStyles(theme, width), [theme, width]);
 
   useEffect(() => {
     Animated.parallel([
@@ -85,7 +84,7 @@ const LoginScreen = () => {
       setLoading(false);
       router.push({
         pathname: '/(auth)/verify-otp',
-        params: { phone: '+91' + phone, devOtp: data.devOtp || '' },
+        params: { phone: '+91' + phone, ...(__DEV__ && data.devOtp ? { devOtp: data.devOtp } : {}) },
       });
     } catch (err: any) {
       setLoading(false);
@@ -201,7 +200,7 @@ const LoginScreen = () => {
 
 export default LoginScreen;
 
-const makeStyles = ({ colors, spacing, radius, fontSize, fontWeight }: AppTheme) => StyleSheet.create({
+const makeStyles = ({ colors, spacing, radius, fontSize, fontWeight }: AppTheme, width: number) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.white,
@@ -237,7 +236,7 @@ const makeStyles = ({ colors, spacing, radius, fontSize, fontWeight }: AppTheme)
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: '#FFF1F6',
+    backgroundColor: colors.primaryBg,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#DC0159',

@@ -11,7 +11,7 @@ router.get('/documents', async (_req: Request, res: Response) => {
     const activeDocs = result.documents.filter((d) => d.isActive);
     res.json({ success: true, documents: activeDocs });
   } catch (error) {
-    res.status(500).json({ success: false, message: (error as Error).message });
+    res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 
@@ -21,7 +21,11 @@ router.get('/documents/:slug', async (req: Request, res: Response) => {
     res.json(result);
   } catch (error) {
     const msg = (error as Error).message;
-    res.status(msg === 'Document not found' ? 404 : 500).json({ success: false, message: msg });
+    if (msg === 'Document not found') {
+      res.status(404).json({ success: false, message: 'Document not found' });
+    } else {
+      res.status(500).json({ success: false, message: 'Internal server error' });
+    }
   }
 });
 
@@ -43,7 +47,7 @@ router.post('/accept', authenticate, async (req: Request, res: Response) => {
     });
     res.json(result);
   } catch (error) {
-    res.status(400).json({ success: false, message: (error as Error).message });
+    res.status(400).json({ success: false, message: 'Bad request' });
   }
 });
 
@@ -55,7 +59,7 @@ router.post('/data-request', authenticate, async (req: Request, res: Response) =
     const result = await adminService.recordCompliance({ type, userId });
     res.json(result);
   } catch (error) {
-    res.status(400).json({ success: false, message: (error as Error).message });
+    res.status(400).json({ success: false, message: 'Bad request' });
   }
 });
 

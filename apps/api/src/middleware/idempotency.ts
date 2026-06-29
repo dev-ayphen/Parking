@@ -17,10 +17,17 @@ const IN_FLIGHT = '__in_flight__';
  * overwrite the reservation with the cached response; a later retry replays it.
  * Use on POST endpoints like booking creation.
  */
+// UUID v4 pattern — clients must send a proper UUID, not arbitrary strings
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 export const idempotency = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const rawKey = req.headers['idempotency-key'];
   if (!rawKey || typeof rawKey !== 'string') {
     next();
+    return;
+  }
+  if (!UUID_RE.test(rawKey)) {
+    res.status(400).json({ error: 'Idempotency-Key must be a valid UUID v4.' });
     return;
   }
   const userId = req.user?.id ?? 'anon';

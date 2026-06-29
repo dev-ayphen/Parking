@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Appearance } from 'react-native';
 import { AlertTriangle, RefreshCw } from 'lucide-react-native';
 
 interface Props {
@@ -30,13 +30,19 @@ class ErrorBoundary extends React.Component<Props, State> {
   render() {
     if (!this.state.hasError) return this.props.children;
 
+    const isDark = Appearance.getColorScheme() === 'dark';
+    const bg = isDark ? '#111111' : '#FFFFFF';
+    const titleColor = isDark ? '#F2F2F7' : '#0F172A';
+    const bodyColor = isDark ? '#8E8E93' : '#64748B';
+    const iconBg = isDark ? '#3A1A1A' : '#FEE2E2';
+
     return (
-      <View style={styles.container}>
-        <View style={styles.iconBox}>
+      <View style={[styles.container, { backgroundColor: bg }]}>
+        <View style={[styles.iconBox, { backgroundColor: iconBg }]}>
           <AlertTriangle size={42} color="#EF4444" strokeWidth={1.5} />
         </View>
-        <Text style={styles.title}>Something went wrong</Text>
-        <Text style={styles.body}>
+        <Text style={[styles.title, { color: titleColor }]}>Something went wrong</Text>
+        <Text style={[styles.body, { color: bodyColor }]}>
           The screen ran into an unexpected error. Tap below to try again.
         </Text>
 

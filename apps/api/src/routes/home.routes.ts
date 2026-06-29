@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { BookingStatus } from '@prisma/client';
 import { authenticate } from '../middleware/auth';
 import { db } from '../config/database';
 import { entitlementService } from '../services/entitlement.service';
@@ -43,7 +44,7 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
       id: booking.id,
       type: 'booking' as const,
       location: booking.space.address,
-      status: booking.status === 'COMPLETED' ? 'Completed' : booking.status === 'ACTIVE' ? 'Active' : 'Pending',
+      status: booking.status === BookingStatus.COMPLETED ? 'Completed' : booking.status === BookingStatus.ACTIVE ? 'Active' : 'Pending',
       time: booking.createdAt,
       amount: booking.totalAmount,
     }));
@@ -101,10 +102,10 @@ router.get('/stats', authenticate, async (req: Request, res: Response) => {
     // Owner stats — run in parallel
     const [activeBookings, todayCompletedBookings] = await Promise.all([
       db.booking.count({
-        where: { spaceId: { in: spaceIds }, status: { in: ['ACTIVE', 'APPROVED'] } },
+        where: { spaceId: { in: spaceIds }, status: { in: [BookingStatus.ACTIVE, BookingStatus.APPROVED] } },
       }),
       db.booking.findMany({
-        where: { spaceId: { in: spaceIds }, status: 'COMPLETED', createdAt: { gte: todayStart } },
+        where: { spaceId: { in: spaceIds }, status: BookingStatus.COMPLETED, createdAt: { gte: todayStart } },
         select: { totalAmount: true },
       }),
     ]);
@@ -167,17 +168,17 @@ router.get('/notifications', authenticate, async (req: Request, res: Response) =
     for (const b of parkerBookings) {
       const spaceName = b.space?.name || 'your space';
       const base = { bookingId: b.id, createdAt: b.createdAt };
-      if (b.status === 'PENDING_APPROVAL') {
+      if (b.status === BookingStatus.PENDING_APPROVAL) {
         notifications.push({ ...base, id: `p_pending_${b.id}`, type: 'booking_request', title: 'Booking Requested', body: `Your booking at ${spaceName} is waiting for owner approval.` });
-      } else if (b.status === 'APPROVED') {
+      } else if (b.status === BookingStatus.APPROVED) {
         notifications.push({ ...base, id: `p_approved_${b.id}`, type: 'booking_approved', title: 'Booking Confirmed ✅', body: `Your booking at ${spaceName} has been approved by the owner.` });
-      } else if (b.status === 'ACTIVE') {
+      } else if (b.status === BookingStatus.ACTIVE) {
         notifications.push({ ...base, id: `p_active_${b.id}`, type: 'session_started', title: 'Parking Session Started', body: `Your session at ${spaceName} has started. Duration: ${b.duration}h.` });
-      } else if (b.status === 'COMPLETED') {
+      } else if (b.status === BookingStatus.COMPLETED) {
         notifications.push({ ...base, id: `p_completed_${b.id}`, type: 'session_ended', title: 'Session Ended', body: `Your parking session at ${spaceName} ended. Total: ${b.duration}h, ₹${b.totalAmount}.` });
-      } else if (b.status === 'CANCELLED') {
+      } else if (b.status === BookingStatus.CANCELLED) {
         notifications.push({ ...base, id: `p_cancelled_${b.id}`, type: 'booking_rejected', title: 'Booking Cancelled', body: `Your booking at ${spaceName} was cancelled.` });
-      } else if (b.status === 'REJECTED') {
+      } else if (b.status === BookingStatus.REJECTED) {
         notifications.push({ ...base, id: `p_rejected_${b.id}`, type: 'booking_rejected', title: 'Booking Not Available', body: `Your booking at ${spaceName} was rejected by the owner.` });
       }
     }
@@ -188,7 +189,7 @@ router.get('/notifications', authenticate, async (req: Request, res: Response) =
         ? `${b.parker.firstName} ${b.parker.lastName || ''}`.trim()
         : b.parker?.phone || 'Someone';
       const spaceName = b.space?.name || 'your space';
-      if (b.status === 'PENDING_APPROVAL') {
+      if (b.status === BookingStatus.PENDING_APPROVAL) {
         notifications.push({ id: `o_request_${b.id}`, type: 'booking_request', title: 'New Booking Request', body: `${parkerName} wants to park at ${spaceName}.`, createdAt: b.createdAt });
       }
     }
@@ -245,7 +246,7 @@ router.post('/notifications/:id/read', authenticate, async (req: Request, res: R
     await db.notification.update({ where: { id }, data: { isRead: true } });
     return res.json({ success: true });
   } catch (error) {
-    return res.status(500).json({ success: false, message: (error as Error).message });
+    return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 
@@ -261,7 +262,7 @@ router.post('/notifications/read-all', authenticate, async (req: Request, res: R
     ]);
     return res.json({ success: true, updated: r.count });
   } catch (error) {
-    return res.status(500).json({ success: false, message: (error as Error).message });
+    return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 
@@ -290,7 +291,7 @@ router.get('/owner-history', authenticate, async (req: Request, res: Response) =
 
     // Completed bookings on owner's spaces
     const completedBookings = await db.booking.findMany({
-      where: { spaceId: { in: spaceIds }, status: 'COMPLETED' },
+      where: { spaceId: { in: spaceIds }, status: BookingStatus.COMPLETED },
       include: {
         parker: { select: { id: true, firstName: true, lastName: true, phone: true } },
         ratings: { select: { rating: true, review: true, raterId: true } },
@@ -468,18 +469,18 @@ router.get('/owner-dashboard', authenticate, async (req: Request, res: Response)
       recentBookings,
     ] = await Promise.all([
       db.booking.findMany({
-        where: { spaceId: { in: spaceIds }, status: 'COMPLETED', sessionEndedAt: { gte: monthStart, lt: monthEnd } },
+        where: { spaceId: { in: spaceIds }, status: BookingStatus.COMPLETED, sessionEndedAt: { gte: monthStart, lt: monthEnd } },
         select: { totalAmount: true },
       }),
       db.booking.findMany({
-        where: { spaceId: { in: spaceIds }, status: 'COMPLETED', sessionEndedAt: { gte: prevMonthStart, lt: monthStart } },
+        where: { spaceId: { in: spaceIds }, status: BookingStatus.COMPLETED, sessionEndedAt: { gte: prevMonthStart, lt: monthStart } },
         select: { totalAmount: true },
       }),
       db.booking.count({
-        where: { spaceId: { in: spaceIds }, createdAt: { gte: todayStart, lt: todayEnd }, status: { in: ['PENDING_APPROVAL', 'APPROVED', 'ACTIVE', 'COMPLETED'] } },
+        where: { spaceId: { in: spaceIds }, createdAt: { gte: todayStart, lt: todayEnd }, status: { in: [BookingStatus.PENDING_APPROVAL, BookingStatus.APPROVED, BookingStatus.ACTIVE, BookingStatus.COMPLETED] } },
       }),
       db.booking.findMany({
-        where: { spaceId: { in: spaceIds }, status: 'PENDING_APPROVAL' },
+        where: { spaceId: { in: spaceIds }, status: BookingStatus.PENDING_APPROVAL },
         include: {
           parker: { select: { id: true, firstName: true, lastName: true, phone: true, photoUrl: true } },
           space: { select: { id: true, name: true, lat: true, lng: true } },
@@ -489,7 +490,7 @@ router.get('/owner-dashboard', authenticate, async (req: Request, res: Response)
         take: 10,
       }),
       db.booking.findMany({
-        where: { spaceId: { in: spaceIds }, status: 'ACTIVE' },
+        where: { spaceId: { in: spaceIds }, status: BookingStatus.ACTIVE },
         include: {
           parker: { select: { id: true, firstName: true, lastName: true, phone: true, photoUrl: true } },
           space: { select: { id: true, name: true } },
@@ -501,7 +502,7 @@ router.get('/owner-dashboard', authenticate, async (req: Request, res: Response)
       // ACCEPTED but not yet started — drives the owner's "Parker on the way" /
       // "Parker at gate — verify OTP" status bars between APPROVED and ACTIVE.
       db.booking.findMany({
-        where: { spaceId: { in: spaceIds }, status: 'APPROVED' },
+        where: { spaceId: { in: spaceIds }, status: BookingStatus.APPROVED },
         include: {
           parker: { select: { id: true, firstName: true, lastName: true, phone: true, photoUrl: true } },
           space: { select: { id: true, name: true } },
@@ -518,7 +519,7 @@ router.get('/owner-dashboard', authenticate, async (req: Request, res: Response)
       db.booking.findMany({
         where: {
           spaceId: { in: spaceIds },
-          status: { in: ['APPROVED', 'REJECTED', 'EXPIRED', 'CANCELLED', 'COMPLETED'] },
+          status: { in: [BookingStatus.APPROVED, BookingStatus.REJECTED, BookingStatus.EXPIRED, BookingStatus.CANCELLED, BookingStatus.COMPLETED] },
         },
         include: {
           parker: { select: { id: true, firstName: true, lastName: true, phone: true, photoUrl: true } },

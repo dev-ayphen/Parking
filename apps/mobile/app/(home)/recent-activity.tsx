@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, StatusBar, TouchableOpacity,
   FlatList, RefreshControl, ActivityIndicator, Modal, Pressable,
@@ -23,7 +23,9 @@ import { PageHeader } from '../../components';
 import NoActivitySvg from '../../components/Illustrations/NoActivitySvg';
 import { api } from '../../services/api';
 import { NETWORK_RECONNECTED } from '../../store/networkStore';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import type { ColorsType } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 
 interface Activity {
   id: string;
@@ -88,6 +90,8 @@ const MODAL_STATUSES = ['Expired', 'Rejected', 'Cancelled'];
 
 const RecentActivityScreen = () => {
   const router = useRouter();
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [activeFilter, setActiveFilter] = useState('All');
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
@@ -162,21 +166,21 @@ const RecentActivityScreen = () => {
   );
 
   const statusColor = (s: string) => {
-    if (s === 'Active') return Colors.successAlt;
-    if (s === 'Approved') return Colors.success;
-    if (s === 'Pending') return Colors.warning;
-    if (s === 'Cancelled' || s === 'Rejected') return Colors.error;
-    if (s === 'Expired') return Colors.textSecondary;
-    return Colors.textSecondary;
+    if (s === 'Active') return colors.successAlt;
+    if (s === 'Approved') return colors.success;
+    if (s === 'Pending') return colors.warning;
+    if (s === 'Cancelled' || s === 'Rejected') return colors.error;
+    if (s === 'Expired') return colors.textSecondary;
+    return colors.textSecondary;
   };
 
   // Light tint used behind the status badge + icon for each state
   const statusBg = (s: string) => {
-    if (s === 'Active') return Colors.successBgAlt;
-    if (s === 'Approved') return Colors.successBg;
-    if (s === 'Pending') return Colors.warningBg;
-    if (s === 'Cancelled' || s === 'Rejected') return Colors.errorBg;
-    return Colors.surfaceBg;
+    if (s === 'Active') return colors.successBgAlt;
+    if (s === 'Approved') return colors.successBg;
+    if (s === 'Pending') return colors.warningBg;
+    if (s === 'Cancelled' || s === 'Rejected') return colors.errorBg;
+    return colors.surfaceBg;
   };
 
   const handleCardPress = (item: Activity) => {
@@ -220,7 +224,7 @@ const RecentActivityScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <PageHeader title="Recent Activity" onBack={() => router.dismiss()} />
 
       {/* Filter Pills */}
@@ -240,11 +244,11 @@ const RecentActivityScreen = () => {
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : error ? (
         <View style={styles.emptyState}>
-          <AlertCircle size={48} color={Colors.error} strokeWidth={1.5} />
+          <AlertCircle size={48} color={colors.error} strokeWidth={1.5} />
           <Text style={styles.emptyTitle}>Couldn't load activity</Text>
           <Text style={styles.emptyDescription}>{error}</Text>
           <TouchableOpacity style={styles.retryBtn} onPress={() => fetchActivities()}>
@@ -260,12 +264,12 @@ const RecentActivityScreen = () => {
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => fetchActivities(true)} tintColor={Colors.primary} />
+            <RefreshControl refreshing={refreshing} onRefresh={() => fetchActivities(true)} tintColor={colors.primary} />
           }
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <View style={styles.emptyIconWrapper}>
-                <NoActivitySvg width={100} height={100} primaryColor={Colors.primary} />
+                <NoActivitySvg width={100} height={100} primaryColor={colors.primary} />
               </View>
               <Text style={styles.emptyTitle}>
                 {activities.length === 0 ? 'No activity yet' : `No ${activeFilter.toLowerCase()} activities`}
@@ -292,8 +296,8 @@ const RecentActivityScreen = () => {
             {/* Header */}
             {modalItem?.status === 'Expired' && (
               <View style={styles.modalHeader}>
-                <View style={[styles.modalIconWrap, { backgroundColor: Colors.surfaceBg }]}>
-                  <Clock size={32} color={Colors.textSecondary} />
+                <View style={[styles.modalIconWrap, { backgroundColor: colors.surfaceBg }]}>
+                  <Clock size={32} color={colors.textSecondary} />
                 </View>
                 <Text style={styles.modalTitle}>Request Expired</Text>
                 <Text style={styles.modalSub}>
@@ -303,19 +307,19 @@ const RecentActivityScreen = () => {
             )}
             {modalItem?.status === 'Rejected' && (
               <View style={styles.modalHeader}>
-                <View style={[styles.modalIconWrap, { backgroundColor: Colors.errorBg }]}>
-                  <XCircle size={32} color={Colors.error} />
+                <View style={[styles.modalIconWrap, { backgroundColor: colors.errorBg }]}>
+                  <XCircle size={32} color={colors.error} />
                 </View>
-                <Text style={[styles.modalTitle, { color: Colors.error }]}>Booking Rejected</Text>
+                <Text style={[styles.modalTitle, { color: colors.error }]}>Booking Rejected</Text>
                 <Text style={styles.modalSub}>The owner declined this booking request.</Text>
               </View>
             )}
             {modalItem?.status === 'Cancelled' && (
               <View style={styles.modalHeader}>
-                <View style={[styles.modalIconWrap, { backgroundColor: Colors.errorBg }]}>
-                  <AlertCircle size={32} color={Colors.error} />
+                <View style={[styles.modalIconWrap, { backgroundColor: colors.errorBg }]}>
+                  <AlertCircle size={32} color={colors.error} />
                 </View>
-                <Text style={[styles.modalTitle, { color: Colors.error }]}>Booking Cancelled</Text>
+                <Text style={[styles.modalTitle, { color: colors.error }]}>Booking Cancelled</Text>
                 <Text style={styles.modalSub}>This booking was cancelled.</Text>
               </View>
             )}
@@ -344,7 +348,7 @@ const RecentActivityScreen = () => {
               </View>
               <View style={[styles.modalDetailRow, { borderBottomWidth: 0 }]}>
                 <Text style={styles.modalDetailLabel}>Price</Text>
-                <Text style={[styles.modalDetailValue, { color: Colors.primary, fontWeight: FontWeight.bold }]}>{modalItem?.price}</Text>
+                <Text style={[styles.modalDetailValue, { color: colors.primary, fontWeight: FontWeight.bold }]}>{modalItem?.price}</Text>
               </View>
             </View>
 
@@ -375,43 +379,43 @@ const RecentActivityScreen = () => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.white },
-  list: { flex: 1, backgroundColor: Colors.screenBg },
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.white },
+  list: { flex: 1, backgroundColor: colors.screenBg },
   filterContainer: {
     flexDirection: 'row',
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
     paddingVertical: Spacing.xl,
     paddingHorizontal: Spacing['3xl'],
     gap: Spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceBg,
+    borderBottomColor: colors.surfaceBg,
   },
-  filterPill: { paddingHorizontal: Spacing['3xl'], paddingVertical: Spacing.md, borderRadius: BorderRadius.circleXl, backgroundColor: Colors.surfaceBg },  // 20 = circleXl ✓
-  filterPillActive: { backgroundColor: Colors.primary },
-  filterText: { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: Colors.textSecondary },  // 13 = base ✓
-  filterTextActive: { color: Colors.white },
+  filterPill: { paddingHorizontal: Spacing['3xl'], paddingVertical: Spacing.md, borderRadius: BorderRadius.circleXl, backgroundColor: colors.surfaceBg },  // 20 = circleXl ✓
+  filterPillActive: { backgroundColor: colors.primary },
+  filterText: { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: colors.textSecondary },  // 13 = base ✓
+  filterTextActive: { color: colors.white },
   content: { paddingBottom: Spacing['7xl'] },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.screenBg },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.screenBg },
   activityItem: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.white,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.white,
     paddingVertical: Spacing['3xl'], paddingHorizontal: Spacing['3xl'],
-    borderBottomWidth: 1, borderBottomColor: Colors.surfaceBg,
+    borderBottomWidth: 1, borderBottomColor: colors.surfaceBg,
   },
   activityIcon: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', marginRight: Spacing.lg },
   activityInfo: { flex: 1, marginRight: 12, minWidth: 0 },
-  activityTitleText: { fontSize: 15, fontWeight: '700', color: '#0F172A', marginBottom: 4 },
-  activityLocation: { fontSize: 13, fontWeight: '400', color: '#64748B' },
+  activityTitleText: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginBottom: 4 },
+  activityLocation: { fontSize: 13, fontWeight: '400', color: colors.textSecondary },
   activityRight: { alignItems: 'flex-end', justifyContent: 'center', flexShrink: 0, gap: 4, paddingRight: 4 },
-  activityAmount: { fontSize: 15, fontWeight: '800', color: '#0F172A' },
-  activityRightTime: { fontSize: 12, fontWeight: '500', color: '#94A3B8' },
+  activityAmount: { fontSize: 15, fontWeight: '800', color: colors.textPrimary },
+  activityRightTime: { fontSize: 12, fontWeight: '500', color: colors.textMuted },
   emptyState: {
     flex: 1,
     paddingVertical: 80,
     paddingHorizontal: Spacing['7xl'],
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
   },
   emptyIconWrapper: {
     marginBottom: Spacing.screenH,
@@ -419,22 +423,22 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: FontSize.xl,                          // 16 = xl ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: Spacing.md,
     textAlign: 'center',
   },
   emptyDescription: {
-    fontSize: FontSize.base, color: Colors.textMuted, textAlign: 'center', lineHeight: 20,  // 13 = base ✓
+    fontSize: FontSize.base, color: colors.textMuted, textAlign: 'center', lineHeight: 20,  // 13 = base ✓
   },
-  retryBtn: { marginTop: Spacing['3xl'], paddingHorizontal: Spacing['4xl'], paddingVertical: Spacing.lg, backgroundColor: Colors.primaryBg, borderRadius: BorderRadius.lg },
-  retryBtnText: { color: Colors.primary, fontWeight: FontWeight.bold, fontSize: FontSize.md },
+  retryBtn: { marginTop: Spacing['3xl'], paddingHorizontal: Spacing['4xl'], paddingVertical: Spacing.lg, backgroundColor: colors.primaryBg, borderRadius: BorderRadius.lg },
+  retryBtnText: { color: colors.primary, fontWeight: FontWeight.bold, fontSize: FontSize.md },
   // Modal styles
   modalOverlay: {
     flex: 1, backgroundColor: ExtendedColors.overlayHeavy,   // 'rgba(0,0,0,0.55)' ✓
     justifyContent: 'flex-end',
   },
   modalCard: {
-    backgroundColor: Colors.white, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl,  // 24 = xl ✓
+    backgroundColor: colors.white, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl,  // 24 = xl ✓
     paddingHorizontal: Spacing.screenH, paddingTop: Spacing.screenH, paddingBottom: Spacing['6xl'],
     gap: Spacing.xl,
   },
@@ -443,34 +447,34 @@ const styles = StyleSheet.create({
     width: 64, height: 64, borderRadius: 32,
     alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.xs,
   },
-  modalTitle: { fontSize: FontSize['3xl'], fontWeight: FontWeight.extrabold, color: Colors.textPrimary, textAlign: 'center' },  // 20 = 3xl ✓
-  modalSub: { fontSize: FontSize.base, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },  // 13 = base ✓
+  modalTitle: { fontSize: FontSize['3xl'], fontWeight: FontWeight.extrabold, color: colors.textPrimary, textAlign: 'center' },  // 20 = 3xl ✓
+  modalSub: { fontSize: FontSize.base, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },  // 13 = base ✓
   modalDetails: {
-    backgroundColor: Colors.screenBg, borderRadius: BorderRadius.button,   // 14 = button ✓
+    backgroundColor: colors.screenBg, borderRadius: BorderRadius.button,   // 14 = button ✓
     paddingHorizontal: Spacing['2xl'], paddingVertical: Spacing.sm,
   },
   modalDetailRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingVertical: Spacing.lg, borderBottomWidth: 1, borderBottomColor: Colors.border,
+    paddingVertical: Spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  modalDetailLabel: { fontSize: FontSize.sm, color: Colors.textSecondary, fontWeight: FontWeight.medium, flex: 1 },  // 12 = sm ✓
-  modalDetailValue: { fontSize: FontSize.base, color: Colors.textPrimary, fontWeight: FontWeight.semibold, textAlign: 'right', flex: 1.5 },  // 13 = base ✓
+  modalDetailLabel: { fontSize: FontSize.sm, color: colors.textSecondary, fontWeight: FontWeight.medium, flex: 1 },  // 12 = sm ✓
+  modalDetailValue: { fontSize: FontSize.base, color: colors.textPrimary, fontWeight: FontWeight.semibold, textAlign: 'right', flex: 1.5 },  // 13 = base ✓
   reasonBox: {
-    backgroundColor: Colors.pendingBg, borderRadius: BorderRadius.md, padding: Spacing['2xl'],   // '#FFF7ED' ✓, 12 = md ✓
+    backgroundColor: colors.pendingBg, borderRadius: BorderRadius.md, padding: Spacing['2xl'],   // '#FFF7ED' ✓, 12 = md ✓
     borderLeftWidth: 3, borderLeftColor: ExtendedColors.orange,   // '#F97316' ✓
   },
   reasonTitle: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: ExtendedColors.redOrange, marginBottom: Spacing.sm },  // 12 = sm ✓, '#C2410C' ✓
   reasonItem: { fontSize: FontSize.sm, color: ExtendedColors.warningAmber, lineHeight: 20 },  // 12 = sm ✓, '#92400E' ✓
   modalSearchBtn: {
-    backgroundColor: Colors.primary, paddingVertical: Spacing['2xl'],
+    backgroundColor: colors.primary, paddingVertical: Spacing['2xl'],
     borderRadius: BorderRadius.md, alignItems: 'center',   // 12 = md ✓
   },
-  modalSearchBtnText: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.white },  // 15 = lg ✓
+  modalSearchBtnText: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: colors.white },  // 15 = lg ✓
   modalCloseBtn: {
     paddingVertical: Spacing.xl, borderRadius: BorderRadius.md,   // 12 = md ✓
-    borderWidth: 1, borderColor: Colors.border, alignItems: 'center',
+    borderWidth: 1, borderColor: colors.border, alignItems: 'center',
   },
-  modalCloseBtnText: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.textSecondary },  // 14 = md ✓
+  modalCloseBtnText: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: colors.textSecondary },  // 14 = md ✓
 });
 
 export default RecentActivityScreen;

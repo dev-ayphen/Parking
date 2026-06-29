@@ -8,12 +8,14 @@ import { io as createSocket } from 'socket.io-client';
 import {
   Search, MoreVertical, Download,
   CheckCircle2, XCircle, Mail, Phone, ChevronLeft, ChevronRight, Loader2,
-  Eye, Ban, Trash2, UserX, UserCheck, X,
+  Eye, Ban, Trash2, UserX, UserCheck,
 } from 'lucide-react';
 import { adminApi } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
 import { SOCKET_URL } from '@/lib/config';
 import { exportCsv } from '@/lib/download';
+import { Badge } from '@/components/ui/Badge';
+import { USER_STATUS_STYLES } from '@/lib/statusStyles';
 import { TableSkeleton } from '@/components/Skeleton';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useToast } from '@/components/Toast';
@@ -25,10 +27,12 @@ import {
 } from './_components/UserModals';
 import type { AdminUser, UserDetails } from './_components/types';
 
-const tabs = ['All Users', 'Active', 'Inactive', 'Suspended', 'Banned'] as const;
+const tabs = ['All Users', 'Active', 'Inactive', 'Suspended', 'Banned', 'Deleted'] as const;
 
 export default function UsersPage() {
   const toast = useToast();
+  const { user: authUser } = useAuthStore();
+  const canMutate = authUser?.adminRole !== 'SUPPORT_AGENT';
   const searchParams = useSearchParams();
   const focusId = searchParams.get('focus');
   const focusHandledRef = useRef(false);
@@ -40,7 +44,6 @@ export default function UsersPage() {
   const debouncedSearch = useDebouncedValue(search, 400);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [actionError, setActionError] = useState('');
   const [exporting, setExporting] = useState(false);
   const [menuOpenFor, setMenuOpenFor] = useState<number | null>(null);
 
@@ -59,9 +62,23 @@ export default function UsersPage() {
     if (selected.size === 0) return;
     const ids = [...selected];
     let reason = '';
+    let bulkDurationDays = 7;
     if (action === 'suspend') {
-      reason = window.prompt(`Suspend ${ids.length} user(s). Reason:`, 'Policy violation') || '';
-      if (!reason) return;
+      // Bulk suspend keeps the same friction as the single modal: a reason
+      // (min 10 chars) and an explicit end date — never indefinite.
+      reason = (window.prompt(`Suspend ${ids.length} user(s).\nReason (min 10 characters):`, '') || '').trim();
+      if (reason.length < 10) {
+        if (reason.length > 0) toast.error('Reason must be at least 10 characters');
+        return;
+      }
+      const today = new Date().toISOString().slice(0, 10);
+      const defaultEnd = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+      const endDate = (window.prompt(`Suspend until (YYYY-MM-DD). Must be a future date:`, defaultEnd) || '').trim();
+      if (!endDate || endDate <= today) {
+        if (endDate) toast.error('End date must be in the future');
+        return;
+      }
+      bulkDurationDays = Math.max(1, Math.ceil((new Date(endDate + 'T23:59:59').getTime() - Date.now()) / 86400000));
     } else {
       if (!window.confirm(`Permanently ban ${ids.length} user(s)? This cannot be undone.`)) return;
       reason = 'Bulk admin ban';
@@ -69,7 +86,7 @@ export default function UsersPage() {
     setBulkBusy(true);
     const results = await Promise.allSettled(ids.map((id) =>
       action === 'suspend'
-        ? adminApi.suspendUser(id, { reason, durationDays: 7 })
+        ? adminApi.suspendUser(id, { reason, durationDays: bulkDurationDays })
         : adminApi.banUser(id, { reason })));
     setBulkBusy(false);
     const ok = results.filter((r) => r.status === 'fulfilled').length;
@@ -135,12 +152,11 @@ export default function UsersPage() {
   const handleView = async (user: AdminUser) => {
     setMenuOpenFor(null);
     setLoadingDetails(true);
-    setActionError('');
     try {
       const res = await adminApi.getUserDetails(user.id);
       setViewingUser(res.user);
     } catch (e: any) {
-      setActionError(e?.response?.data?.error || e?.message || 'Failed to load user');
+      toast.error(e?.response?.data?.error || e?.message || 'Failed to load user');
     } finally {
       setLoadingDetails(false);
     }
@@ -168,14 +184,11 @@ export default function UsersPage() {
     if (!window.confirm(`Reinstate ${user.name}?`)) return;
     try {
       setActionLoading(true);
-      setActionError('');
       await adminApi.unsuspendUser(user.id);
       await fetchUsers();
       toast.success(`${user.name} reinstated`);
     } catch (e: any) {
-      const msg = e?.response?.data?.error || e?.message || 'Failed to reinstate';
-      setActionError(msg);
-      toast.error(msg);
+      toast.error(e?.response?.data?.error || e?.message || 'Failed to reinstate');
     } finally {
       setActionLoading(false);
     }
@@ -188,15 +201,9 @@ export default function UsersPage() {
   const initialsOf = (name: string) =>
     name.split(' ').map((n) => n[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
 
-  const statusBadgeClass = (status: string) =>
-    status === 'Active' ? 'bg-emerald-50 text-emerald-700' :
-    status === 'Suspended' ? 'bg-rose-50 text-rose-700' :
-    status === 'Banned' ? 'bg-gray-900 text-white' :
-    'bg-gray-100 text-gray-700';
-
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="sticky top-0 z-10 bg-gray-50 -mx-6 px-6 py-4 -mt-4 mb-2 flex items-center justify-between border-b border-gray-200">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Users Management</h1>
           <p className="text-gray-500 mt-1">Manage and monitor all platform users.</p>
@@ -209,13 +216,6 @@ export default function UsersPage() {
           {exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Export CSV
         </button>
       </div>
-
-      {actionError && (
-        <div className="flex items-center justify-between gap-3 bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl">
-          <span className="text-sm">{actionError}</span>
-          <button onClick={() => setActionError('')} className="text-rose-400 hover:text-rose-600"><X size={16} /></button>
-        </div>
-      )}
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -260,7 +260,7 @@ export default function UsersPage() {
           </div>
         )}
 
-        {selected.size > 0 && (
+        {selected.size > 0 && canMutate && (
           <div className="mx-4 mt-4 p-3 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-between gap-3">
             <span className="text-sm font-semibold text-indigo-800">{selected.size} selected</span>
             <div className="flex items-center gap-2">
@@ -339,13 +339,20 @@ export default function UsersPage() {
                       <span className="text-sm text-gray-700 font-medium bg-gray-100 px-2.5 py-1 rounded-md">{user.type}</span>
                     </td>
                     <td className="px-6 py-4">
-                      <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${statusBadgeClass(user.status)}`}>
-                        {user.status === 'Active' && <CheckCircle2 size={12} />}
-                        {user.status === 'Suspended' && <UserX size={12} />}
-                        {user.status === 'Banned' && <Ban size={12} />}
-                        {user.status === 'Inactive' && <XCircle size={12} />}
+                      <Badge
+                        map={USER_STATUS_STYLES}
+                        statusKey={user.status}
+                        icon={
+                          user.status === 'Active' ? <CheckCircle2 size={12} /> :
+                          user.status === 'Suspended' ? <UserX size={12} /> :
+                          user.status === 'Banned' ? <Ban size={12} /> :
+                          user.status === 'Deleted' ? <Trash2 size={12} /> :
+                          user.status === 'Inactive' ? <XCircle size={12} /> :
+                          undefined
+                        }
+                      >
                         {user.status}
-                      </div>
+                      </Badge>
                     </td>
                     <td className="px-6 py-4">
                       {user.rating ? (
@@ -361,6 +368,7 @@ export default function UsersPage() {
                         onToggle={() => setMenuOpenFor(menuOpenFor === user.id ? null : user.id)}
                         onClose={() => setMenuOpenFor(null)}
                         user={user}
+                        canMutate={canMutate}
                         onView={() => handleView(user)}
                         onSuspend={() => { setMenuOpenFor(null); setSuspendingUser(user); }}
                         onUnsuspend={() => handleUnsuspend(user)}
@@ -431,12 +439,13 @@ export default function UsersPage() {
 
 // ---------- Action Dropdown (Portal-positioned, never clipped) ----------
 function ActionMenuButton({
-  isOpen, onToggle, onClose, user, onView, onSuspend, onUnsuspend, onBan, onDelete,
+  isOpen, onToggle, onClose, user, canMutate, onView, onSuspend, onUnsuspend, onBan, onDelete,
 }: {
   isOpen: boolean;
   onToggle: () => void;
   onClose: () => void;
   user: AdminUser;
+  canMutate: boolean;
   onView: () => void;
   onSuspend: () => void;
   onUnsuspend: () => void;
@@ -449,6 +458,9 @@ function ActionMenuButton({
 
   const isSuspended = user.rawStatus === 'SUSPENDED';
   const isBanned = user.rawStatus === 'BANNED';
+  // User-requested deletion is terminal: only "View Details" is allowed — no
+  // suspend/ban/re-delete (we never accidentally mutate a retained legal record).
+  const isDeleted = user.status === 'Deleted' || !!user.deletedAt;
 
   // Position the menu relative to the button using fixed coordinates,
   // and flip upward when there isn't enough room below.
@@ -520,26 +532,38 @@ function ActionMenuButton({
             <Eye size={14} className="text-gray-500" /> View Details
           </button>
 
-          {!isBanned && (isSuspended ? (
-            <button onClick={onUnsuspend} className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-emerald-700 hover:bg-emerald-50 transition-colors">
-              <UserCheck size={14} /> Reinstate User
-            </button>
+          {isDeleted ? (
+            <div className="px-4 py-2.5 text-xs text-gray-400 border-t border-gray-100">
+              Account deleted by user — retained for records only.
+            </div>
+          ) : canMutate ? (
+            <>
+              {!isBanned && (isSuspended ? (
+                <button onClick={onUnsuspend} className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-emerald-700 hover:bg-emerald-50 transition-colors">
+                  <UserCheck size={14} /> Reinstate User
+                </button>
+              ) : (
+                <button onClick={onSuspend} className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-amber-700 hover:bg-amber-50 transition-colors">
+                  <UserX size={14} /> Suspend
+                </button>
+              ))}
+
+              {!isBanned && (
+                <button onClick={onBan} className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-rose-700 hover:bg-rose-50 transition-colors">
+                  <Ban size={14} /> Ban User
+                </button>
+              )}
+
+              <div className="border-t border-gray-100" />
+              <button onClick={onDelete} className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-rose-700 hover:bg-rose-50 transition-colors">
+                <Trash2 size={14} /> Delete Account
+              </button>
+            </>
           ) : (
-            <button onClick={onSuspend} className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-amber-700 hover:bg-amber-50 transition-colors">
-              <UserX size={14} /> Suspend
-            </button>
-          ))}
-
-          {!isBanned && (
-            <button onClick={onBan} className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-rose-700 hover:bg-rose-50 transition-colors">
-              <Ban size={14} /> Ban User
-            </button>
+            <div className="px-4 py-2.5 text-xs text-gray-400 border-t border-gray-100">
+              Read-only access — contact a Super Admin for account actions.
+            </div>
           )}
-
-          <div className="border-t border-gray-100" />
-          <button onClick={onDelete} className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-rose-700 hover:bg-rose-50 transition-colors">
-            <Trash2 size={14} /> Delete Account
-          </button>
         </div>,
         document.body,
       )}

@@ -44,12 +44,15 @@ import {
 } from 'lucide-react-native';
 import Svg, { Path, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { api } from '../../services/api';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import type { ColorsType } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 import MyVehiclesTab from '../../components/FindSpace/MyVehiclesTab';
 import ActiveSessionsTab from '../../components/FindSpace/ActiveSessionsTab';
 import BookingHistoryTab from '../../components/FindSpace/BookingHistoryTab';
-import { styles } from '../../components/FindSpace/findSpaceStyles';
+import { makeFindSpaceStyles } from '../../components/FindSpace/findSpaceStyles';
 import FilterSheet from '../../components/FindSpace/FilterSheet';
+import FindSpaceMapTab from './_components/FindSpaceMapTab';
 
 
 // Search radius options (km). 5 km is the default — best balance for city parking.
@@ -67,6 +70,8 @@ const regionDeltaForRadius = (radiusKm: number) => Math.max(0.02, ((radiusKm * 2
 
 const FindSpaceScreen = () => {
   const router = useRouter();
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeFindSpaceStyles(colors), [colors]);
   const { tab, openTab } = useLocalSearchParams<{ tab?: string; openTab?: string }>();
   const mapRef = useRef<any>(null);
   const [activeTab, setActiveTab] = useState(openTab || tab || 'map');
@@ -90,6 +95,8 @@ const FindSpaceScreen = () => {
   const [searching, setSearching] = useState(false);
   // True while the recenter FAB is actively fetching a GPS fix (shows a spinner).
   const [isLocating, setIsLocating] = useState(false);
+  // Analytics from last search — why spaces were hidden
+  const [searchAnalytics, setSearchAnalytics] = useState<any>(null);
 
   // ── Search filters (backend already supports parkingFor / spaceType / sort) ──
   const [showFilters, setShowFilters] = useState(false);
@@ -103,6 +110,15 @@ const FindSpaceScreen = () => {
   // "Search this area" button — shown after the user pans the map away from the
   // current search center, so they can re-query the visible region.
   const [pannedCenter, setPannedCenter] = useState<{ latitude: number; longitude: number } | null>(null);
+
+  // Client-side search cache: (lat,lng,radius,filters) → { spaces, timestamp }
+  // Results cached for 5 minutes (300,000 ms). Prevents re-fetching when panning back.
+  const searchCacheRef = useRef<Map<string, { spaces: any[]; timestamp: number }>>(new Map());
+  const CACHE_DURATION_MS = 300000; // 5 minutes
+
+  const getCacheKey = useCallback((lat: number, lng: number, radius: number, filters: any) => {
+    return `${lat.toFixed(4)}_${lng.toFixed(4)}_${radius}_${JSON.stringify(filters)}`;
+  }, []);
 
   // Vehicles state - loaded from API
   const [vehicles, setVehicles] = useState<any[]>([]);
@@ -396,24 +412,17 @@ const FindSpaceScreen = () => {
     if (!query.trim() || query.length < 2) return [];
 
     try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=5&countrycodes=in`,
-        { headers: { 'User-Agent': 'ParkSwift/1.0 (parking app)', Accept: 'application/json' } }
-      );
-      // Nominatim returns plain-text errors (not JSON) when rate-limited/blocked
-      const text = await response.text();
-      let data: any;
-      try { data = JSON.parse(text); } catch { return []; }
+      // Route through backend /api/geocode/search instead of calling Nominatim directly.
+      // This provides rate-limit control and caching on the server side.
+      const data = await api.post('/geocode/search', { search: query });
+      const results = data.results || [];
 
-      if (Array.isArray(data)) {
-        return data.map((result) => {
+      if (Array.isArray(results)) {
+        return results.map((result) => {
           const a = result.address || {};
           // Primary line = the most specific name; secondary = area + city.
           const primary =
-            result.name ||
-            a.amenity || a.building || a.road || a.suburb || a.neighbourhood ||
-            a.city || a.town || a.village ||
-            (result.display_name ? String(result.display_name).split(',')[0] : 'Location');
+            result.displayName ? String(result.displayName).split(',')[0] : 'Location';
           const secondaryParts = [
             a.suburb || a.neighbourhood || a.road,
             a.city || a.town || a.village || a.county,
@@ -421,20 +430,20 @@ const FindSpaceScreen = () => {
           ].filter((p) => p && p !== primary);
           const secondary = secondaryParts.length
             ? Array.from(new Set(secondaryParts)).join(', ')
-            : (result.display_name ? String(result.display_name).split(',').slice(1, 3).join(',').trim() : '');
+            : (result.displayName ? String(result.displayName).split(',').slice(1, 3).join(',').trim() : '');
           return {
-            id: String(result.osm_id || result.place_id),
+            id: String(result.id),
             name: primary,
             description: secondary,
-            latitude: parseFloat(result.lat),
-            longitude: parseFloat(result.lon),
+            latitude: isFinite(result.lat) ? result.lat : 0,
+            longitude: isFinite(result.lng) ? result.lng : 0,
             type: 'location',
           };
         });
       }
       return [];
     } catch (error) {
-      if (__DEV__) console.log('[NOMINATIM] Error:', error);
+      if (__DEV__) console.log('[GEOCODE] Error:', error);
       return [];
     }
   };
@@ -589,6 +598,22 @@ const FindSpaceScreen = () => {
       // Apply the active filters (refs so this is correct even from stale closures).
       // Backend accepts parkingFor (Car|Bike|Both), spaceType, and sort=distance|price.
       const sort = filterSortRef.current;
+      const filters = {
+        vehicle: filterVehicleRef.current,
+        spaceTypes: filterSpaceTypesRef.current,
+        sort,
+      };
+
+      // Check cache first
+      const cacheKey = getCacheKey(lat, lng, radiusKm, filters);
+      const cachedResult = searchCacheRef.current.get(cacheKey);
+      if (cachedResult && Date.now() - cachedResult.timestamp < CACHE_DURATION_MS) {
+        // Use cached result
+        setParkingSpaces(cachedResult.spaces);
+        setSpacesLoading(false);
+        return;
+      }
+
       const params = [
         `lat=${lat}`,
         `lng=${lng}`,
@@ -609,6 +634,10 @@ const FindSpaceScreen = () => {
       // Backend computes distanceKm with Haversine + bounding-box prefilter
       const json = await api.get(`/spaces/search?${params.join('&')}`);
       const rawSpaces: any[] = Array.isArray(json) ? json : json.data || json.spaces || [];
+      // Extract analytics (why spaces were hidden)
+      if (json && json.analytics) {
+        setSearchAnalytics(json.analytics);
+      }
 
       const formatDistance = (km?: number) => {
         if (km == null || isNaN(km)) return '';
@@ -661,6 +690,8 @@ const FindSpaceScreen = () => {
         };
       });
 
+      // Cache the result
+      searchCacheRef.current.set(cacheKey, { spaces: mapped, timestamp: Date.now() });
       setParkingSpaces(mapped);
     } catch (error) {
       if (__DEV__) console.log('[PARKING] Error fetching spaces:', error);
@@ -835,7 +866,7 @@ const FindSpaceScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
       {/* Header — single PageHeader component for all tabs */}
       {activeTab === 'map' ? (
@@ -848,7 +879,7 @@ const FindSpaceScreen = () => {
               style={styles.iconButton}
               onPress={() => router.push('/(home)/notifications')}
             >
-              <Bell size={18} color={Colors.textDark} strokeWidth={2.5} />
+              <Bell size={18} color={colors.textDark} strokeWidth={2.5} />
               {unreadCount > 0 && (
                 <View style={styles.bellBadge}>
                   <Text style={styles.bellBadgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
@@ -877,7 +908,7 @@ const FindSpaceScreen = () => {
           right={
             activeTab === 'vehicle' && !showAddVehicle && !showEditModal ? (
               <TouchableOpacity onPress={() => setShowAddVehicle(!showAddVehicle)}>
-                <Plus size={20} color={Colors.primary} strokeWidth={2.2} />
+                <Plus size={20} color={colors.primary} strokeWidth={2.2} />
               </TouchableOpacity>
             ) : undefined
           }
@@ -886,407 +917,43 @@ const FindSpaceScreen = () => {
 
       {/* Tab Switched Content */}
       {activeTab === 'map' && (
-        <>
-          <View style={styles.mapContainer}>
-        <LeafletMap
-          ref={mapRef}
-          style={StyleSheet.absoluteFill}
+        <FindSpaceMapTab
+          mapRef={mapRef}
           initialRegion={initialRegion}
-          circle={
-            showRadius && (searchCenter || userLocation)
-              ? {
-                  lat: (searchCenter || userLocation).latitude,
-                  lng: (searchCenter || userLocation).longitude,
-                  radiusMeters: searchRadiusKm * 1000,
-                }
-              : null
-          }
-          markers={[
-            ...(userLocation
-              ? [{ id: '__user__', lat: userLocation.latitude, lng: userLocation.longitude, kind: 'user' as const }]
-              : []),
-            ...filteredParkingSpaces.map((space) => ({
-              id: space.id,
-              lat: space.latitude,
-              lng: space.longitude,
-              kind: 'price' as const,
-              label: `₹${space.price}`,
-              spots: space.available ?? 0,
-              rating: space.rating > 0 ? space.rating : undefined,
-              status: (space.status === 'available'
-                ? 'available'
-                : space.status === 'closed'
-                  ? 'closed'
-                  : 'booked') as 'available' | 'booked' | 'closed',
-              selected: selectedSpace?.id === space.id,
-            })),
-          ]}
-          onMarkerPress={(id) => {
-            if (id === '__user__') return;
-            const space = filteredParkingSpaces.find((s) => s.id === id);
-            if (space) handleSuggestionPress(space);
-          }}
-          onMapPress={() => setSelectedSpace(null)}
-          onRegionChange={(c) => {
-            // Only offer "Search this area" once the user pans a meaningful distance
-            // from the current search center (avoids the button flickering on tiny nudges).
-            const center = searchCenter || userLocation;
-            if (!center) { setPannedCenter(c); return; }
-            const dLat = Math.abs(c.latitude - center.latitude);
-            const dLng = Math.abs(c.longitude - center.longitude);
-            // ~0.5km threshold (0.0045° ≈ 0.5km)
-            if (dLat > 0.0045 || dLng > 0.0045) setPannedCenter(c);
-          }}
+          userLocation={userLocation}
+          searchCenter={searchCenter}
+          searchLabel={searchLabel}
+          searchRadiusKm={searchRadiusKm}
+          filteredParkingSpaces={filteredParkingSpaces}
+          selectedSpace={selectedSpace}
+          setSelectedSpace={setSelectedSpace}
+          showSuggestions={showSuggestions}
+          setShowSuggestions={setShowSuggestions}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          suggestions={suggestions}
+          searching={searching}
+          showRadius={showRadius}
+          setShowRadius={setShowRadius}
+          pannedCenter={pannedCenter}
+          setPannedCenter={setPannedCenter}
+          showFilters={showFilters}
+          setShowFilters={setShowFilters}
+          filterVehicle={filterVehicle}
+          filterSpaceTypes={filterSpaceTypes}
+          filterSort={filterSort}
+          isLocating={isLocating}
+          spacesLoading={spacesLoading}
+          activeFilterCount={activeFilterCount}
+          styles={styles}
+          colors={colors}
+          handleSuggestionPress={handleSuggestionPress}
+          recenterToMe={recenterToMe}
+          applyRadius={applyRadius}
+          applyFilters={applyFilters}
+          searchThisArea={searchThisArea}
+          searchAnalytics={searchAnalytics}
         />
-
-        {/* Search Bar with Suggestions */}
-        <View style={styles.searchBarContainer}>
-          <View style={[styles.searchBox, showSuggestions && styles.searchBoxActive]}>
-            <Search size={18} color={Colors.textSecondary} strokeWidth={2.5} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search for area, street or parking"
-              placeholderTextColor={Colors.textMuted}
-              value={searchQuery}
-              returnKeyType="search"
-              onChangeText={(text) => {
-                setSearchQuery(text);
-                setShowSuggestions(text.length > 0);
-              }}
-              onFocus={() => setShowSuggestions(searchQuery.length > 0)}
-            />
-            {searchQuery.length > 0 ? (
-              <TouchableOpacity onPress={() => {
-                setSearchQuery('');
-                setShowSuggestions(false);
-              }} hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}>
-                <View style={styles.searchClearBtn}>
-                  <X size={13} color={Colors.white} strokeWidth={3} />
-                </View>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-
-          {/* Search-center chip — tells the user where the search is centered + radius */}
-          {!showSuggestions && (
-            <View style={styles.searchMetaRow}>
-              <View style={styles.searchChip}>
-                <MapPin size={13} color={Colors.textSecondary} strokeWidth={2.5} />
-                <Text style={styles.searchChipText} numberOfLines={1}>{searchLabel}</Text>
-              </View>
-              <View style={styles.metaRight}>
-                <View style={styles.radiusSelector}>
-                  {RADIUS_OPTIONS.map((r) => {
-                    const active = searchRadiusKm === r;
-                    return (
-                      <TouchableOpacity
-                        key={r}
-                        style={[styles.radiusOption, active && styles.radiusOptionActive]}
-                        onPress={() => applyRadius(r)}
-                        activeOpacity={0.8}
-                      >
-                        <Text style={[styles.radiusOptionText, active && styles.radiusOptionTextActive]}>{r}km</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-                {/* Filter button — opens the filter sheet; badge shows active count */}
-                <TouchableOpacity
-                  style={[styles.filterBtn, activeFilterCount > 0 && styles.filterBtnActive]}
-                  onPress={() => setShowFilters(true)}
-                  activeOpacity={0.8}
-                >
-                  <SlidersHorizontal
-                    size={16}
-                    color={activeFilterCount > 0 ? Colors.white : Colors.textPrimary}
-                    strokeWidth={2.5}
-                  />
-                  {activeFilterCount > 0 && (
-                    <View style={styles.filterBadge}>
-                      <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-
-          {/* Suggestions Dropdown */}
-          {showSuggestions && suggestions.length > 0 && (
-            <View style={styles.suggestionsBox}>
-              <FlatList
-                data={suggestions}
-                keyExtractor={(item) => String(item.id)}
-                scrollEnabled={false}
-                ItemSeparatorComponent={() => <View style={styles.suggestionDivider} />}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={styles.suggestionItem}
-                    onPress={() => handleSuggestionPress(item)}
-                    activeOpacity={0.6}
-                  >
-                    <View style={[styles.suggestionIcon, item.type === 'parking' && styles.suggestionIconParking]}>
-                      {item.type === 'parking' ? (
-                        <Text style={{ fontSize: 13, fontWeight: '800', color: Colors.primary }}>P</Text>
-                      ) : (
-                        <MapPin size={16} color={Colors.textSecondary} strokeWidth={2.5} />
-                      )}
-                    </View>
-                    <View style={styles.suggestionContent}>
-                      <Text style={styles.suggestionName} numberOfLines={1}>{item.name}</Text>
-                      {!!(item.type === 'parking' ? true : item.description) && (
-                        <Text style={styles.suggestionMeta} numberOfLines={1}>
-                          {item.type === 'parking'
-                            ? `₹${item.price}/hr • ${item.available} available`
-                            : item.description}
-                        </Text>
-                      )}
-                    </View>
-                    <ChevronRight size={16} color={Colors.borderMuted} strokeWidth={2.5} />
-                  </TouchableOpacity>
-                )}
-              />
-            </View>
-          )}
-
-          {/* Searching / no-results state */}
-          {showSuggestions && suggestions.length === 0 && searchQuery.length > 0 && (
-            <View style={styles.suggestionsBox}>
-              {searching ? (
-                <View style={styles.noSuggestions}>
-                  <ActivityIndicator size="small" color={Colors.primary} />
-                  <Text style={styles.noSuggestionsText}>Searching…</Text>
-                </View>
-              ) : (
-                <View style={styles.emptyResults}>
-                  <View style={styles.emptyResultsIcon}>
-                    <SearchX size={22} color={Colors.textMuted} strokeWidth={2} />
-                  </View>
-                  <Text style={styles.emptyResultsTitle}>No results found</Text>
-                  <Text style={styles.emptyResultsHint}>Try a different area or street name</Text>
-                </View>
-              )}
-            </View>
-          )}
-        </View>
-
-        {/* "Search this area" — appears after the user pans the map away */}
-        {pannedCenter && !showSuggestions && (
-          <View style={styles.searchAreaWrap} pointerEvents="box-none">
-            <TouchableOpacity style={styles.searchAreaBtn} onPress={searchThisArea} activeOpacity={0.85}>
-              <RotateCw size={15} color={Colors.textPrimary} strokeWidth={2.5} />
-              <Text style={styles.searchAreaText}>Search this area</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Spaces loading indicator — centered on the map */}
-        {spacesLoading && (
-          <View style={styles.spacesLoadingOverlay} pointerEvents="none">
-            <View style={styles.spacesLoadingPill}>
-              <ActivityIndicator size="small" color={Colors.primary} />
-              <Text style={styles.spacesLoadingText}>Finding spaces...</Text>
-            </View>
-          </View>
-        )}
-
-        {/* ── Filter bottom sheet ─────────────────────────────────────────── */}
-        <FilterSheet
-          visible={showFilters}
-          onClose={() => setShowFilters(false)}
-          initial={{ vehicle: filterVehicle, spaceTypes: filterSpaceTypes, sort: filterSort }}
-          onApply={applyFilters}
-        />
-
-        {/* Floating Actions on the Right */}
-        <View style={[
-          styles.floatingRight,
-          {
-            bottom: selectedSpace
-              ? (Platform.OS === 'ios' ? 76 + 220 : 58 + 220)
-              : (Platform.OS === 'ios' ? 76 + 16 : 58 + 16)
-          }
-        ]}>
-          {/* Radius Toggle Button */}
-          <TouchableOpacity
-            style={[styles.floatingCircleBtn, showRadius && styles.radiusButtonActive]}
-            onPress={() => setShowRadius(!showRadius)}
-            activeOpacity={0.8}
-          >
-            <Target size={20} color={Colors.textPrimary} strokeWidth={2.5} />
-          </TouchableOpacity>
-
-          {/* Navigation Button */}
-          <TouchableOpacity
-            style={[styles.floatingCircleBtn, { backgroundColor: Colors.primary }]}
-            activeOpacity={0.8}
-            onPress={recenterToMe}
-            disabled={isLocating}
-          >
-            {isLocating ? (
-              <ActivityIndicator size="small" color={Colors.white} />
-            ) : (
-              <Navigation size={20} color={Colors.white} strokeWidth={2.5} />
-            )}
-          </TouchableOpacity>
-        </View>
-
-        {/* Legend Card overlay on the map */}
-        {!selectedSpace && (
-          <View style={styles.legendCard}>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: Colors.successAlt }]} />
-              <View style={styles.legendTextContainer}>
-                <Text style={styles.legendTitle}>Available</Text>
-                <Text style={styles.legendSubtitle}>Open for booking</Text>
-              </View>
-            </View>
-            <View style={styles.legendDivider} />
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: Colors.errorAlt }]} />
-              <View style={styles.legendTextContainer}>
-                <Text style={styles.legendTitle}>Booked</Text>
-                <Text style={styles.legendSubtitle}>Not available</Text>
-              </View>
-            </View>
-          </View>
-        )}
-      </View>
-
-      {/* Bottom Parking Space Card - PREMIUM */}
-      {selectedSpace && selectedSpace.type === 'parking' && (
-        <View style={styles.spaceCard}>
-          {/* Drag handle */}
-          <View style={styles.cardHeaderRow}>
-            <View style={styles.cardHandle} />
-          </View>
-
-          {/* Close button - absolute in top-right */}
-          <TouchableOpacity
-            style={styles.closeCardBtn}
-            onPress={() => setSelectedSpace(null)}
-            activeOpacity={0.7}
-          >
-            <X size={14} color={Colors.textMuted} strokeWidth={2.5} />
-          </TouchableOpacity>
-          <View style={styles.cardMainRow}>
-            {/* Left image thumbnail */}
-            <Image 
-              source={{ uri: selectedSpace.image || 'https://images.unsplash.com/photo-1506521781263-d8422e82f27a?q=80&w=200&auto=format&fit=crop' }} 
-              style={styles.cardImage} 
-            />
-
-            {/* Center column info */}
-            <View style={styles.cardInfoCol}>
-              <Text style={styles.spaceName} numberOfLines={1} ellipsizeMode="tail">
-                {selectedSpace.name}
-              </Text>
-
-              <View style={styles.badgeRow}>
-                <View style={styles.verifiedBadge}>
-                  <Text style={styles.verifiedText}>Verified</Text>
-                </View>
-                {/* Risk badge */}
-                {selectedSpace.spaceType === 'Open Frontage Area' && (
-                  <View style={{ paddingHorizontal: 6, paddingVertical: 2, backgroundColor: ExtendedColors.redTint, borderRadius: BorderRadius.risk, borderWidth: 1, borderColor: ExtendedColors.redBorder }}>
-                    <Text style={{ fontSize: FontSize.micro, fontWeight: FontWeight.extrabold, color: ExtendedColors.redTextDeep }}>HIGH RISK</Text>
-                  </View>
-                )}
-                {selectedSpace.spaceType && ['Rented House','Apartment Tenant Slot','Shop Front Parking','Inside Compound'].includes(selectedSpace.spaceType) && (
-                  <View style={{ paddingHorizontal: 6, paddingVertical: 2, backgroundColor: Colors.warningBgAlt, borderRadius: BorderRadius.risk, borderWidth: 1, borderColor: ExtendedColors.warningYellowBorderAlt }}>
-                    <Text style={{ fontSize: FontSize.micro, fontWeight: FontWeight.extrabold, color: ExtendedColors.warningAmber }}>MED RISK</Text>
-                  </View>
-                )}
-                <View style={[
-                  styles.statusBadge,
-                  selectedSpace.status === 'available' ? styles.statusBadgeAvailable : styles.statusBadgeBooked
-                ]}>
-                  <Text style={[
-                    styles.statusBadgeText,
-                    selectedSpace.status === 'available' ? styles.statusBadgeTextAvailable : styles.statusBadgeTextBooked
-                  ]}>
-                    {selectedSpace.status === 'available'
-                      ? 'Available'
-                      : selectedSpace.status === 'closed' ? 'Closed' : 'Booked'}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-                <Text style={styles.distanceAreaText}>{selectedSpace.distance || '0.2 km'} • </Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: getRatingStyle(selectedSpace.rating).bgColor, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginLeft: 4 }}>
-                  {!getRatingStyle(selectedSpace.rating).isNew && (
-                    <Text style={{ color: getRatingStyle(selectedSpace.rating).iconColor, fontSize: 12, marginRight: 2 }}>★</Text>
-                  )}
-                  <Text style={{ color: getRatingStyle(selectedSpace.rating).textColor, fontSize: 12, fontWeight: '700' }}>
-                    {getRatingStyle(selectedSpace.rating).label}
-                  </Text>
-                </View>
-                {selectedSpace.reviews > 0 && (
-                  <Text style={styles.reviewCount}> ({formatCount(selectedSpace.reviews)})</Text>
-                )}
-              </View>
-            </View>
-
-            {/* Right column Chevron & Price */}
-            <View style={styles.cardRightCol}>
-              <TouchableOpacity 
-                style={styles.chevronTouchBtn} 
-                activeOpacity={0.7}
-                onPress={() => {
-                  router.push({
-                    pathname: '/(find-space)/space-detail',
-                    params: {
-                      spaceId: selectedSpace.id,
-                      spaceName: selectedSpace.name,
-                      // Pass the REAL address (space-detail re-fetches authoritatively;
-                      // this is just the initial display, so don't fabricate a city).
-                      address: selectedSpace.address || selectedSpace.area || selectedSpace.name,
-                      pricePerHour: selectedSpace.price,
-                      availableSlots: selectedSpace.available ?? 0,
-                      rating: selectedSpace.rating ?? 0,
-                      distance: selectedSpace.distance ? parseFloat(selectedSpace.distance) : 0,
-                      lat: selectedSpace.latitude,
-                      lng: selectedSpace.longitude,
-                      ownerId: selectedSpace.ownerId,
-                      spaceType: selectedSpace.spaceType || '',
-                      amenities: JSON.stringify(selectedSpace.amenities || []),
-                      frontPhotoUrl: selectedSpace.frontPhotoUrl || '',
-                      totalSlots: selectedSpace.capacity ?? selectedSpace.available ?? 0,
-                    }
-                  });
-                }}
-              >
-                <ChevronRight size={22} color={Colors.primary} strokeWidth={2.5} />
-              </TouchableOpacity>
-
-              <View style={styles.priceContainer}>
-                <Text style={styles.priceText}>₹{selectedSpace.price}</Text>
-                <Text style={styles.priceUnit}>/hr</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Details & Amenities row */}
-          {selectedSpace.amenities && selectedSpace.amenities.length > 0 && (
-            <View style={styles.compactAmenitiesRow}>
-              <ScrollView 
-                horizontal 
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.amenitiesScrollContent}
-              >
-                {selectedSpace.amenities.map((amenity: any, idx: number) => (
-                  <View key={idx} style={styles.amenityBadge}>
-                    <Text style={styles.amenityText}>{amenity}</Text>
-                  </View>
-                ))}
-              </ScrollView>
-            </View>
-          )}
-        </View>
-      )}
-
-        </>
       )}
 
       {activeTab === 'vehicle' && (
@@ -1371,16 +1038,16 @@ const FindSpaceScreen = () => {
           activeOpacity={0.7}
           onPress={() => setActiveTab('map')}
         >
-          <MapPin size={20} color={activeTab === 'map' ? Colors.primary : Colors.textSecondary} strokeWidth={activeTab === 'map' ? 2.4 : 2.2} />
+          <MapPin size={24} color={activeTab === 'map' ? colors.primary : colors.textSecondary} strokeWidth={activeTab === 'map' ? 2.4 : 2.2} />
           <Text style={[styles.navText, activeTab === 'map' && styles.navTextActive]}>Explore</Text>
         </TouchableOpacity>
-        
+
         <TouchableOpacity
           style={styles.navTab}
           activeOpacity={0.7}
           onPress={() => setActiveTab('vehicle')}
         >
-          <Car size={20} color={activeTab === 'vehicle' ? Colors.primary : Colors.textSecondary} strokeWidth={activeTab === 'vehicle' ? 2.4 : 2.2} />
+          <Car size={24} color={activeTab === 'vehicle' ? colors.primary : colors.textSecondary} strokeWidth={activeTab === 'vehicle' ? 2.4 : 2.2} />
           <Text style={[styles.navText, activeTab === 'vehicle' && styles.navTextActive]}>Vehicle</Text>
         </TouchableOpacity>
 
@@ -1389,7 +1056,7 @@ const FindSpaceScreen = () => {
           activeOpacity={0.7}
           onPress={() => setActiveTab('active')}
         >
-          <Clock size={20} color={activeTab === 'active' ? Colors.primary : Colors.textSecondary} strokeWidth={activeTab === 'active' ? 2.4 : 2.2} />
+          <Clock size={24} color={activeTab === 'active' ? colors.primary : colors.textSecondary} strokeWidth={activeTab === 'active' ? 2.4 : 2.2} />
           <Text style={[styles.navText, activeTab === 'active' && styles.navTextActive]}>Active</Text>
         </TouchableOpacity>
 
@@ -1398,7 +1065,7 @@ const FindSpaceScreen = () => {
           activeOpacity={0.7}
           onPress={() => setActiveTab('history')}
         >
-          <Calendar size={20} color={activeTab === 'history' ? Colors.primary : Colors.textSecondary} strokeWidth={activeTab === 'history' ? 2.4 : 2.2} />
+          <Calendar size={24} color={activeTab === 'history' ? colors.primary : colors.textSecondary} strokeWidth={activeTab === 'history' ? 2.4 : 2.2} />
           <Text style={[styles.navText, activeTab === 'history' && styles.navTextActive]}>History</Text>
         </TouchableOpacity>
       </View>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -14,40 +14,9 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { AlertTriangle, Clock, Search, CheckCircle2, XCircle } from 'lucide-react-native';
 import { api } from '../../services/api';
 import PageHeader from '../../components/PageHeader';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
-
-// Status → presentation. Mirrors the admin incident statuses
-// (OPEN | INVESTIGATING | RESOLVED | REJECTED).
-const STATUS_META: Record<string, { label: string; color: string; bg: string; Icon: any; blurb: string }> = {
-  OPEN: {
-    label: 'Open',
-    color: Colors.info,
-    bg: Colors.infoBg,
-    Icon: Clock,
-    blurb: 'Your report has been received and is awaiting review by our team.',
-  },
-  INVESTIGATING: {
-    label: 'Investigating',
-    color: Colors.warning,
-    bg: Colors.warningBg,
-    Icon: Search,
-    blurb: 'Our team is actively reviewing the details and evidence you provided.',
-  },
-  RESOLVED: {
-    label: 'Resolved',
-    color: Colors.success,
-    bg: Colors.successBg,
-    Icon: CheckCircle2,
-    blurb: 'This report has been reviewed and resolved.',
-  },
-  REJECTED: {
-    label: 'Closed',
-    color: Colors.error,
-    bg: Colors.errorBg,
-    Icon: XCircle,
-    blurb: 'After review, no further action was taken on this report.',
-  },
-};
+import { FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
+import type { ColorsType } from '../../theme';
 
 const TYPE_LABELS: Record<string, string> = {
   VEHICLE_DAMAGE: 'Vehicle Damage',
@@ -61,12 +30,98 @@ const TYPE_LABELS: Record<string, string> = {
   OTHER: 'Other',
 };
 
+// Status → presentation. Mirrors the admin incident statuses
+// (OPEN | INVESTIGATING | RESOLVED | REJECTED).
+const makeStatusMeta = (colors: ColorsType): Record<string, { label: string; color: string; bg: string; Icon: any; blurb: string }> => ({
+  OPEN: {
+    label: 'Open',
+    color: colors.info,
+    bg: colors.infoBg,
+    Icon: Clock,
+    blurb: 'Your report has been received and is awaiting review by our team.',
+  },
+  INVESTIGATING: {
+    label: 'Investigating',
+    color: colors.warning,
+    bg: colors.warningBg,
+    Icon: Search,
+    blurb: 'Our team is actively reviewing the details and evidence you provided.',
+  },
+  RESOLVED: {
+    label: 'Resolved',
+    color: colors.success,
+    bg: colors.successBg,
+    Icon: CheckCircle2,
+    blurb: 'This report has been reviewed and resolved.',
+  },
+  REJECTED: {
+    label: 'Closed',
+    color: colors.error,
+    bg: colors.errorBg,
+    Icon: XCircle,
+    blurb: 'After review, no further action was taken on this report.',
+  },
+});
+
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.white },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.lg, padding: Spacing.screenH },
+  errorText: { color: colors.textSecondary, textAlign: 'center', fontSize: FontSize.base },
+  retryBtn: { paddingHorizontal: Spacing['3xl'], paddingVertical: Spacing.lg, backgroundColor: colors.primaryBg, borderRadius: BorderRadius.lg },
+  retryBtnText: { color: colors.primary, fontWeight: FontWeight.bold },
+  content: { padding: Spacing.screenH, paddingBottom: Spacing['5xl'] },
+
+  statusHero: {
+    alignItems: 'center',
+    borderRadius: BorderRadius.xl,
+    paddingVertical: Spacing['4xl'],
+    paddingHorizontal: Spacing['3xl'],
+    marginBottom: Spacing.screenH,
+  },
+  statusLabel: { fontSize: FontSize['2xl'], fontWeight: FontWeight.black, marginTop: Spacing.lg },
+  statusBlurb: { fontSize: FontSize.sm, color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.md, lineHeight: 18 },
+
+  card: {
+    backgroundColor: colors.white,
+    borderRadius: BorderRadius.xl,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    padding: Spacing['3xl'],
+    marginBottom: Spacing.screenH,
+  },
+  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: Spacing.md },
+  label: { fontSize: FontSize.sm, color: colors.textSecondary, fontWeight: FontWeight.medium },
+  value: { fontSize: FontSize.sm, color: colors.textPrimary, fontWeight: FontWeight.semibold, flexShrink: 1, textAlign: 'right' },
+  refValue: { fontSize: FontSize.base, color: colors.textPrimary, fontWeight: FontWeight.extrabold, letterSpacing: 0.5 },
+  divider: { height: 1, backgroundColor: colors.borderLighter },
+
+  block: {
+    backgroundColor: colors.white,
+    borderRadius: BorderRadius.xl,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    padding: Spacing['3xl'],
+    marginBottom: Spacing.screenH,
+  },
+  adminBlock: { backgroundColor: colors.infoBg, borderColor: colors.info },
+  blockTitle: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: colors.textPrimary, marginBottom: Spacing.md },
+  blockBody: { fontSize: FontSize.sm, color: colors.textBody, lineHeight: 20 },
+
+  evidenceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md },
+  evidenceThumb: { width: 72, height: 72, borderRadius: BorderRadius.md, backgroundColor: colors.surfaceBg },
+});
+
 export default function IncidentDetailScreen() {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
   const router = useRouter();
   const { incidentId } = useLocalSearchParams<{ incidentId: string }>();
   const [report, setReport] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const STATUS_META = useMemo(() => makeStatusMeta(colors), [colors]);
 
   const fetchIncident = useCallback(async () => {
     try {
@@ -95,7 +150,7 @@ export default function IncidentDetailScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <PageHeader title="Incident Report" onBack={() => router.replace('/(find-space)')} />
-        <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>
+        <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>
       </SafeAreaView>
     );
   }
@@ -105,7 +160,7 @@ export default function IncidentDetailScreen() {
       <SafeAreaView style={styles.container}>
         <PageHeader title="Incident Report" onBack={() => router.replace('/(find-space)')} />
         <View style={styles.center}>
-          <AlertTriangle size={40} color={Colors.error} strokeWidth={1.5} />
+          <AlertTriangle size={40} color={colors.error} strokeWidth={1.5} />
           <Text style={styles.errorText}>{error || 'Report not found'}</Text>
           <TouchableOpacity style={styles.retryBtn} onPress={fetchIncident}>
             <Text style={styles.retryBtnText}>Retry</Text>
@@ -122,7 +177,7 @@ export default function IncidentDetailScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <PageHeader title="Incident Report" onBack={() => router.replace('/(find-space)')} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Status hero */}
@@ -181,7 +236,7 @@ export default function IncidentDetailScreen() {
             <Text style={styles.blockTitle}>Evidence ({evidence.length})</Text>
             <View style={styles.evidenceGrid}>
               {evidence.map((uri) => (
-                <Image key={uri} source={{ uri }} style={styles.evidenceThumb} />
+                <Image key={uri} source={{ uri }} style={styles.evidenceThumb} onError={() => {}} />
               ))}
             </View>
           </View>
@@ -190,51 +245,3 @@ export default function IncidentDetailScreen() {
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.white },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.lg, padding: Spacing.screenH },
-  errorText: { color: Colors.textSecondary, textAlign: 'center', fontSize: FontSize.base },
-  retryBtn: { paddingHorizontal: Spacing['3xl'], paddingVertical: Spacing.lg, backgroundColor: Colors.primaryBg, borderRadius: BorderRadius.lg },
-  retryBtnText: { color: Colors.primary, fontWeight: FontWeight.bold },
-  content: { padding: Spacing.screenH, paddingBottom: Spacing['5xl'] },
-
-  statusHero: {
-    alignItems: 'center',
-    borderRadius: BorderRadius.xl,
-    paddingVertical: Spacing['4xl'],
-    paddingHorizontal: Spacing['3xl'],
-    marginBottom: Spacing.screenH,
-  },
-  statusLabel: { fontSize: FontSize['2xl'], fontWeight: FontWeight.black, marginTop: Spacing.lg },
-  statusBlurb: { fontSize: FontSize.sm, color: Colors.textSecondary, textAlign: 'center', marginTop: Spacing.md, lineHeight: 18 },
-
-  card: {
-    backgroundColor: Colors.white,
-    borderRadius: BorderRadius.xl,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    padding: Spacing['3xl'],
-    marginBottom: Spacing.screenH,
-  },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: Spacing.md },
-  label: { fontSize: FontSize.sm, color: Colors.textSecondary, fontWeight: FontWeight.medium },
-  value: { fontSize: FontSize.sm, color: Colors.textPrimary, fontWeight: FontWeight.semibold, flexShrink: 1, textAlign: 'right' },
-  refValue: { fontSize: FontSize.base, color: Colors.textPrimary, fontWeight: FontWeight.extrabold, letterSpacing: 0.5 },
-  divider: { height: 1, backgroundColor: Colors.borderLighter },
-
-  block: {
-    backgroundColor: Colors.white,
-    borderRadius: BorderRadius.xl,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    padding: Spacing['3xl'],
-    marginBottom: Spacing.screenH,
-  },
-  adminBlock: { backgroundColor: Colors.infoBg, borderColor: Colors.info },
-  blockTitle: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.md },
-  blockBody: { fontSize: FontSize.sm, color: Colors.textBody, lineHeight: 20 },
-
-  evidenceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md },
-  evidenceThumb: { width: 72, height: 72, borderRadius: BorderRadius.md, backgroundColor: Colors.surfaceBg },
-});

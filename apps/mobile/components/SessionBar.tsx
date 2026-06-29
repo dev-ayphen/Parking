@@ -102,7 +102,15 @@ function buildConfig(entry: BarEntry, C: AppTheme['colors'], nowTs: number): Bar
         title: "You're on your way",
         subtitle: otp ? `${spaceName} · OTP: ${otp.split('').join(' ')}` : `${spaceName} · generating OTP…`,
         titleColor: C.info, subtitleColor: C.info,
-        targetRoute: '/(find-space)', needsBookingId: false,
+        targetRoute: '/(find-space)/active-session', needsBookingId: true,
+      };
+    case 'waiting_condition_check':
+      return {
+        bg: C.infoBg, border: C.infoBg, icon: '🔍',
+        title: 'Owner is inspecting your vehicle',
+        subtitle: spaceName ? `${spaceName} · please wait at the gate` : 'Please wait at the gate',
+        titleColor: C.info, subtitleColor: C.info,
+        targetRoute: '/(find-space)/active-session', needsBookingId: true,
       };
     case 'session_active':
       return {
@@ -110,7 +118,7 @@ function buildConfig(entry: BarEntry, C: AppTheme['colors'], nowTs: number): Bar
         title: 'Currently parked',
         subtitle: remMins !== null ? `${spaceName} · ${fmtRemaining(remMins)} remaining` : spaceName,
         titleColor: C.success, subtitleColor: C.success,
-        targetRoute: '/(find-space)', needsBookingId: false,
+        targetRoute: '/(find-space)/active-session', needsBookingId: true,
       };
     case 'session_ending':
       return {
@@ -118,7 +126,7 @@ function buildConfig(entry: BarEntry, C: AppTheme['colors'], nowTs: number): Bar
         title: 'Session ending soon',
         subtitle: remMins !== null ? `${spaceName} · ${fmtRemaining(remMins)} left` : spaceName,
         titleColor: C.error, subtitleColor: C.error,
-        targetRoute: '/(find-space)', needsBookingId: false,
+        targetRoute: '/(find-space)/active-session', needsBookingId: true,
       };
     case 'session_leaving':
       return {
@@ -126,7 +134,7 @@ function buildConfig(entry: BarEntry, C: AppTheme['colors'], nowTs: number): Bar
         title: 'Leaving — awaiting exit',
         subtitle: spaceName ? `${spaceName} · owner is confirming your exit` : 'Owner is confirming your exit',
         titleColor: C.warning, subtitleColor: C.warning,
-        targetRoute: '/(find-space)', needsBookingId: false,
+        targetRoute: '/(find-space)/active-session', needsBookingId: true,
       };
     case 'rating_pending':
       return {
@@ -194,7 +202,7 @@ function buildConfig(entry: BarEntry, C: AppTheme['colors'], nowTs: number): Bar
         subtitle: [spaceName, parkerName, vehiclePlate, 'tap to verify & complete']
           .filter(Boolean).join(' · '),
         titleColor: C.warning, subtitleColor: C.warning,
-        targetRoute: '/(my-spaces)/active', needsBookingId: false,
+        targetRoute: '/(my-spaces)/exit-verification', needsBookingId: true,
       };
   }
 }
@@ -381,18 +389,9 @@ export default function SessionBar() {
     [visibleBars.length, index, swipeX],
   );
 
-  const PARKER_SESSION_VARIANTS = new Set([
-    'arrived_otp_ready', 'session_active', 'session_ending', 'session_leaving',
-  ]);
-
   const handlePress = useCallback((cfg: BarConfig, entry: BarEntry) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     if (isInformational(entry.variant)) return;
-    // Parker active-session bars → open the Active tab inline (not the separate screen)
-    if (PARKER_SESSION_VARIANTS.has(entry.variant)) {
-      router.push({ pathname: '/(find-space)', params: { openTab: 'active' } });
-      return;
-    }
     const route = cfg.targetRoute as any;
     if (cfg.needsBookingId && entry.bookingId) {
       router.push({ pathname: route, params: { bookingId: entry.bookingId } });

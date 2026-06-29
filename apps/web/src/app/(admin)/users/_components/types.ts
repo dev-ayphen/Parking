@@ -8,6 +8,8 @@ export interface AdminUser {
   type: string;
   status: string;
   rawStatus: string;
+  deletedAt?: string | null;
+  deletedReason?: string | null;
   rating: number | null;
   joined: string;
 }
@@ -27,6 +29,8 @@ export interface UserDetails {
   suspendedUntil: string | null;
   banReason: string | null;
   bannedAt: string | null;
+  deletedAt: string | null;
+  deletedReason: string | null;
   isProfileComplete: boolean;
   createdAt: string;
   lastLoginAt: string | null;

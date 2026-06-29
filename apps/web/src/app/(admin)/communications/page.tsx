@@ -37,31 +37,43 @@ export default function CommunicationsPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // ── Broadcast templates (localStorage-backed) ─────────────────────────
+  // ── Broadcast templates (DB-backed) ──────────────────────────────────
   type Template = { id: number; name: string; title: string; body: string; audience: Audience; category: Category };
-  const TEMPLATE_KEY = 'parkswift.broadcastTemplates';
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(true);
+  const [savingTemplate, setSavingTemplate] = useState(false);
 
-  useEffect(() => {
+  const fetchTemplates = useCallback(async () => {
     try {
-      const raw = localStorage.getItem(TEMPLATE_KEY);
-      if (raw) setTemplates(JSON.parse(raw));
-    } catch { /* ignore corrupt storage */ }
+      setTemplatesLoading(true);
+      const data = await adminApi.listBroadcastTemplates();
+      setTemplates(data?.templates || []);
+    } catch {
+      /* leave list empty on failure */
+    } finally {
+      setTemplatesLoading(false);
+    }
   }, []);
 
-  const persistTemplates = useCallback((next: Template[]) => {
-    setTemplates(next);
-    try { localStorage.setItem(TEMPLATE_KEY, JSON.stringify(next)); } catch { /* quota */ }
-  }, []);
+  useEffect(() => { fetchTemplates(); }, [fetchTemplates]);
 
-  const saveTemplate = useCallback(() => {
+  const saveTemplate = useCallback(async () => {
     if (!messageTitle.trim() || !messageBody.trim()) { setError('Add a title and message before saving a template.'); return; }
     const name = window.prompt('Template name:', messageTitle.trim().slice(0, 40));
-    if (!name) return;
-    const next: Template = { id: Date.now(), name: name.trim(), title: messageTitle.trim(), body: messageBody.trim(), audience, category };
-    persistTemplates([next, ...templates]);
-    setSuccess('Template saved.');
-  }, [messageTitle, messageBody, audience, category, templates, persistTemplates]);
+    if (!name?.trim()) return;
+    try {
+      setSavingTemplate(true);
+      await adminApi.createBroadcastTemplate({
+        name: name.trim(), title: messageTitle.trim(), body: messageBody.trim(), audience, category,
+      });
+      await fetchTemplates();
+      setSuccess('Template saved.');
+    } catch (e: any) {
+      setError(e?.response?.data?.error || 'Failed to save template.');
+    } finally {
+      setSavingTemplate(false);
+    }
+  }, [messageTitle, messageBody, audience, category, fetchTemplates]);
 
   const loadTemplate = useCallback((t: Template) => {
     setMessageTitle(t.title);
@@ -70,9 +82,15 @@ export default function CommunicationsPage() {
     setCategory(t.category);
   }, []);
 
-  const deleteTemplate = useCallback((id: number) => {
-    persistTemplates(templates.filter((t) => t.id !== id));
-  }, [templates, persistTemplates]);
+  const deleteTemplate = useCallback(async (id: number) => {
+    // Optimistic remove; refetch on failure to restore.
+    setTemplates((prev) => prev.filter((t) => t.id !== id));
+    try {
+      await adminApi.deleteBroadcastTemplate(id);
+    } catch {
+      fetchTemplates();
+    }
+  }, [fetchTemplates]);
 
   const fetchHistory = useCallback(async () => {
     try {
@@ -140,7 +158,7 @@ export default function CommunicationsPage() {
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between"
+        className="sticky top-0 z-10 bg-gray-50 -mx-6 px-6 py-4 -mt-4 mb-2 flex items-center justify-between border-b border-gray-200"
       >
         <div>
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Communications</h1>
@@ -173,7 +191,11 @@ export default function CommunicationsPage() {
           <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
             <h2 className="text-lg font-bold text-gray-900">Compose Message</h2>
             <div className="flex items-center gap-2">
-              {templates.length > 0 && (
+              {templatesLoading ? (
+                <span className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-400">
+                  <Loader2 size={12} className="animate-spin" /> Loading templates…
+                </span>
+              ) : templates.length > 0 && (
                 <div className="relative group">
                   <button className="px-3 py-1.5 text-xs font-semibold text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors">
                     Load Template ({templates.length})
@@ -191,7 +213,9 @@ export default function CommunicationsPage() {
                   </div>
                 </div>
               )}
-              <button onClick={saveTemplate} className="px-3 py-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
+              <button onClick={saveTemplate} disabled={savingTemplate}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors disabled:opacity-50">
+                {savingTemplate && <Loader2 size={12} className="animate-spin" />}
                 Save as Template
               </button>
             </div>

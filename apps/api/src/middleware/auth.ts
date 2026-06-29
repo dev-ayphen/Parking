@@ -11,6 +11,7 @@ declare global {
         id: number;
         phone: string;
         role: string;
+        adminRole?: string; // 'SUPER_ADMIN' | 'SUPPORT_AGENT' — set for admin JWT tokens
       };
     }
   }
@@ -29,15 +30,27 @@ declare global {
 export const requireRole = (...roles: string[]) =>
   (req: Request, res: Response, next: NextFunction): void => {
     if (!req.user) {
-      res.status(401).json({ error: 'Unauthorized: Authentication required' });
+      res.status(401).json({ success: false, error: { message: 'Authentication required', code: 'AUTH_REQUIRED', status: 401 } });
       return;
     }
     if (!roles.includes(req.user.role)) {
-      res.status(403).json({ error: 'Forbidden: Insufficient permissions' });
+      res.status(403).json({ success: false, error: { message: 'Forbidden: Insufficient permissions', code: 'FORBIDDEN', status: 403 } });
       return;
     }
     next();
   };
+
+/**
+ * Restrict an endpoint to SUPER_ADMIN only.
+ * Must be used AFTER authenticate + requireRole('ADMIN').
+ */
+export const requireSuperAdmin = (req: Request, res: Response, next: NextFunction): void => {
+  if (req.user?.adminRole !== 'SUPER_ADMIN') {
+    res.status(403).json({ success: false, error: { message: 'Forbidden: Super-admin access required', code: 'FORBIDDEN', status: 403 } });
+    return;
+  }
+  next();
+};
 
 export const authenticate = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   // The Authorization header is the only token source for normal requests.
@@ -50,7 +63,7 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
   const token = headerToken || queryToken;
 
   if (!token) {
-    res.status(401).json({ error: 'Unauthorized: No token provided' });
+    res.status(401).json({ success: false, error: { message: 'No token provided', code: 'AUTH_REQUIRED', status: 401 } });
     return;
   }
 
@@ -64,27 +77,38 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
       select: { id: true },
     });
     if (!session) {
-      res.status(401).json({ error: 'Session expired or logged out' });
+      res.status(401).json({ success: false, error: { message: 'Session expired or logged out', code: 'SESSION_EXPIRED', status: 401 } });
+      return;
+    }
+
+    // Reject banned or soft-deleted users even with a valid unexpired session
+    const userRecord = await db.user.findUnique({
+      where: { id: userId },
+      select: { role: true, deletedAt: true, status: true },
+    });
+    if (!userRecord || userRecord.deletedAt || userRecord.status === 'BANNED') {
+      res.status(401).json({ success: false, error: { message: 'Account is not active', code: 'ACCOUNT_INACTIVE', status: 401 } });
       return;
     }
 
     req.user = {
       id: userId,
       phone: decoded.phone || '',
-      role: decoded.role || 'PARKER',
+      role: userRecord.role || decoded.role || 'PARKER',
+      adminRole: decoded.adminRole, // 'SUPER_ADMIN' | 'SUPPORT_AGENT' | undefined
     };
 
     next();
   } catch (error) {
     if (error instanceof jwt.TokenExpiredError) {
-      res.status(401).json({ error: 'Token expired' });
+      res.status(401).json({ success: false, error: { message: 'Token expired', code: 'TOKEN_EXPIRED', status: 401 } });
       return;
     }
     if (error instanceof jwt.JsonWebTokenError) {
-      res.status(401).json({ error: 'Invalid token' });
+      res.status(401).json({ success: false, error: { message: 'Invalid token', code: 'INVALID_TOKEN', status: 401 } });
       return;
     }
     console.error('[AUTH] Unexpected error:', error);
-    res.status(500).json({ error: 'Authentication failed' });
+    res.status(500).json({ success: false, error: { message: 'Authentication failed', code: 'AUTH_ERROR', status: 500 } });
   }
 };

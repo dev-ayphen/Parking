@@ -41,6 +41,7 @@ model User {
   emailNotifications  Boolean  @default(false)
   locationServices    Boolean  @default(true)
   darkTheme           Boolean  @default(false)
+  themeMode           String   @default("system")
 
   // When the user last opened the notifications inbox (tapped "read all").
   // Synthetic booking-derived notifications created BEFORE this are considered
@@ -96,6 +97,16 @@ enum Role {
   PARKER
   OWNER
   ADMIN
+}
+
+enum BookingStatus {
+  PENDING_APPROVAL
+  APPROVED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+  REJECTED
+  EXPIRED
 }
 
 model Session {
@@ -322,13 +333,19 @@ model Booking {
   // is a self-declared marker only — the app does NOT process the payment, so the
   // owner still confirms receipt in their own UPI app. Shown on the owner's screen.
   parkerMarkedPaidAt DateTime?
+  // Owner-confirmed payment. The owner taps "Payment Received" once the parker has
+  // paid (cash or by scanning the owner's UPI QR). ParkSwift never verifies the
+  // transfer — this is the owner's own confirmation. WAITING until then.
+  //   WAITING | PAID  (future: DISPUTED)
+  paymentStatus     String   @default("WAITING")
+  paymentReceivedAt DateTime?
   // Hourly rate SNAPSHOT taken at booking creation. The final bill is computed
   // from this, NOT the space's live hourlyRate — so an owner editing their rate
   // mid-session can never change what an already-booked parker is charged.
   ratePerHour       Float    @default(0)
   totalAmount       Float
   paymentMode       String   @default("DIRECT_AT_SPACE")
-  status            String   @default("PENDING_APPROVAL") // PENDING_APPROVAL | APPROVED | ACTIVE | COMPLETED | CANCELLED | REJECTED
+  status            BookingStatus @default(PENDING_APPROVAL)
   // Why a CANCELLED booking was cancelled — lets analytics separate intentional
   // cancellations from no-shows without needing a whole new status.
   // null (not cancelled) | NO_SHOW | USER_CANCELLED | OWNER_CANCELLED | ADMIN_CANCELLED
@@ -569,6 +586,7 @@ model Transaction {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  @@index([userId])
   @@index([type, status])
   @@index([createdAt])
 }
@@ -785,6 +803,27 @@ model AbuseReport {
   @@index([reportedUserId])
 }
 
+// ─── Admin staff accounts (multi-user admin panel) ───────────────────────────
+// Separate table from User so staff accounts never bleed into parker/owner flows.
+// SUPER_ADMIN = full access. SUPPORT_AGENT = read-only users + support/cases/moderation only.
+model AdminStaff {
+  id             Int      @id @default(autoincrement())
+  email          String   @unique
+  // bcrypt hash — never stored plain
+  passwordHash   String
+  name           String
+  adminRole      String   @default("SUPPORT_AGENT") // SUPER_ADMIN | SUPPORT_AGENT
+  isActive       Boolean  @default(true)
+  lastLoginAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  // Which SUPER_ADMIN created this account (audit)
+  createdById    Int?
+
+  @@index([email])
+  @@index([adminRole])
+}
+
 // ─── Audit trail — court evidence (Phase 2) ──────────────────────────────────
 
 // Immutable per-booking event log. Append-only by service-layer convention;
@@ -824,4 +863,21 @@ model AdminActionLog {
   @@index([targetType, targetId])
   @@index([action, timestamp])
   @@index([timestamp])
+}
+
+// Reusable broadcast (push-notification) templates the admin saves in the
+// Communications page. Stored in the DB (was localStorage) so they survive
+// browser/storage clears and are shared across admin machines.
+model BroadcastTemplate {
+  id        Int      @id @default(autoincrement())
+  name      String
+  title     String
+  body      String
+  audience  String   // ALL | PARKERS | OWNERS
+  category  String   // GENERAL | BOOKING | PAYMENT | SPACE | SUPPORT | SYSTEM
+  createdBy Int?     // admin user id (SetNull if that admin is later removed)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([createdAt])
 }

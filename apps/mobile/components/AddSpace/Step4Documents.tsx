@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, Modal, FlatList, Image } from 'react-native';
 import { Control, Controller, FieldErrors, UseFormSetValue, UseFormWatch } from 'react-hook-form';
 import {
@@ -13,8 +13,9 @@ import {
   CloudCheck,
 } from 'lucide-react-native';
 import FormInput from '../FormInput';
-import { styles } from './addSpaceStyles';
-import { Colors } from '../../theme';
+import { makeAddSpaceStyles } from './addSpaceStyles';
+import { useTheme } from '../../hooks/useTheme';
+import type { ColorsType } from '../../theme';
 import { VIDEO_LIMITS } from '../../config/media.config';
 import { SpaceFormData } from './Step1BasicDetails';
 
@@ -84,6 +85,8 @@ type Props = {
   onPickAreaVideo?: () => void;
 };
 
+const makeStyles = (colors: ColorsType) => ({});
+
 export default function Step4Documents({
   control,
   errors,
@@ -104,6 +107,8 @@ export default function Step4Documents({
   onPickAreaPhoto,
   onPickAreaVideo,
 }: Props) {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeAddSpaceStyles(colors), [colors]);
   // Prefer server-sourced rules (no drift); fall back to local constants if the
   // fetch hasn't completed or failed.
   const docReqs = docRulesMap ?? SPACE_DOC_REQUIREMENTS;
@@ -139,7 +144,7 @@ export default function Step4Documents({
                   />
                 </View>
                 <View style={styles.dropdownChevron}>
-                  <ChevronDown size={18} color={Colors.textSecondary} />
+                  <ChevronDown size={18} color={colors.textSecondary} />
                 </View>
               </TouchableOpacity>
 
@@ -162,7 +167,7 @@ export default function Step4Documents({
                         style={styles.modalClose}
                         onPress={() => setShowSpaceTypeModal(false)}
                       >
-                        <X size={18} color={Colors.textSecondary} />
+                        <X size={18} color={colors.textSecondary} />
                       </TouchableOpacity>
                     </View>
                     <FlatList
@@ -189,7 +194,7 @@ export default function Step4Documents({
                           >
                             {item}
                           </Text>
-                          {value === item && <CheckCircle size={18} color={Colors.primary} />}
+                          {value === item && <CheckCircle size={18} color={colors.primary} />}
                         </TouchableOpacity>
                       )}
                       showsVerticalScrollIndicator={false}
@@ -208,7 +213,7 @@ export default function Step4Documents({
         <View style={styles.requiredProofBox}>
           <FileText
             size={16}
-            color={watch('spaceType') === 'Open Frontage Area' ? Colors.warningAlt : Colors.primary}
+            color={watch('spaceType') === 'Open Frontage Area' ? colors.warningAlt : colors.primary}
           />
           <Text style={styles.requiredProofText}>
             {proofText[watch('spaceType')] || 'Select space type above'}
@@ -230,7 +235,7 @@ export default function Step4Documents({
           UPLOAD DOCUMENT <Text style={styles.required}>*</Text>
         </Text>
         <TouchableOpacity style={styles.chooseFileBtn} onPress={handlePickDocument}>
-          <Upload size={18} color={Colors.primary} />
+          <Upload size={18} color={colors.primary} />
           <View style={{ flex: 1 }}>
             <Text style={styles.chooseFileBtnText}>Choose File</Text>
             <Text style={styles.chooseFileSubtext}>Image (JPG, PNG)</Text>
@@ -240,13 +245,13 @@ export default function Step4Documents({
         {uploadedDocs.map((doc, index) => (
           <View key={index} style={styles.uploadedDocRow}>
             {doc.id
-              ? <CloudCheck size={16} color={Colors.success} />
-              : <FileText size={16} color={Colors.textSecondary} />
+              ? <CloudCheck size={16} color={colors.success} />
+              : <FileText size={16} color={colors.textSecondary} />
             }
             <View style={{ flex: 1 }}>
               <Text style={styles.uploadedDocName} numberOfLines={1}>{doc.name}</Text>
               {doc.id && (
-                <Text style={{ fontSize: 11, color: Colors.success }}>Already uploaded ✓</Text>
+                <Text style={{ fontSize: 11, color: colors.success }}>Already uploaded ✓</Text>
               )}
             </View>
             <TouchableOpacity
@@ -258,7 +263,7 @@ export default function Step4Documents({
                 }
               }}
             >
-              <Trash2 size={16} color={Colors.errorAlt} />
+              <Trash2 size={16} color={colors.errorAlt} />
             </TouchableOpacity>
           </View>
         ))}
@@ -278,9 +283,9 @@ export default function Step4Documents({
             onPress={onPickFrontPhoto}
           >
             {frontPhotoUri ? (
-              <Image source={{ uri: frontPhotoUri }} style={styles.uploadPreview} />
+              <Image source={{ uri: frontPhotoUri }} style={styles.uploadPreview} onError={() => {}} />
             ) : (
-              <Camera size={28} color={Colors.textMuted} />
+              <Camera size={28} color={colors.textMuted} />
             )}
             <Text style={styles.uploadBoxText}>Front Photo</Text>
             <Text style={styles.uploadBoxSubtext}>{frontPhotoUri ? 'Tap to change' : 'Required'}</Text>
@@ -291,9 +296,9 @@ export default function Step4Documents({
             onPress={onPickAreaPhoto}
           >
             {areaPhotoUri ? (
-              <Image source={{ uri: areaPhotoUri }} style={styles.uploadPreview} />
+              <Image source={{ uri: areaPhotoUri }} style={styles.uploadPreview} onError={() => {}} />
             ) : (
-              <Camera size={28} color={Colors.textMuted} />
+              <Camera size={28} color={colors.textMuted} />
             )}
             <Text style={styles.uploadBoxText}>Area Photo</Text>
             <Text style={styles.uploadBoxSubtext}>{areaPhotoUri ? 'Tap to change' : 'Optional'}</Text>
@@ -316,9 +321,9 @@ export default function Step4Documents({
             onPress={onPickAreaVideo}
           >
             {areaVideoUri ? (
-              <CheckCircle size={28} color={Colors.success} />
+              <CheckCircle size={28} color={colors.success} />
             ) : (
-              <Video size={28} color={Colors.textMuted} />
+              <Video size={28} color={colors.textMuted} />
             )}
             <Text style={styles.uploadBoxText}>Area Video</Text>
             <Text style={styles.uploadBoxSubtext}>{areaVideoUri ? 'Selected' : 'Optional'}</Text>

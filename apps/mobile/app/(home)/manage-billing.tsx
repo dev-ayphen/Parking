@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -18,7 +18,9 @@ import { api } from '../../services/api';
 import { toast } from '../../utils/toast';
 import { PageHeader } from '../../components';
 import { useNetworkStore } from '../../store/networkStore';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
+import { FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
+import type { ColorsType } from '../../theme';
 
 interface Billing {
   billingName: string;
@@ -30,6 +32,8 @@ interface Billing {
 
 export default function ManageBillingScreen() {
   const router = useRouter();
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [billingName, setBillingName] = useState('');
@@ -85,20 +89,20 @@ export default function ManageBillingScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <PageHeader title="Billing Details" onBack={() => router.replace('/(home)')} />
-        <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>
+        <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <PageHeader title="Billing Details" onBack={() => router.replace('/(home)')} />
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <View style={styles.infoCard}>
-            <Receipt size={18} color={Colors.primary} />
+            <Receipt size={18} color={colors.primary} />
             <Text style={styles.infoText}>These details appear on your subscription invoices and GST receipts.</Text>
           </View>
 
@@ -106,7 +110,7 @@ export default function ManageBillingScreen() {
           <TextInput
             style={styles.input}
             placeholder="Name or company name"
-            placeholderTextColor={Colors.textMuted}
+            placeholderTextColor={colors.textMuted}
             value={billingName}
             onChangeText={setBillingName}
           />
@@ -115,7 +119,7 @@ export default function ManageBillingScreen() {
           <TextInput
             style={styles.input}
             placeholder="invoices@yourcompany.com"
-            placeholderTextColor={Colors.textMuted}
+            placeholderTextColor={colors.textMuted}
             value={billingEmail}
             onChangeText={setBillingEmail}
             keyboardType="email-address"
@@ -126,7 +130,7 @@ export default function ManageBillingScreen() {
           <TextInput
             style={[styles.input, styles.multiline]}
             placeholder="Street, city, state, PIN"
-            placeholderTextColor={Colors.textMuted}
+            placeholderTextColor={colors.textMuted}
             value={billingAddress}
             onChangeText={setBillingAddress}
             multiline
@@ -138,14 +142,14 @@ export default function ManageBillingScreen() {
           <TextInput
             style={styles.input}
             placeholder="e.g. 29ABCDE1234F1Z5"
-            placeholderTextColor={Colors.textMuted}
+            placeholderTextColor={colors.textMuted}
             value={gstin}
             onChangeText={(t) => setGstin(t.toUpperCase())}
             autoCapitalize="characters"
             maxLength={15}
           />
           <View style={styles.hintRow}>
-            <Info size={12} color={Colors.textMuted} />
+            <Info size={12} color={colors.textMuted} />
             <Text style={styles.hint}>Add your GSTIN to claim input tax credit on subscription payments.</Text>
           </View>
 
@@ -155,7 +159,7 @@ export default function ManageBillingScreen() {
           <TextInput
             style={styles.input}
             placeholder="e.g. name@okhdfcbank"
-            placeholderTextColor={Colors.textMuted}
+            placeholderTextColor={colors.textMuted}
             value={upiId}
             onChangeText={(t) => setUpiId(t.toLowerCase().trim())}
             autoCapitalize="none"
@@ -163,7 +167,7 @@ export default function ManageBillingScreen() {
             keyboardType="email-address"
           />
           <View style={styles.hintRow}>
-            <Info size={12} color={Colors.textMuted} />
+            <Info size={12} color={colors.textMuted} />
             <Text style={styles.hint}>Parkers scan a QR built from this to pay you directly via any UPI app. ParkSwift never holds the money.</Text>
           </View>
         </ScrollView>
@@ -175,7 +179,7 @@ export default function ManageBillingScreen() {
             disabled={saving}
             activeOpacity={0.85}
           >
-            {saving ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.saveBtnText}>Save Billing Details</Text>}
+            {saving ? <ActivityIndicator color={colors.white} /> : <Text style={styles.saveBtnText}>Save Billing Details</Text>}
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -183,28 +187,28 @@ export default function ManageBillingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.white },
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.white },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  scroll: { flex: 1, backgroundColor: Colors.screenBg },
+  scroll: { flex: 1, backgroundColor: colors.screenBg },
   content: { padding: Spacing.screenH, paddingBottom: Spacing['4xl'] },
   infoCard: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-    backgroundColor: Colors.primaryBg, borderRadius: BorderRadius.lg,
+    backgroundColor: colors.primaryBg, borderRadius: BorderRadius.lg,
     padding: Spacing.xl, marginBottom: Spacing['2xl'],
   },
-  infoText: { flex: 1, fontSize: FontSize.sm, color: Colors.textBody, lineHeight: 18 },
-  label: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: Colors.textSecondary, marginBottom: Spacing.sm, marginTop: Spacing.lg },
-  optional: { fontWeight: FontWeight.normal, color: Colors.textMuted },
+  infoText: { flex: 1, fontSize: FontSize.sm, color: colors.textBody, lineHeight: 18 },
+  label: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: colors.textSecondary, marginBottom: Spacing.sm, marginTop: Spacing.lg },
+  optional: { fontWeight: FontWeight.normal, color: colors.textMuted },
   input: {
-    backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: colors.white, borderWidth: 1, borderColor: colors.border,
     borderRadius: BorderRadius.md, paddingHorizontal: Spacing.xl, paddingVertical: Spacing.lg,
-    fontSize: FontSize.base, color: Colors.textPrimary,
+    fontSize: FontSize.base, color: colors.textPrimary,
   },
   multiline: { minHeight: 76 },
   hintRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: Spacing.sm, paddingHorizontal: 2 },
-  hint: { flex: 1, fontSize: FontSize.xs, color: Colors.textMuted, lineHeight: 15 },
-  footer: { padding: Spacing.screenH, backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: Colors.borderLight },
-  saveBtn: { backgroundColor: Colors.primary, borderRadius: BorderRadius.button, paddingVertical: Spacing['3xl'], alignItems: 'center' },
-  saveBtnText: { color: Colors.white, fontSize: FontSize.lg, fontWeight: FontWeight.bold },
+  hint: { flex: 1, fontSize: FontSize.xs, color: colors.textMuted, lineHeight: 15 },
+  footer: { padding: Spacing.screenH, backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.borderLight },
+  saveBtn: { backgroundColor: colors.primary, borderRadius: BorderRadius.button, paddingVertical: Spacing['3xl'], alignItems: 'center' },
+  saveBtnText: { color: colors.white, fontSize: FontSize.lg, fontWeight: FontWeight.bold },
 });

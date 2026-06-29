@@ -1,13 +1,72 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, StyleSheet, Text, View, Platform, Pressable, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WifiOff, Wifi, RotateCw } from 'lucide-react-native';
 import { DeviceEventEmitter } from 'react-native';
 import { useNetworkStore, NETWORK_RECONNECTED } from '../store/networkStore';
 import { toast } from '../utils/toast';
-import { Colors, FontSize, FontWeight, Spacing } from '../theme';
+import { FontSize, FontWeight, Spacing } from '../theme';
+import { useTheme } from '../hooks/useTheme';
+import type { ColorsType } from '../theme';
+
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
+  container: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 9999,
+    paddingBottom: Spacing.md,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.15,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
+  },
+  content: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.md,
+  },
+  icon: {
+    marginRight: Spacing.sm,
+  },
+  text: {
+    color: colors.white,
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.semibold,
+  },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginLeft: Spacing.lg,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.5)',
+    minWidth: 56,
+    justifyContent: 'center',
+  },
+  retryText: {
+    color: colors.white,
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.bold,
+  },
+});
 
 export const NetworkBanner = () => {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
   const isConnected = useNetworkStore((s) => s.isConnected);
   const refresh = useNetworkStore((s) => s.refresh);
   const [retrying, setRetrying] = useState(false);
@@ -54,7 +113,7 @@ export const NetworkBanner = () => {
   if (status === 'hidden') return null;
 
   const isOffline = status === 'offline';
-  const backgroundColor = isOffline ? Colors.error : Colors.success;
+  const backgroundColor = isOffline ? colors.error : colors.success;
   const message = isOffline ? 'No internet connection' : 'Back online';
   const Icon = isOffline ? WifiOff : Wifi;
 
@@ -90,15 +149,15 @@ export const NetworkBanner = () => {
       ]}
     >
       <View style={styles.content}>
-        <Icon color={Colors.white} size={18} style={styles.icon} strokeWidth={2.5} />
+        <Icon color={colors.white} size={18} style={styles.icon} strokeWidth={2.5} />
         <Text style={styles.text}>{message}</Text>
         {isOffline && (
           <Pressable style={styles.retryBtn} onPress={onRetry} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             {retrying ? (
-              <ActivityIndicator size="small" color={Colors.white} />
+              <ActivityIndicator size="small" color={colors.white} />
             ) : (
               <>
-                <RotateCw color={Colors.white} size={13} strokeWidth={2.5} />
+                <RotateCw color={colors.white} size={13} strokeWidth={2.5} />
                 <Text style={styles.retryText}>Retry</Text>
               </>
             )}
@@ -108,58 +167,3 @@ export const NetworkBanner = () => {
     </Animated.View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 9999,
-    paddingBottom: Spacing.md,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.15,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 6,
-      },
-    }),
-  },
-  content: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: Spacing.md,
-  },
-  icon: {
-    marginRight: Spacing.sm,
-  },
-  text: {
-    color: Colors.white,
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.semibold,
-  },
-  retryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginLeft: Spacing.lg,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 3,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.5)',
-    minWidth: 56,
-    justifyContent: 'center',
-  },
-  retryText: {
-    color: Colors.white,
-    fontSize: FontSize.sm,
-    fontWeight: FontWeight.bold,
-  },
-});
-

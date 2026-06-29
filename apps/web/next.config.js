@@ -2,11 +2,11 @@
 const nextConfig = {
   reactStrictMode: true,
   images: {
-    unoptimized: true,
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: '**',
+        hostname: 'omdmdegcimuesqgyjhag.supabase.co',
+        pathname: '/storage/v1/object/**',
       },
     ],
   },

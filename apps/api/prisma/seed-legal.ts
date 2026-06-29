@@ -157,11 +157,16 @@ For spaces marked as "Open Frontage Area" or high-risk, additional caution is re
   {
     slug: 'platform-disclaimer',
     title: 'Platform Disclaimer',
-    version: '1.0.0',
+    version: '1.1.0',
     content: `# ParkSwift Platform Disclaimer
 
 ## Platform Role
 ParkSwift is a parking coordination platform. We facilitate connections between parking space owners and drivers (parkers). We do not own, operate, manage, or control any parking spaces listed on the platform.
+
+## Payments
+ParkSwift does not process, hold, collect, verify, or facilitate any payments. All payments are made directly between the parker and the space owner — by cash, UPI, or any other method the two parties agree on. Any UPI QR code shown in the app is generated solely as a convenience from the owner's own UPI ID; the money moves directly from the parker to the owner through their own banking or UPI apps and never passes through ParkSwift.
+
+ParkSwift has no record of, and cannot confirm, whether a payment has actually been made or received. Owners are solely responsible for verifying receipt of payment in their own UPI or banking app before completing a session. Any non-payment, overpayment, or payment dispute is a matter strictly between the parker and the space owner.
 
 ## Space Legality
 ParkSwift does not guarantee the legal validity of every parking space listed on the platform. While we conduct a document verification process, this is a good-faith review and does not constitute legal approval or municipal endorsement of any parking space.
@@ -170,7 +175,7 @@ ParkSwift does not guarantee the legal validity of every parking space listed on
 Any actions taken by local authorities, municipalities, traffic police, or other regulatory bodies — including fines, towing, notices, or penalties — remain the sole responsibility of the relevant user (space owner or parker). ParkSwift will not be liable for any such actions or their consequences.
 
 ## Disputes
-Users are responsible for resolving disputes arising from the use or misuse of the platform. ParkSwift may, at its sole discretion, assist in mediation but is not obligated to do so. All transactions and arrangements are directly between users.
+Users are responsible for resolving disputes arising from the use or misuse of the platform, including any payment disputes. ParkSwift may, at its sole discretion, assist in mediation or review reports submitted through the app, but is not obligated to do so. All transactions and arrangements are directly between users.
 
 ## Limitation of Liability
 To the fullest extent permitted by law, ParkSwift shall not be liable for any direct, indirect, incidental, special, or consequential damages arising from the use of the platform, including but not limited to parking violations, property damage, personal injury, or financial loss.`,

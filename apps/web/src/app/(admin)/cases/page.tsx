@@ -127,7 +127,7 @@ export default function CasesPage() {
   return (
     <div className="p-8">
       {/* Header */}
-      <div className="flex items-start justify-between mb-6">
+      <div className="sticky top-0 z-10 bg-gray-50 -mx-6 px-6 py-4 -mt-4 mb-2 flex items-center justify-between border-b border-gray-200">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="px-2 py-0.5 bg-amber-100 text-amber-800 text-[10px] font-bold uppercase tracking-wider rounded">Legal</span>

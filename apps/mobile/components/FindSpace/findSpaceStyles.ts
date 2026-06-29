@@ -1,20 +1,21 @@
 import { StyleSheet, Platform } from 'react-native';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import type { ColorsType } from '../../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
 import { TAB_BAR_TOTAL } from '../../constants/tabBar';
 
-export const styles = StyleSheet.create({
+export const makeFindSpaceStyles = (colors: ColorsType) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
   },
   // Matches the canonical PageHeader.backButton (36×36).
   iconButton: {
     width: 36,
     height: 36,
     borderRadius: BorderRadius.circle,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: colors.borderLight,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'visible',
@@ -28,7 +29,7 @@ export const styles = StyleSheet.create({
     position: 'absolute',
     top: -5,
     right: -5,
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     minWidth: 16,
     height: 16,
     borderRadius: 8,
@@ -36,10 +37,10 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,
-    borderColor: Colors.white,
+    borderColor: colors.white,
   },
   bellBadgeText: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: 9,
     fontWeight: FontWeight.boldAlias,
     lineHeight: 12,
@@ -58,13 +59,13 @@ export const styles = StyleSheet.create({
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: 28,                               // full pill — Google-Maps style
     paddingHorizontal: Spacing['2xl'],
     height: 52,
     gap: Spacing.md,
     borderWidth: 1,
-    borderColor: Colors.borderLighter,
+    borderColor: colors.borderLighter,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.12,
@@ -81,14 +82,14 @@ export const styles = StyleSheet.create({
     width: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: Colors.textMuted,
+    backgroundColor: colors.textMuted,
     alignItems: 'center',
     justifyContent: 'center',
   },
   searchInput: {
     flex: 1,
     fontSize: FontSize.lg,                           // 15 — slightly larger, readable
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     paddingVertical: 0,                             // kill default vertical padding
     letterSpacing: 0,                               // force normal spacing (no scatter)
     textAlign: 'left',
@@ -104,8 +105,8 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: Colors.white,
-    borderColor: Colors.borderMedium,
+    backgroundColor: colors.white,
+    borderColor: colors.borderMedium,
     borderWidth: 1,
     paddingHorizontal: Spacing.lg,
     paddingVertical: 5,
@@ -115,12 +116,12 @@ export const styles = StyleSheet.create({
   searchChipText: {
     fontSize: FontSize.sm,                          // 12 = sm ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textBody,
+    color: colors.textBody,
     flexShrink: 1,
   },
   radiusSelector: {
     flexDirection: 'row',
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: BorderRadius.circleXl,           // 20 = circleXl ✓
     padding: 3,
     gap: 2,
@@ -136,15 +137,15 @@ export const styles = StyleSheet.create({
     borderRadius: BorderRadius.lg,                 // 16 = lg ✓
   },
   radiusOptionActive: {
-    backgroundColor: Colors.textPrimary,
+    backgroundColor: colors.textPrimary,
   },
   radiusOptionText: {
     fontSize: FontSize.xs,                          // 11 = xs ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   radiusOptionTextActive: {
-    color: Colors.white,
+    color: colors.white,
   },
   // Right side of the search meta row: radius selector + filter button together.
   metaRight: {
@@ -156,7 +157,7 @@ export const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: BorderRadius.circleXl,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
@@ -166,7 +167,7 @@ export const styles = StyleSheet.create({
     elevation: 2,
   },
   filterBtnActive: {
-    backgroundColor: Colors.textPrimary,
+    backgroundColor: colors.textPrimary,
   },
   filterBadge: {
     position: 'absolute',
@@ -176,16 +177,16 @@ export const styles = StyleSheet.create({
     height: 16,
     borderRadius: 8,
     paddingHorizontal: 4,
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,
-    borderColor: Colors.white,
+    borderColor: colors.white,
   },
   filterBadgeText: {
     fontSize: FontSize.tiny,
     fontWeight: FontWeight.bold,
-    color: Colors.white,
+    color: colors.white,
   },
   // "Search this area" floating pill, centered below the search bar.
   searchAreaWrap: {
@@ -200,7 +201,7 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     paddingHorizontal: Spacing.xl,
     paddingVertical: 9,
     borderRadius: BorderRadius.circleXl,
@@ -213,15 +214,15 @@ export const styles = StyleSheet.create({
   searchAreaText: {
     fontSize: FontSize.sm,
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   suggestionsBox: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderBottomLeftRadius: 28,                     // match the top pill radius for symmetry
     borderBottomRightRadius: 28,
     borderWidth: 1,
     borderTopWidth: 0,
-    borderColor: Colors.borderLighter,
+    borderColor: colors.borderLighter,
     marginTop: 0,                                   // flush with squared search box
     maxHeight: 320,
     shadowColor: '#000',
@@ -233,7 +234,7 @@ export const styles = StyleSheet.create({
   },
   suggestionDivider: {
     height: 1,
-    backgroundColor: Colors.borderLighter,
+    backgroundColor: colors.borderLighter,
     marginLeft: 56,                                 // indent past the icon, like Google
   },
   suggestionItem: {
@@ -247,12 +248,12 @@ export const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: Colors.surfaceBg,
+    backgroundColor: colors.surfaceBg,
     alignItems: 'center',
     justifyContent: 'center',
   },
   suggestionIconParking: {
-    backgroundColor: Colors.primaryBg,
+    backgroundColor: colors.primaryBg,
   },
   suggestionContent: {
     flex: 1,
@@ -260,12 +261,12 @@ export const styles = StyleSheet.create({
   suggestionName: {
     fontSize: FontSize.md,                          // 14 = md ✓
     fontWeight: FontWeight.semibold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: 2,
   },
   suggestionMeta: {
     fontSize: FontSize.sm,                          // 12 = sm ✓
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   noSuggestions: {
     flexDirection: 'row',
@@ -277,7 +278,7 @@ export const styles = StyleSheet.create({
   },
   noSuggestionsText: {
     fontSize: FontSize.md,                          // 14 = md ✓
-    color: Colors.textMuted,
+    color: colors.textMuted,
     fontWeight: FontWeight.medium,
   },
   // Richer "no results" empty state — icon + title + recovery hint
@@ -291,19 +292,19 @@ export const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: BorderRadius.circle,
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.md,
   },
   emptyResultsTitle: {
     fontSize: FontSize.md,                           // 14 = md ✓
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     fontWeight: FontWeight.semibold,
   },
   emptyResultsHint: {
     fontSize: FontSize.sm,                           // 12 = sm ✓
-    color: Colors.textMuted,
+    color: colors.textMuted,
     fontWeight: FontWeight.medium,
     marginTop: 2,
     textAlign: 'center',
@@ -323,12 +324,12 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     paddingHorizontal: Spacing['2xl'],
     paddingVertical: Spacing.md,
     borderRadius: BorderRadius.circleXl,
     elevation: 4,
-    shadowColor: Colors.textPrimary,
+    shadowColor: colors.textPrimary,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
@@ -336,7 +337,7 @@ export const styles = StyleSheet.create({
   spacesLoadingText: {
     fontSize: FontSize.base,                        // 13 = base ✓
     fontWeight: FontWeight.semibold,
-    color: Colors.primary,
+    color: colors.primary,
   },
   floatingRight: {
     position: 'absolute',
@@ -348,7 +349,7 @@ export const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     alignItems: 'center',
     justifyContent: 'center',
     // Soft, rounded shadow. A tight shadowRadius (≈4) made iOS render the shadow
@@ -361,12 +362,12 @@ export const styles = StyleSheet.create({
     elevation: 4,
   },
   radiusButtonActive: {
-    borderColor: Colors.textPrimary,
-    backgroundColor: Colors.surfaceBg,
+    borderColor: colors.textPrimary,
+    backgroundColor: colors.surfaceBg,
     borderWidth: 2,
   },
   spaceCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     borderBottomLeftRadius: 20,
@@ -375,13 +376,13 @@ export const styles = StyleSheet.create({
     paddingHorizontal: Spacing['3xl'],
     paddingTop: Spacing.xl,
     paddingBottom: Spacing['3xl'],
-    shadowColor: Colors.textPrimary,
+    shadowColor: colors.textPrimary,
     shadowOffset: { width: 0, height: -6 },
     shadowOpacity: 0.10,
     shadowRadius: 18,
     elevation: 12,
     position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 84 : 64,
+    bottom: Platform.OS === 'ios' ? 91 : 80,
     left: 0,
     right: 0,
     zIndex: 15,
@@ -398,7 +399,7 @@ export const styles = StyleSheet.create({
     width: 38,
     height: 4,
     borderRadius: BorderRadius.dot,                 // 2 = dot ✓
-    backgroundColor: Colors.border,
+    backgroundColor: colors.border,
   },
   closeCardBtn: {
     position: 'absolute',
@@ -407,7 +408,7 @@ export const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: Colors.surfaceBg,
+    backgroundColor: colors.surfaceBg,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 20,
@@ -420,7 +421,7 @@ export const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 14,
-    backgroundColor: Colors.surfaceBg,
+    backgroundColor: colors.surfaceBg,
     overflow: 'hidden',
   },
   cardInfoCol: {
@@ -437,7 +438,7 @@ export const styles = StyleSheet.create({
   spaceName: {
     fontSize: FontSize.xl,                          // 16 = xl ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     letterSpacing: -0.3,
   },
   badgeRow: {
@@ -454,12 +455,12 @@ export const styles = StyleSheet.create({
   },
   verifiedText: {
     fontSize: FontSize.nano,                        // 10 = nano ✓
-    color: Colors.successAlt,
+    color: colors.successAlt,
     fontWeight: FontWeight.bold,
   },
   distanceAreaText: {
     fontSize: FontSize.base,                        // 13 = base ✓
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     fontWeight: FontWeight.medium,
   },
   ratingStar: {
@@ -471,7 +472,7 @@ export const styles = StyleSheet.create({
     fontWeight: FontWeight.bold,
   },
   reviewCount: {
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     fontWeight: FontWeight.normal,
   },
   ratingRow: {
@@ -481,16 +482,16 @@ export const styles = StyleSheet.create({
   },
   starText: {
     fontSize: FontSize.md,                          // 14 = md ✓
-    color: Colors.warningAlt,
+    color: colors.warningAlt,
   },
   ratingText: {
     fontSize: FontSize.base,                        // 13 = base ✓
     fontWeight: FontWeight.semibold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   reviewsText: {
     fontSize: FontSize.base,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     fontWeight: FontWeight.normal,
   },
   cardRightCol: {
@@ -511,11 +512,11 @@ export const styles = StyleSheet.create({
   priceText: {
     fontSize: FontSize['4xl'],                      // 24 = 4xl ✓
     fontWeight: FontWeight.extrabold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   priceUnit: {
     fontSize: FontSize.base,                        // 13 = base ✓
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     fontWeight: FontWeight.medium,
     marginLeft: 2,
   },
@@ -527,16 +528,16 @@ export const styles = StyleSheet.create({
     gap: Spacing.md,
   },
   amenityBadge: {
-    backgroundColor: Colors.primaryBg,
+    backgroundColor: colors.primaryBg,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.badge,               // 6 = badge ✓
     borderWidth: 1,
-    borderColor: Colors.primaryLight,
+    borderColor: colors.primaryLight,
   },
   amenityText: {
     fontSize: FontSize.xs,                          // 11 = xs ✓
-    color: Colors.primary,
+    color: colors.primary,
     fontWeight: FontWeight.bold,
   },
   filterSheet: {
@@ -544,7 +545,7 @@ export const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderTopLeftRadius: BorderRadius.circleXl,    // 20 = circleXl ✓
     borderTopRightRadius: BorderRadius.circleXl,
     paddingTop: Spacing['3xl'],
@@ -561,7 +562,7 @@ export const styles = StyleSheet.create({
     width: 40,
     height: 4,
     borderRadius: BorderRadius.dot,                 // 2 = dot ✓
-    backgroundColor: Colors.border,
+    backgroundColor: colors.border,
     alignSelf: 'center',
     marginBottom: Spacing.xl,
   },
@@ -576,7 +577,7 @@ export const styles = StyleSheet.create({
   filterTitle: {
     fontSize: FontSize.xl,                          // 16 = xl ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   filterOptions: {
     gap: Spacing.lg,
@@ -586,25 +587,25 @@ export const styles = StyleSheet.create({
     paddingVertical: Spacing.xl,
     borderRadius: BorderRadius.input,               // 10 = input ✓
     borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.screenBg,
+    borderColor: colors.border,
+    backgroundColor: colors.screenBg,
   },
   filterOptionActive: {
-    backgroundColor: Colors.primaryBg,
-    borderColor: Colors.primary,
+    backgroundColor: colors.primaryBg,
+    borderColor: colors.primary,
   },
   filterOptionText: {
     fontSize: FontSize.md,                          // 14 = md ✓
-    color: Colors.textBody,
+    color: colors.textBody,
     fontWeight: FontWeight.medium,
   },
   filterOptionTextActive: {
-    color: Colors.primary,
+    color: colors.primary,
     fontWeight: FontWeight.semibold,
   },
   applyBtn: {
     paddingVertical: Spacing.xl,
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     borderRadius: BorderRadius.input,               // 10 = input ✓
     alignItems: 'center',
     marginTop: Spacing.md,
@@ -612,16 +613,16 @@ export const styles = StyleSheet.create({
   applyBtnText: {
     fontSize: FontSize.lg,                          // 15 = lg ✓
     fontWeight: FontWeight.bold,
-    color: Colors.white,
+    color: colors.white,
   },
   bottomNav: {
     flexDirection: 'row',
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderTopWidth: 1,
-    borderTopColor: Colors.surfaceBg,
-    height: Platform.OS === 'ios' ? 76 : 58,
-    paddingBottom: Platform.OS === 'ios' ? Spacing.screenH : 0,
-    shadowColor: Colors.textPrimary,
+    borderTopColor: colors.surfaceBg,
+    height: Platform.OS === 'ios' ? 83 : 72,
+    paddingBottom: Platform.OS === 'ios' ? Spacing.screenH : Spacing.md,
+    shadowColor: colors.textPrimary,
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.03,
     shadowRadius: 8,
@@ -640,12 +641,12 @@ export const styles = StyleSheet.create({
   },
   navText: {
     fontSize: FontSize.nano,                        // 10 = nano ✓
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     fontWeight: FontWeight.semibold,
     letterSpacing: -0.1,
   },
   navTextActive: {
-    color: Colors.primary,
+    color: colors.primary,
     fontWeight: FontWeight.bold,
   },
   pricePill: {
@@ -663,16 +664,16 @@ export const styles = StyleSheet.create({
     borderColor: 'rgba(0,0,0,0.05)',
   },
   pillAvailable: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
   },
   pillBooked: {
-    backgroundColor: Colors.surfaceBg,
+    backgroundColor: colors.surfaceBg,
     opacity: 0.8,
   },
   pillSelected: {
-    backgroundColor: Colors.textPrimary,
+    backgroundColor: colors.textPrimary,
     transform: [{ scale: 1.1 }],
-    borderColor: Colors.textPrimary,
+    borderColor: colors.textPrimary,
   },
   pillText: {
     fontSize: FontSize.base,                        // 13 = base ✓
@@ -680,13 +681,13 @@ export const styles = StyleSheet.create({
     letterSpacing: -0.2,
   },
   pillTextAvailable: {
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   pillTextBooked: {
-    color: Colors.textMuted,
+    color: colors.textMuted,
   },
   pillTextSelected: {
-    color: Colors.white,
+    color: colors.white,
   },
   statusBadge: {
     paddingHorizontal: Spacing.sm,
@@ -715,20 +716,20 @@ export const styles = StyleSheet.create({
     bottom: TAB_BAR_TOTAL + Spacing.xl,
     left: Spacing['3xl'],
     width: 280,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: BorderRadius.lg,                  // 16 = lg ✓
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
-    shadowColor: Colors.textPrimary,
+    shadowColor: colors.textPrimary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 4,
     zIndex: 10,
     borderWidth: 1,
-    borderColor: Colors.surfaceBg,
+    borderColor: colors.surfaceBg,
   },
   legendItem: {
     flexDirection: 'row',
@@ -747,24 +748,24 @@ export const styles = StyleSheet.create({
   legendTitle: {
     fontSize: FontSize.xs,                          // 11 = xs ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   legendSubtitle: {
     fontSize: FontSize.micro,                       // 9 = micro ✓
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     marginTop: 1,
   },
   legendDivider: {
     width: 1,
     height: 24,
-    backgroundColor: Colors.surfaceBg,
+    backgroundColor: colors.surfaceBg,
     marginHorizontal: Spacing.md,
   },
   // Vehicles, Active Session, and History Styles
   headerTabTitle: {
     fontSize: FontSize['2xl'],                      // 18 = 2xl ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   addVehicleBtnHeader: {
     width: 38,
@@ -776,28 +777,30 @@ export const styles = StyleSheet.create({
   },
   tabContent: {
     flex: 1,
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
   },
   tabContentContainer: {
     padding: Spacing.screenH,
-    paddingBottom: Spacing['7xl'],
+    // Clear the absolute bottom nav (iOS 83 / Android 72) plus a small gap so the
+    // last list row is never hidden behind the bar.
+    paddingBottom: Platform.OS === 'ios' ? 100 : 90,
   },
   sectionHeading: {
     fontSize: FontSize.xl,                          // 16 = xl ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: Spacing.xl,
     marginTop: Spacing.md,
   },
   // Add Vehicle Form Card
   formCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: BorderRadius.lg,                  // 16 = lg ✓
     padding: Spacing.screenH,
     marginBottom: Spacing.screenH,
     borderWidth: 1,
-    borderColor: Colors.border,
-    shadowColor: Colors.textPrimary,
+    borderColor: colors.border,
+    shadowColor: colors.textPrimary,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 6,
@@ -806,25 +809,25 @@ export const styles = StyleSheet.create({
   formTitle: {
     fontSize: FontSize.xl,                          // 16 = xl ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: Spacing['3xl'],
   },
   inputLabel: {
     fontSize: FontSize.base,                        // 13 = base ✓
     fontWeight: FontWeight.semibold,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     marginBottom: Spacing.sm,
     marginTop: Spacing.xl,
   },
   formInput: {
     height: 48,
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     borderRadius: BorderRadius.input,               // 10 = input ✓
     paddingHorizontal: Spacing['3xl'],
     fontSize: FontSize.md,                          // 14 = md ✓
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: Spacing['3xl'],
   },
   typeSelectorRow: {
@@ -849,10 +852,10 @@ export const styles = StyleSheet.create({
     flex: 1,
     height: 80,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     borderStyle: 'dashed',
     borderRadius: BorderRadius.md,                  // 12 = md ✓
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.md,
@@ -860,24 +863,24 @@ export const styles = StyleSheet.create({
   fullWidthUploadBox: {
     height: 80,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     borderStyle: 'dashed',
     borderRadius: BorderRadius.md,                  // 12 = md ✓
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.md,
     marginBottom: Spacing['3xl'],
   },
   uploadBoxSuccess: {
-    borderColor: Colors.successAlt,
-    backgroundColor: Colors.successBgAlt,
+    borderColor: colors.successAlt,
+    backgroundColor: colors.successBgAlt,
     borderStyle: 'solid',
   },
   uploadBoxText: {
     fontSize: FontSize.sm,                          // 12 = sm ✓
     fontWeight: FontWeight.semibold,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   checkboxRow: {
     flexDirection: 'row',
@@ -888,7 +891,7 @@ export const styles = StyleSheet.create({
   },
   checkboxLabel: {
     fontSize: FontSize.md,                          // 14 = md ✓
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     fontWeight: FontWeight.medium,
     flex: 1,
   },
@@ -897,36 +900,36 @@ export const styles = StyleSheet.create({
     height: 22,
     borderRadius: BorderRadius.badge,               // 6 = badge ✓
     borderWidth: 2,
-    borderColor: Colors.borderMedium,
+    borderColor: colors.borderMedium,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
   },
   checkboxChecked: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   typeChip: {
     flex: 1,
     height: 38,
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     borderRadius: BorderRadius.circle,              // 19 = circle ✓
     alignItems: 'center',
     justifyContent: 'center',
   },
   typeChipActive: {
     backgroundColor: ExtendedColors.primaryTint1,
-    borderColor: Colors.primary,
+    borderColor: colors.primary,
   },
   typeChipText: {
     fontSize: FontSize.sm,                          // 12 = sm ✓
     fontWeight: FontWeight.semibold,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   typeChipTextActive: {
-    color: Colors.primary,
+    color: colors.primary,
   },
   formActionsRow: {
     flexDirection: 'row',
@@ -939,12 +942,12 @@ export const styles = StyleSheet.create({
     borderRadius: BorderRadius.input,               // 10 = input ✓
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.surfaceBg,
+    backgroundColor: colors.surfaceBg,
   },
   cancelFormBtnText: {
     fontSize: FontSize.md,                          // 14 = md ✓
     fontWeight: FontWeight.semibold,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   saveFormBtn: {
     flex: 1.5,
@@ -952,19 +955,19 @@ export const styles = StyleSheet.create({
     borderRadius: BorderRadius.input,               // 10 = input ✓
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
   },
   saveFormBtnText: {
     fontSize: FontSize.md,                          // 14 = md ✓
     fontWeight: FontWeight.semibold,
-    color: Colors.white,
+    color: colors.white,
   },
   // Empty states
   emptyStateContainer: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: BorderRadius.lg,                  // 16 = lg ✓
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     borderStyle: 'dashed',
     padding: 30,
     alignItems: 'center',
@@ -972,7 +975,7 @@ export const styles = StyleSheet.create({
   },
   emptyStateText: {
     fontSize: FontSize.md,                          // 14 = md ✓
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     marginTop: Spacing.xl,
     marginBottom: Spacing['3xl'],
   },
@@ -980,29 +983,29 @@ export const styles = StyleSheet.create({
     paddingHorizontal: Spacing.screenH,
     paddingVertical: Spacing.lg,
     borderRadius: BorderRadius.circleXl,           // 20 = circleXl ✓
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
   },
   emptyStateBtnText: {
     fontSize: FontSize.base,                        // 13 = base ✓
     fontWeight: FontWeight.bold,
-    color: Colors.white,
+    color: colors.white,
   },
   // Vehicle Card List
   vehicleCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: BorderRadius.button,              // 14 = button ✓
     padding: Spacing['3xl'],
     marginBottom: Spacing.xl,
     borderWidth: 1,
-    borderColor: Colors.border,
-    shadowColor: Colors.textPrimary,
+    borderColor: colors.border,
+    shadowColor: colors.textPrimary,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.02,
     shadowRadius: 4,
     elevation: 1,
   },
   vehicleCardActive: {
-    borderColor: Colors.primary,
+    borderColor: colors.primary,
     borderWidth: 1.5,
   },
   vehicleInfoRow: {
@@ -1013,7 +1016,7 @@ export const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: Colors.surfaceBg,
+    backgroundColor: colors.surfaceBg,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: Spacing['3xl'],
@@ -1032,28 +1035,28 @@ export const styles = StyleSheet.create({
   vehicleNameText: {
     fontSize: FontSize.lg,                          // 15 = lg ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   activeBadge: {
     paddingHorizontal: Spacing.sm,
     paddingVertical: 2,
     borderRadius: BorderRadius.xs,                  // 4 = xs ✓
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
   },
   activeBadgeText: {
     fontSize: FontSize.micro,                       // 9 = micro ✓
     fontWeight: FontWeight.extrabold,
-    color: Colors.white,
+    color: colors.white,
   },
   vehiclePlateText: {
     fontSize: FontSize.base,                        // 13 = base ✓
     fontWeight: FontWeight.semibold,
-    color: Colors.textBody,
+    color: colors.textBody,
     marginTop: 2,
   },
   vehicleTypeText: {
     fontSize: FontSize.xs,                          // 11 = xs ✓
-    color: Colors.textMuted,
+    color: colors.textMuted,
     marginTop: 2,
   },
   vehicleActions: {
@@ -1068,7 +1071,7 @@ export const styles = StyleSheet.create({
     marginLeft: Spacing.xs,
   },
   tipContainer: {
-    backgroundColor: Colors.surfaceBg,
+    backgroundColor: colors.surfaceBg,
     borderRadius: BorderRadius.md,                  // 12 = md ✓
     padding: Spacing['3xl'],
     marginTop: Spacing.screenH,
@@ -1076,18 +1079,18 @@ export const styles = StyleSheet.create({
   tipTitle: {
     fontSize: FontSize.base,                        // 13 = base ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textDark,
+    color: colors.textDark,
     marginBottom: Spacing.xs,
   },
   tipText: {
     fontSize: FontSize.sm,                          // 12 = sm ✓
-    color: Colors.textBody,
+    color: colors.textBody,
     lineHeight: 18,
   },
   // Empty tab view state
   emptyTabContent: {
     flex: 1,
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 30,
@@ -1095,13 +1098,13 @@ export const styles = StyleSheet.create({
   emptyStateHeading: {
     fontSize: FontSize['2xl'],                      // 18 = 2xl ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginTop: Spacing['3xl'],
     marginBottom: Spacing.md,
   },
   emptyStateSubtext: {
     fontSize: FontSize.md,                          // 14 = md ✓
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
     marginBottom: Spacing['4xl'],
@@ -1110,12 +1113,12 @@ export const styles = StyleSheet.create({
     paddingHorizontal: Spacing['4xl'],
     paddingVertical: Spacing.xl,
     borderRadius: 24,
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
   },
   exploreBtnText: {
     fontSize: FontSize.md,                          // 14 = md ✓
     fontWeight: FontWeight.bold,
-    color: Colors.white,
+    color: colors.white,
   },
   // Active session status banners
   statusAlertBanner: {
@@ -1145,30 +1148,30 @@ export const styles = StyleSheet.create({
   },
   // OTP entry widget
   otpCardContainer: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: BorderRadius.lg,                  // 16 = lg ✓
     padding: Spacing.screenH,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     marginBottom: Spacing['3xl'],
   },
   otpCardTitle: {
     fontSize: FontSize.md,                          // 14 = md ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     marginBottom: Spacing.md,
   },
   otpCodeValue: {
     fontSize: FontSize['9xl'],                      // 36 = 9xl ✓
     fontWeight: FontWeight.extrabold,
-    color: Colors.primary,
+    color: colors.primary,
     letterSpacing: 8,
     marginVertical: Spacing.xl,
   },
   otpInstructionText: {
     fontSize: FontSize.sm,                          // 12 = sm ✓
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 18,
     marginBottom: Spacing['3xl'],
@@ -1178,13 +1181,13 @@ export const styles = StyleSheet.create({
     marginTop: Spacing.md,
   },
   otpVerifyBtn: {
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     borderRadius: BorderRadius.md,                  // 12 = md ✓
     alignItems: 'center',
     justifyContent: 'center',
     height: 50,
     width: '100%',
-    shadowColor: Colors.primary,
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
@@ -1193,11 +1196,11 @@ export const styles = StyleSheet.create({
   otpVerifyBtnText: {
     fontSize: FontSize.lg,                          // 15 = lg ✓
     fontWeight: FontWeight.bold,
-    color: Colors.white,
+    color: colors.white,
   },
   // Active Timer Card
   timerCard: {
-    backgroundColor: Colors.textPrimary,
+    backgroundColor: colors.textPrimary,
     borderRadius: BorderRadius.lg,                  // 16 = lg ✓
     padding: Spacing['4xl'],
     alignItems: 'center',
@@ -1206,27 +1209,27 @@ export const styles = StyleSheet.create({
   timerLabel: {
     fontSize: FontSize.sm,                          // 12 = sm ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textMuted,
+    color: colors.textMuted,
     letterSpacing: 1,
   },
   timerCountdown: {
     fontSize: FontSize['10xl'],                     // 38 = 10xl ✓
     fontWeight: FontWeight.extrabold,
-    color: Colors.white,
+    color: colors.white,
     fontVariant: ['tabular-nums'],
     marginVertical: Spacing.xl,
   },
   timerProgressBg: {
     width: '100%',
     height: 6,
-    backgroundColor: Colors.textDark,
+    backgroundColor: colors.textDark,
     borderRadius: BorderRadius.indicator,           // 3 = indicator ✓
     overflow: 'hidden',
     marginBottom: Spacing['2xl'],
   },
   timerProgressFill: {
     height: '100%',
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
   },
   timerMetadataRow: {
     flexDirection: 'row',
@@ -1235,38 +1238,38 @@ export const styles = StyleSheet.create({
   },
   timerMetaText: {
     fontSize: FontSize.sm,                          // 12 = sm ✓
-    color: Colors.textMuted,
+    color: colors.textMuted,
   },
   // Detail card
   detailCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: BorderRadius.lg,                  // 16 = lg ✓
     padding: 18,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     marginBottom: Spacing['3xl'],
   },
   detailSectionTitle: {
     fontSize: FontSize.base,                        // 13 = base ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     letterSpacing: 0,
     marginBottom: Spacing.lg,
   },
   detailSpaceName: {
     fontSize: FontSize.lg,                          // 15 = lg ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: Spacing.xs,
   },
   detailAddress: {
     fontSize: FontSize.base,                        // 13 = base ✓
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     lineHeight: 18,
   },
   detailSeparator: {
     height: 1,
-    backgroundColor: Colors.surfaceBg,
+    backgroundColor: colors.surfaceBg,
     marginVertical: Spacing['2xl'],
   },
   metaInfoGrid: {
@@ -1279,26 +1282,26 @@ export const styles = StyleSheet.create({
   metaItemLabel: {
     fontSize: FontSize.xs,                          // 11 = xs ✓
     fontWeight: FontWeight.semibold,
-    color: Colors.textMuted,
+    color: colors.textMuted,
     marginBottom: Spacing.xs,
   },
   metaItemValue: {
     fontSize: FontSize.base,                        // 13 = base ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textDark,
+    color: colors.textDark,
   },
   metaItemSub: {
     fontSize: FontSize.xs,                          // 11 = xs ✓
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     marginTop: 1,
   },
   // Owner profile card
   ownerCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: BorderRadius.lg,                  // 16 = lg ✓
     padding: 18,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     marginBottom: Spacing['3xl'],
   },
   ownerRow: {
@@ -1317,11 +1320,11 @@ export const styles = StyleSheet.create({
   ownerNameText: {
     fontSize: FontSize.md,                          // 14 = md ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   ownerRatingText: {
     fontSize: FontSize.sm,                          // 12 = sm ✓
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     marginTop: 2,
   },
   ownerActions: {
@@ -1332,9 +1335,9 @@ export const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1348,7 +1351,7 @@ export const styles = StyleSheet.create({
     flex: 1,
     height: 48,
     borderRadius: BorderRadius.md,                  // 12 = md ✓
-    backgroundColor: Colors.textPrimary,
+    backgroundColor: colors.textPrimary,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1357,13 +1360,13 @@ export const styles = StyleSheet.create({
   navigationBtnText: {
     fontSize: FontSize.md,                          // 14 = md ✓
     fontWeight: FontWeight.bold,
-    color: Colors.white,
+    color: colors.white,
   },
   leaveSessionBtn: {
     flex: 1,
     height: 48,
     borderRadius: BorderRadius.md,                  // 12 = md ✓
-    backgroundColor: Colors.errorAlt,
+    backgroundColor: colors.errorAlt,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1372,15 +1375,15 @@ export const styles = StyleSheet.create({
   leaveSessionBtnText: {
     fontSize: FontSize.md,                          // 14 = md ✓
     fontWeight: FontWeight.bold,
-    color: Colors.white,
+    color: colors.white,
   },
   // History logs styles
   historyCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: BorderRadius.lg,                  // 16 = lg ✓
     padding: Spacing['3xl'],
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     marginBottom: Spacing.xl,
   },
   historyHeader: {
@@ -1398,12 +1401,12 @@ export const styles = StyleSheet.create({
   historySpaceName: {
     fontSize: FontSize.lg,                          // 15 = lg ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: 2,
   },
   historyAddress: {
     fontSize: FontSize.sm,                          // 12 = sm ✓
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   historyStatusBadge: {
     paddingHorizontal: Spacing.md,
@@ -1430,7 +1433,7 @@ export const styles = StyleSheet.create({
   },
   historyDivider: {
     height: 1,
-    backgroundColor: Colors.surfaceBg,
+    backgroundColor: colors.surfaceBg,
     marginVertical: Spacing.xl,
   },
   historyDetailsGrid: {
@@ -1443,13 +1446,13 @@ export const styles = StyleSheet.create({
   historyDetailLabel: {
     fontSize: FontSize.xs,                          // 11 = xs ✓
     fontWeight: FontWeight.semibold,
-    color: Colors.textMuted,
+    color: colors.textMuted,
     marginBottom: 2,
   },
   historyDetailValue: {
     fontSize: FontSize.sm,                          // 12 = sm ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textBody,
+    color: colors.textBody,
   },
   historyFooter: {
     flexDirection: 'row',
@@ -1458,11 +1461,11 @@ export const styles = StyleSheet.create({
     marginTop: Spacing.xl,
     paddingTop: Spacing.xl,
     borderTopWidth: 1,
-    borderTopColor: Colors.surfaceBg,
+    borderTopColor: colors.surfaceBg,
   },
   historyFooterLabel: {
     fontSize: FontSize.xs,                          // 11 = xs ✓
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   historyStars: {
     flexDirection: 'row',
@@ -1475,11 +1478,11 @@ export const styles = StyleSheet.create({
     color: ExtendedColors.starDark,
   },
   starCharEmpty: {
-    color: Colors.border,
+    color: colors.border,
   },
   editModalContainer: {
     flex: 1,
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
   },
   editModalHeader: {
     flexDirection: 'row',
@@ -1487,14 +1490,14 @@ export const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: Spacing['3xl'],
     paddingVertical: Spacing.xl,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: colors.border,
   },
   editModalTitle: {
     fontSize: FontSize['2xl'],                      // 18 = 2xl ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   editModalContent: {
     flex: 1,
@@ -1504,19 +1507,19 @@ export const styles = StyleSheet.create({
   editFieldLabel: {
     fontSize: FontSize.md,                          // 14 = md ✓
     fontWeight: FontWeight.semibold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: Spacing.md,
     marginTop: Spacing.xl,
   },
   editTextInput: {
     borderWidth: 1.5,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     borderRadius: BorderRadius.sm,                  // 8 = sm ✓
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.lg,
     fontSize: FontSize.md,                          // 14 = md ✓
-    color: Colors.textPrimary,
-    backgroundColor: Colors.white,
+    color: colors.textPrimary,
+    backgroundColor: colors.white,
   },
   editTypeContainer: {
     flexDirection: 'row',
@@ -1528,21 +1531,21 @@ export const styles = StyleSheet.create({
     paddingVertical: Spacing.lg,
     borderRadius: BorderRadius.sm,                  // 8 = sm ✓
     borderWidth: 1.5,
-    borderColor: Colors.border,
-    backgroundColor: Colors.white,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
     alignItems: 'center',
   },
   editTypeBtnActive: {
-    borderColor: Colors.primary,
-    backgroundColor: Colors.primaryBg,
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryBg,
   },
   editTypeText: {
     fontSize: FontSize.base,                        // 13 = base ✓
     fontWeight: FontWeight.semibold,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   editTypeTextActive: {
-    color: Colors.primary,
+    color: colors.primary,
   },
   editCapacityContainer: {
     flexDirection: 'row',
@@ -1555,52 +1558,52 @@ export const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     borderRadius: BorderRadius.sm,                  // 8 = sm ✓
     borderWidth: 1.5,
-    borderColor: Colors.border,
-    backgroundColor: Colors.white,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
   },
   editCapacityBtnActive: {
-    borderColor: Colors.primary,
-    backgroundColor: Colors.primaryBg,
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryBg,
   },
   editCapacityText: {
     fontSize: FontSize.sm,                          // 12 = sm ✓
     fontWeight: FontWeight.semibold,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   editCapacityTextActive: {
-    color: Colors.primary,
+    color: colors.primary,
   },
   editModalFooter: {
     flexDirection: 'row',
     gap: Spacing.xl,
     paddingHorizontal: Spacing['3xl'],
     paddingVertical: Spacing.xl,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
+    borderTopColor: colors.border,
   },
   editCancelBtn: {
     flex: 1,
     borderWidth: 1.5,
-    borderColor: Colors.primary,
+    borderColor: colors.primary,
     borderRadius: BorderRadius.sm,                  // 8 = sm ✓
     paddingVertical: Spacing.lg,
     alignItems: 'center',
   },
   editCancelBtnText: {
-    color: Colors.primary,
+    color: colors.primary,
     fontSize: FontSize.md,                          // 14 = md ✓
     fontWeight: FontWeight.bold,
   },
   editUpdateBtn: {
     flex: 1,
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     borderRadius: BorderRadius.sm,                  // 8 = sm ✓
     paddingVertical: Spacing.lg,
     alignItems: 'center',
   },
   editUpdateBtnText: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: FontSize.md,                          // 14 = md ✓
     fontWeight: FontWeight.bold,
   },

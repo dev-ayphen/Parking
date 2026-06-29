@@ -1,19 +1,116 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import {View,
   Text,
   StyleSheet,
   StatusBar,
   TouchableOpacity,
-  Animated,
-  Dimensions} from 'react-native';
+  Animated} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { CheckCircle } from 'lucide-react-native';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import type { ColorsType } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 
-const { height } = Dimensions.get('window');
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.white,
+  },
+  content: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.screenH,
+    paddingVertical: Spacing['7xl'],
+  },
+  checkContainer: {
+    marginBottom: Spacing['4xl'],
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: FontSize['4xl'],                      // 24 = 4xl ✓
+    fontWeight: FontWeight.extrabold,
+    color: colors.textPrimary,
+    marginBottom: Spacing.md,
+    textAlign: 'center',
+  },
+  subtitle: {
+    fontSize: FontSize.md,                          // 14 = md ✓
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: Spacing['4xl'],
+    lineHeight: 20,
+  },
+  detailsCard: {
+    width: '100%',
+    backgroundColor: colors.screenBg,
+    borderRadius: BorderRadius.md,                  // 12 = md ✓
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: Spacing['3xl'],
+    paddingVertical: Spacing.xl,
+    marginBottom: Spacing.screenH,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+  },
+  label: {
+    fontSize: FontSize.base,                        // 13 = base ✓
+    color: colors.textSecondary,
+    fontWeight: FontWeight.medium,
+  },
+  value: {
+    fontSize: FontSize.base,                        // 13 = base ✓
+    fontWeight: FontWeight.bold,
+    color: colors.textPrimary,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: colors.border,
+  },
+  infoBox: {
+    width: '100%',
+    backgroundColor: colors.warningBgAlt,
+    borderRadius: BorderRadius.md,                  // 12 = md ✓
+    borderLeftWidth: 4,
+    borderLeftColor: colors.warning,
+    paddingHorizontal: Spacing['2xl'],
+    paddingVertical: Spacing.xl,
+    marginBottom: Spacing['4xl'],
+  },
+  infoText: {
+    fontSize: FontSize.base,                        // 13 = base ✓
+    fontWeight: FontWeight.semibold,
+    color: ExtendedColors.warningAmber,             // '#92400E' ✓
+    marginBottom: Spacing.xs,
+  },
+  infoSubtext: {
+    fontSize: FontSize.sm,                          // 12 = sm ✓
+    color: ExtendedColors.warningText,              // '#B45309' ✓
+    fontWeight: FontWeight.normal,
+  },
+  button: {
+    width: '100%',
+    backgroundColor: colors.primary,
+    paddingVertical: Spacing['2xl'],
+    borderRadius: BorderRadius.md,                  // 12 = md ✓
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonText: {
+    fontSize: FontSize.lg,                          // 15 = lg ✓
+    fontWeight: FontWeight.bold,
+    color: colors.white,
+  },
+});
 
 export default function BookingSuccessScreen() {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const router = useRouter();
   const params = useLocalSearchParams();
   const bookingId = params.bookingId as string;
@@ -53,7 +150,7 @@ export default function BookingSuccessScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
       <View style={styles.content}>
         <Animated.View
@@ -65,7 +162,7 @@ export default function BookingSuccessScreen() {
             },
           ]}
         >
-          <CheckCircle size={80} color={Colors.success} strokeWidth={1.5} />
+          <CheckCircle size={80} color={colors.success} strokeWidth={1.5} />
         </Animated.View>
 
         <Text style={styles.title}>Booking Request Sent</Text>
@@ -109,99 +206,3 @@ export default function BookingSuccessScreen() {
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.white,
-  },
-  content: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.screenH,
-    paddingVertical: Spacing['7xl'],
-  },
-  checkContainer: {
-    marginBottom: Spacing['4xl'],
-    alignItems: 'center',
-  },
-  title: {
-    fontSize: FontSize['4xl'],                      // 24 = 4xl ✓
-    fontWeight: FontWeight.extrabold,
-    color: Colors.textPrimary,
-    marginBottom: Spacing.md,
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: FontSize.md,                          // 14 = md ✓
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: Spacing['4xl'],
-    lineHeight: 20,
-  },
-  detailsCard: {
-    width: '100%',
-    backgroundColor: Colors.screenBg,
-    borderRadius: BorderRadius.md,                  // 12 = md ✓
-    borderWidth: 1,
-    borderColor: Colors.border,
-    paddingHorizontal: Spacing['3xl'],
-    paddingVertical: Spacing.xl,
-    marginBottom: Spacing.screenH,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: Spacing.md,
-  },
-  label: {
-    fontSize: FontSize.base,                        // 13 = base ✓
-    color: Colors.textSecondary,
-    fontWeight: FontWeight.medium,
-  },
-  value: {
-    fontSize: FontSize.base,                        // 13 = base ✓
-    fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.border,
-  },
-  infoBox: {
-    width: '100%',
-    backgroundColor: Colors.warningBgAlt,
-    borderRadius: BorderRadius.md,                  // 12 = md ✓
-    borderLeftWidth: 4,
-    borderLeftColor: Colors.warning,
-    paddingHorizontal: Spacing['2xl'],
-    paddingVertical: Spacing.xl,
-    marginBottom: Spacing['4xl'],
-  },
-  infoText: {
-    fontSize: FontSize.base,                        // 13 = base ✓
-    fontWeight: FontWeight.semibold,
-    color: ExtendedColors.warningAmber,             // '#92400E' ✓
-    marginBottom: Spacing.xs,
-  },
-  infoSubtext: {
-    fontSize: FontSize.sm,                          // 12 = sm ✓
-    color: ExtendedColors.warningText,              // '#B45309' ✓
-    fontWeight: FontWeight.normal,
-  },
-  button: {
-    width: '100%',
-    backgroundColor: Colors.primary,
-    paddingVertical: Spacing['2xl'],
-    borderRadius: BorderRadius.md,                  // 12 = md ✓
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonText: {
-    fontSize: FontSize.lg,                          // 15 = lg ✓
-    fontWeight: FontWeight.bold,
-    color: Colors.white,
-  },
-});

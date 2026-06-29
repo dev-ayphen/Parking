@@ -9,9 +9,14 @@ import {View,
   StatusBar,
   ActivityIndicator,
   DeviceEventEmitter,
+  TextInput,
+  Pressable,
+  KeyboardAvoidingView,
+  Platform,
   Alert} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MapPin, Clock, Car, LogOut } from 'lucide-react-native';
+import { MapPin, Clock, Car, LogOut, Info, QrCode, X } from 'lucide-react-native';
+import QRCode from 'react-native-qrcode-svg';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { PageHeader } from '../../components';
 import { api } from '../../services/api';
@@ -33,7 +38,12 @@ interface LiveSession {
   progressPercent: number;
   isLeaving?: boolean;
   leftAt?: string | null;
-  markedPaid?: boolean;
+  currentCharge?: number;
+  minimumCharge?: number;
+  elapsedLabel?: string;
+  paymentStatus?: 'WAITING' | 'PAID';
+  ownerUpiId?: string | null;
+  ownerName?: string;
 }
 
 export default function ActiveSessionsScreen() {
@@ -48,6 +58,36 @@ export default function ActiveSessionsScreen() {
   const [sessions, setSessions] = useState<LiveSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Add-UPI modal — lets the owner add their UPI ID inline (the same one used in
+  // their profile / Manage Billing). Saving hits PUT /users/me/billing, which only
+  // updates upiId when sent alone, so the profile stays in sync automatically.
+  const [upiModalVisible, setUpiModalVisible] = useState(false);
+  const [upiInput, setUpiInput] = useState('');
+  const [upiError, setUpiError] = useState('');
+  const [upiSaving, setUpiSaving] = useState(false);
+
+  const handleSaveUpi = async () => {
+    const trimmed = upiInput.trim().toLowerCase();
+    if (!trimmed) { setUpiError('Please enter your UPI ID'); return; }
+    if (!/^[a-z0-9.\-_]{2,256}@[a-z]{2,64}$/.test(trimmed)) {
+      setUpiError('Invalid UPI ID format (e.g. name@okhdfcbank)');
+      return;
+    }
+    setUpiSaving(true);
+    try {
+      await api.put('/users/me/billing', { upiId: trimmed });
+      setUpiModalVisible(false);
+      setUpiInput('');
+      setUpiError('');
+      // Refresh so the live-sessions response now includes the new UPI → QR shows.
+      await fetchSessions('silent');
+    } catch (err: any) {
+      setUpiError(err?.message || 'Could not save UPI ID');
+    } finally {
+      setUpiSaving(false);
+    }
+  };
 
   // `mode`:
   //   'initial' → full-screen spinner (first load only)
@@ -89,7 +129,7 @@ export default function ActiveSessionsScreen() {
 
   // Live refresh on session lifecycle events
   useEffect(() => {
-    const events = ['session:started', 'session:completed', 'parker:leaving', 'booking:cancelled', 'booking:paid-marked', 'notification:new', NETWORK_RECONNECTED];
+    const events = ['session:started', 'session:completed', 'parker:leaving', 'booking:cancelled', 'booking:payment-received', 'notification:new', NETWORK_RECONNECTED];
     const subs = events.map((evt) => DeviceEventEmitter.addListener(evt, () => fetchSessions('silent')));
     return () => subs.forEach((s) => s.remove());
   }, [fetchSessions]);
@@ -146,7 +186,7 @@ export default function ActiveSessionsScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <PageHeader title="Live Sessions"  onBack={() => router.replace('/(my-spaces)')} />
 
       <ScrollView
@@ -163,17 +203,69 @@ export default function ActiveSessionsScreen() {
             <Text style={styles.emptyDesc}>When a parker starts a session, it will appear here in real time.</Text>
           </View>
         ) : (
-          sessions.map((session) => (
+          <>
+            {/* ── Shared payment QR ──────────────────────────────────────────
+                The owner's UPI QR is the SAME for every session (one UPI ID, no
+                amount encoded), so we show it ONCE at the top instead of repeating
+                it inside each session card. Each card below shows its own amount;
+                the parker enters that amount in their UPI app. */}
+            {(() => {
+              const upi = sessions[0]?.ownerUpiId || null;
+              const name = sessions[0]?.ownerName || 'ParkSwift Owner';
+              return (
+                <View style={styles.qrCard}>
+                  <Text style={styles.qrCardTitle}>Your Payment QR</Text>
+                  {upi ? (
+                    <>
+                      <Text style={styles.qrCardSub}>Show this to the parker to collect payment — they scan and pay you directly.</Text>
+                      <View style={styles.qrWrap}>
+                        <QRCode
+                          value={`upi://pay?pa=${upi}&pn=${name.replace(/[^a-zA-Z0-9\s\-._]/g, '').substring(0, 60)}&cu=INR&tn=Parking fee`}
+                          size={170}
+                          backgroundColor="#fff"
+                        />
+                      </View>
+                      <View style={styles.upiPill}>
+                        <Text style={styles.upiPillText}>{upi}</Text>
+                      </View>
+                    </>
+                  ) : (
+                    <>
+                      <View style={styles.noUpiRow}>
+                        <Info size={14} color={C.textMuted} style={{ marginRight: 6, marginTop: 1 }} />
+                        <Text style={styles.noUpiText}>
+                          Add your UPI ID to show a scan-to-pay QR here. For now, collect cash.
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.addUpiBtn}
+                        onPress={() => { setUpiInput(''); setUpiError(''); setUpiModalVisible(true); }}
+                        activeOpacity={0.85}
+                      >
+                        <QrCode size={16} color={C.primary} strokeWidth={2.2} style={{ marginRight: 6 }} />
+                        <Text style={styles.addUpiBtnText}>Add UPI ID</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+                  <View style={styles.disclaimerRow}>
+                    <Info size={12} color={C.textMuted} style={{ marginRight: 6, marginTop: 1 }} />
+                    <Text style={styles.disclaimerText}>
+                      Payment goes directly to you — ParkSwift does not process, hold, or verify money.
+                    </Text>
+                  </View>
+                </View>
+              );
+            })()}
+
+            {sessions.length > 1 && (
+              <Text style={styles.sessionCount}>{sessions.length} active sessions</Text>
+            )}
+
+            {sessions.map((session) => (
             <View key={session.id} style={styles.card}>
               <View style={styles.cardHeader}>
                 <View style={styles.headerDot} />
                 <Text style={styles.headerText}>ACTIVE PARKING SESSION</Text>
-                {/* Parker tapped "I've paid" — confirm receipt in your own UPI app. */}
-                {session.markedPaid && (
-                  <View style={styles.paidBadge}>
-                    <Text style={styles.paidBadgeText}>✓ PARKER MARKED PAID</Text>
-                  </View>
-                )}
               </View>
 
               <View style={styles.detailsGrid}>
@@ -232,9 +324,49 @@ export default function ActiveSessionsScreen() {
                 <Text style={styles.releaseBtnText}>{session.isLeaving ? 'Confirm Exit' : 'Complete Session'}</Text>
               </TouchableOpacity>
             </View>
-          ))
+            ))}
+          </>
         )}
       </ScrollView>
+
+      {/* Add UPI ID modal — saves to the owner's profile (PUT /users/me/billing).
+          The same UPI ID set here shows in Profile / Manage Billing too. */}
+      <Modal visible={upiModalVisible} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setUpiModalVisible(false)}>
+        <Pressable style={styles.upiModalOverlay} onPress={() => setUpiModalVisible(false)}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+            <Pressable style={styles.upiModalCard} onPress={() => {}}>
+              <View style={styles.upiModalHeader}>
+                <Text style={styles.upiModalTitle}>Add your UPI ID</Text>
+                <TouchableOpacity onPress={() => setUpiModalVisible(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <X size={20} color={C.textSecondary} strokeWidth={2} />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.upiModalHint}>
+                Parkers scan a QR built from this to pay you directly. Saved to your profile too — ParkSwift never holds the money.
+              </Text>
+              <TextInput
+                style={[styles.upiModalInput, !!upiError && styles.upiModalInputError]}
+                placeholder="name@okhdfcbank"
+                placeholderTextColor={C.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+                value={upiInput}
+                onChangeText={(v) => { setUpiInput(v); setUpiError(''); }}
+              />
+              {!!upiError && <Text style={styles.upiModalErrorText}>{upiError}</Text>}
+              <TouchableOpacity
+                style={[styles.upiModalBtn, (!upiInput.trim() || upiSaving) && styles.upiModalBtnDisabled]}
+                onPress={handleSaveUpi}
+                disabled={!upiInput.trim() || upiSaving}
+                activeOpacity={0.85}
+              >
+                {upiSaving ? <ActivityIndicator color={C.white} size="small" /> : <Text style={styles.upiModalBtnText}>Save UPI ID</Text>}
+              </TouchableOpacity>
+            </Pressable>
+          </KeyboardAvoidingView>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -269,6 +401,47 @@ const makeStyles = ({ colors: C }: AppTheme) => StyleSheet.create({
   detailValue: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: C.textPrimary },  // 14 = md ✓
   locationRow: { flexDirection: 'row', alignItems: 'center' },
   divider: { height: 1, backgroundColor: C.surfaceBg, marginVertical: Spacing.screenH },
+  // Collect-payment block — owner's pay-QR (or cash note) + disclaimer.
+  // Shared QR header (one per owner, above all session cards).
+  qrCard: {
+    backgroundColor: C.white, borderRadius: BorderRadius.lg, padding: Spacing.screenH,
+    marginBottom: Spacing['3xl'], alignItems: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
+    borderWidth: 1, borderColor: C.borderLight,
+  },
+  qrCardTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.extrabold, color: C.textPrimary, marginBottom: Spacing.xs },
+  qrCardSub: { fontSize: FontSize.sm, color: C.textSecondary, textAlign: 'center', marginBottom: Spacing.screenH, lineHeight: 18 },
+  sessionCount: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: C.textSecondary, marginBottom: Spacing.md, marginLeft: Spacing.xs },
+
+  qrWrap: { padding: Spacing.xl, backgroundColor: C.white, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: C.borderLight, marginBottom: Spacing.md },
+  upiPill: { backgroundColor: C.screenBg, borderRadius: BorderRadius.circleXl, paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm },
+  upiPillText: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: C.textBody },
+  noUpiRow: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: Spacing.md },
+  noUpiText: { flex: 1, fontSize: FontSize.sm, color: C.textSecondary, lineHeight: 18 },
+  addUpiBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    marginTop: Spacing.md, paddingVertical: Spacing.md, paddingHorizontal: Spacing.xl,
+    borderRadius: BorderRadius.md, borderWidth: 1.5, borderColor: C.primary, backgroundColor: C.white,
+  },
+  addUpiBtnText: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: C.primary },
+  // Add-UPI modal (prefixed `upiModal*` to avoid clashing with the existing modal styles)
+  upiModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: Spacing['3xl'] },
+  upiModalCard: { backgroundColor: C.white, borderRadius: BorderRadius.xl, padding: Spacing['3xl'] },
+  upiModalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.md },
+  upiModalTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: C.textPrimary, flex: 1 },
+  upiModalHint: { fontSize: FontSize.sm, color: C.textSecondary, marginBottom: Spacing.lg, lineHeight: 18 },
+  upiModalInput: {
+    borderWidth: 1, borderColor: C.borderLight, borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, fontSize: FontSize.md,
+    color: C.textPrimary, backgroundColor: C.screenBg,
+  },
+  upiModalInputError: { borderColor: C.error },
+  upiModalErrorText: { fontSize: FontSize.xs, color: C.error, marginTop: Spacing.xs },
+  upiModalBtn: { backgroundColor: C.primary, paddingVertical: Spacing.lg, borderRadius: BorderRadius.md, alignItems: 'center', marginTop: Spacing.lg },
+  upiModalBtnDisabled: { opacity: 0.5 },
+  upiModalBtnText: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: C.white },
+  disclaimerRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: Spacing.md, paddingHorizontal: Spacing.md },
+  disclaimerText: { flex: 1, fontSize: FontSize.xs, color: C.textMuted, lineHeight: 15, textAlign: 'center' },
   statusRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   timeLabel: { fontSize: FontSize.xs, color: C.textMuted, marginBottom: Spacing.micro },  // 11 = xs ✓
   timeValue: { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: C.textPrimary },  // 16 = xl ✓

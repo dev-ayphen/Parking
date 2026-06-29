@@ -13,17 +13,13 @@ import { useAuthStore } from '@/store/authStore';
 import { SOCKET_URL } from '@/lib/config';
 import type { AdminTransactionListItem } from '@/types/api';
 import { ExportRangeModal } from '@/components/ExportRangeModal';
+import { Badge } from '@/components/ui/Badge';
+import { PAYMENT_STATUS_STYLES } from '@/lib/statusStyles';
 
 const errMsg = (e: any, fallback: string) =>
   e?.response?.data?.error || e?.message || fallback;
 
 const TYPE_FILTERS = ['All Transactions', 'User Payments', 'Owner Earnings', 'Refunds'];
-
-const STATUS_STYLE: Record<string, string> = {
-  SUCCESS: 'bg-emerald-50 text-emerald-700',
-  PENDING: 'bg-amber-50 text-amber-700',
-  FAILED: 'bg-rose-50 text-rose-700',
-};
 
 interface Overview {
   totalRevenue30d: { value: string; trend: string; isPositive: boolean };
@@ -225,10 +221,10 @@ export default function PaymentsPage() {
     : [];
 
   return (
-    <div className="max-w-7xl mx-auto p-8 space-y-6">
+    <div className="max-w-7xl mx-auto space-y-6">
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between flex-wrap gap-4">
+        className="sticky top-0 z-10 bg-gray-50 -mx-6 px-6 py-4 -mt-4 mb-2 flex items-center justify-between border-b border-gray-200">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Payments & Billing</h1>
           <p className="text-gray-500 mt-1">Transactions, refunds, and owner payouts.</p>
@@ -354,7 +350,7 @@ export default function PaymentsPage() {
                     </td>
                     <td className="px-5 py-4 text-sm text-gray-700">{t.method || '—'}</td>
                     <td className="px-5 py-4">
-                      <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_STYLE[t.status] || 'bg-gray-100 text-gray-600'}`}>{t.status}</span>
+                      <Badge map={PAYMENT_STATUS_STYLES} statusKey={t.status}>{t.status}</Badge>
                     </td>
                     <td className="px-5 py-4 text-sm text-gray-500">{t.date}</td>
                     <td className="px-5 py-4">

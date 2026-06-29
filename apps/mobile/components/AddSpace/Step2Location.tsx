@@ -1,11 +1,13 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
 import { Control, Controller, FieldErrors } from 'react-hook-form';
 import { Search, LocateFixed } from 'lucide-react-native';
 import LeafletMap, { LeafletMapHandle } from '../LeafletMap';
 import FormInput from '../FormInput';
-import { styles } from './addSpaceStyles';
-import { Colors, BorderRadius, FontSize } from '../../theme';
+import { makeAddSpaceStyles } from './addSpaceStyles';
+import { BorderRadius, FontSize } from '../../theme';
+import type { ColorsType } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 import { SpaceFormData } from './Step1BasicDetails';
 
 type Suggestion = { displayName: string; lat: number; lng: number };
@@ -26,6 +28,8 @@ type Props = {
   mapRef: React.RefObject<LeafletMapHandle | null>;
 };
 
+const makeStyles = (colors: ColorsType) => ({});
+
 export default function Step2Location({
   control,
   errors,
@@ -41,6 +45,9 @@ export default function Step2Location({
   isLocatingMe,
   mapRef,
 }: Props) {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeAddSpaceStyles(colors), [colors]);
+
   return (
     <View style={styles.formCard}>
       <Text style={styles.stepTitle}>Location Details</Text>
@@ -48,11 +55,11 @@ export default function Step2Location({
       {/* Location Search */}
       <View style={{ position: 'relative', zIndex: 10 }}>
         <View style={styles.locationSearchRow}>
-          <Search size={18} color={Colors.textMuted} />
+          <Search size={18} color={colors.textMuted} />
           <TextInput
             style={styles.locationSearchInput}
             placeholder="Search location, area, city..."
-            placeholderTextColor={Colors.textMuted}
+            placeholderTextColor={colors.textMuted}
             value={locationQuery}
             onChangeText={setLocationQuery}
             onSubmitEditing={searchLocation}
@@ -65,7 +72,7 @@ export default function Step2Location({
             disabled={isSearchingLocation}
           >
             {isSearchingLocation ? (
-              <ActivityIndicator size="small" color={Colors.white} />
+              <ActivityIndicator size="small" color={colors.white} />
             ) : (
               <Text style={styles.locationSearchBtnText}>Go</Text>
             )}
@@ -79,10 +86,10 @@ export default function Step2Location({
             top: '100%',
             left: 0,
             right: 0,
-            backgroundColor: Colors.white,
+            backgroundColor: colors.white,
             borderRadius: BorderRadius.md,
             borderWidth: 1,
-            borderColor: Colors.border,
+            borderColor: colors.border,
             shadowColor: '#000',
             shadowOffset: { width: 0, height: 4 },
             shadowOpacity: 0.12,
@@ -98,15 +105,15 @@ export default function Step2Location({
                   paddingHorizontal: 14,
                   paddingVertical: 12,
                   borderBottomWidth: i < locationSuggestions.length - 1 ? 1 : 0,
-                  borderBottomColor: Colors.border,
+                  borderBottomColor: colors.border,
                   flexDirection: 'row',
                   alignItems: 'center',
                   gap: 10,
                 }}
                 activeOpacity={0.7}
               >
-                <Search size={14} color={Colors.textMuted} />
-                <Text style={{ fontSize: FontSize.sm, color: Colors.textPrimary, flex: 1 }} numberOfLines={2}>
+                <Search size={14} color={colors.textMuted} />
+                <Text style={{ fontSize: FontSize.sm, color: colors.textPrimary, flex: 1 }} numberOfLines={2}>
                   {s.displayName}
                 </Text>
               </TouchableOpacity>
@@ -123,9 +130,9 @@ export default function Step2Location({
         activeOpacity={0.7}
       >
         {isLocatingMe ? (
-          <ActivityIndicator size="small" color={Colors.primary} />
+          <ActivityIndicator size="small" color={colors.primary} />
         ) : (
-          <LocateFixed size={16} color={Colors.primary} />
+          <LocateFixed size={16} color={colors.primary} />
         )}
         <Text style={styles.currentLocationBtnText}>
           {isLocatingMe ? 'Getting your location…' : 'Use my current location'}

@@ -1,11 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {StyleSheet, ScrollView, Text, View, StatusBar, ActivityIndicator} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { PageHeader } from '../../components';
 import { api } from '../../services/api';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
+import type { ColorsType } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 
 const TermsScreen = () => {
+  const router = useRouter();
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
   // Prefer the server's live terms (so legal copy can be updated without an app
   // release). Fall back to the bundled copy if the server has no doc yet.
   const [serverContent, setServerContent] = useState<string | null>(null);
@@ -33,9 +40,9 @@ const TermsScreen = () => {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.white} />
         <PageHeader title="Terms of Service"  onBack={() => router.replace('/(auth)/login')} />
-        <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>
+        <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>
       </SafeAreaView>
     );
   }
@@ -44,7 +51,7 @@ const TermsScreen = () => {
   if (serverContent) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.white} />
         <PageHeader title="Terms of Service"  onBack={() => router.replace('/(auth)/login')} />
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           <View style={styles.textContainer}>
@@ -59,7 +66,7 @@ const TermsScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.white} />
       <PageHeader title="Terms of Service"  onBack={() => router.replace('/(auth)/login')} />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -101,17 +108,17 @@ const TermsScreen = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
   },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  version: { fontSize: FontSize.sm, color: Colors.textMuted, fontWeight: FontWeight.semibold, marginBottom: Spacing.xl },
-  docBody: { fontSize: FontSize.base, lineHeight: 24, color: Colors.textDark },
+  version: { fontSize: FontSize.sm, color: colors.textMuted, fontWeight: FontWeight.semibold, marginBottom: Spacing.xl },
+  docBody: { fontSize: FontSize.base, lineHeight: 24, color: colors.textDark },
   content: {
     flex: 1,
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
   },
   textContainer: {
     padding: Spacing['4xl'],
@@ -119,14 +126,14 @@ const styles = StyleSheet.create({
   heading: {
     fontSize: FontSize['2xl'],
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: Spacing.md,
     marginTop: Spacing['3xl'],
   },
   paragraph: {
     fontSize: FontSize.base,
     lineHeight: 24,
-    color: Colors.textDark,
+    color: colors.textDark,
     marginBottom: Spacing.md,
   },
   spacer: {

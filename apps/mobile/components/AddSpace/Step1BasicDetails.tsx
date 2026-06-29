@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, Modal, FlatList } from 'react-native';
 import { Control, Controller, FieldErrors, UseFormSetValue, UseFormWatch } from 'react-hook-form';
 import { ChevronDown, CheckCircle, X } from 'lucide-react-native';
 import FormInput from '../FormInput';
-import { styles } from './addSpaceStyles';
-import { Colors } from '../../theme';
+import { makeAddSpaceStyles } from './addSpaceStyles';
+import { useTheme } from '../../hooks/useTheme';
 
 export type SpaceFormData = {
   spaceName: string;
@@ -49,6 +49,9 @@ export default function Step1BasicDetails({
   showParkingForModal,
   setShowParkingForModal,
 }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeAddSpaceStyles(colors), [colors]);
+
   return (
     <View style={styles.formCard}>
       <Text style={styles.stepTitle}>Basic Space Details</Text>
@@ -96,7 +99,7 @@ export default function Step1BasicDetails({
                   />
                 </View>
                 <View style={styles.dropdownChevron}>
-                  <ChevronDown size={18} color={Colors.textSecondary} />
+                  <ChevronDown size={18} color={colors.textSecondary} />
                 </View>
               </TouchableOpacity>
 
@@ -119,7 +122,7 @@ export default function Step1BasicDetails({
                         style={styles.modalClose}
                         onPress={() => setShowParkingForModal(false)}
                       >
-                        <X size={18} color={Colors.textSecondary} />
+                        <X size={18} color={colors.textSecondary} />
                       </TouchableOpacity>
                     </View>
                     <FlatList
@@ -144,7 +147,7 @@ export default function Step1BasicDetails({
                           >
                             {item}
                           </Text>
-                          {value === item && <CheckCircle size={18} color={Colors.primary} />}
+                          {value === item && <CheckCircle size={18} color={colors.primary} />}
                         </TouchableOpacity>
                       )}
                       showsVerticalScrollIndicator={false}

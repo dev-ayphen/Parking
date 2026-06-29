@@ -40,10 +40,17 @@ export const useAuthStore = create<AuthState>()(
           const user: AdminUser = {
             id: String(data.user.id),
             email: data.user.email,
-            name: 'Admin User',
+            name: data.user.name || 'Admin',
             role: 'admin',
+            adminRole: data.user.adminRole ?? 'SUPER_ADMIN',
           };
           set({ user, token: data.token });
+          // Set httpOnly cookie so middleware can protect SSR routes
+          await fetch('/api/auth/session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: data.token }),
+          });
         } finally {
           set({ isLoading: false });
         }
@@ -51,6 +58,7 @@ export const useAuthStore = create<AuthState>()(
 
       logout: () => {
         set({ user: null, token: null });
+        fetch('/api/auth/session', { method: 'DELETE' }).catch(() => {});
       },
     }),
     {

@@ -21,7 +21,7 @@ module.exports = {
     orientation: 'portrait',
     scheme: 'parkswift',
     icon: './assets/icon.png',
-    userInterfaceStyle: 'light',
+    userInterfaceStyle: 'automatic',
     // ──────────────────────────────────────────────────────────────────────
     // PUSH NOTIFICATIONS — production credentials.
     // `projectId` is REQUIRED for getExpoPushTokenAsync() in a production/EAS
@@ -51,6 +51,9 @@ module.exports = {
           'ParkSwift needs camera access to capture photos of your parking space.',
         NSPhotoLibraryUsageDescription:
           'ParkSwift needs photo library access to upload parking space photos and videos.',
+        // Allow opening UPI apps (GPay/Paytm/BHIM) via their schemes — required for
+        // Linking to open them on iOS.
+        LSApplicationQueriesSchemes: ['upi', 'tez', 'paytmmp', 'gpay'],
       },
       // iOS OTP autofill — tells the system this field expects a one-time code
       // from SMS so it offers the "123456 from Messages" keyboard suggestion.

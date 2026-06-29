@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { FontSize, FontWeight, Spacing } from '../../theme/colors';
+import type { ColorsType } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 
 interface Stat {
   value: string | number | React.ReactNode;
@@ -26,76 +28,7 @@ interface HomeCardProps {
   liveChip?: string;
 }
 
-const HomeCard: React.FC<HomeCardProps> = ({
-  icon,
-  iconBgColor,
-  title,
-  subtitle,
-  illustration,
-  stats,
-  buttonText,
-  buttonColor,
-  buttonVariant = 'solid',
-  onPressButton,
-  cardBgColor = '#FFFFFF',
-}) => {
-  const isOutline = buttonVariant === 'outline';
-
-  return (
-    <View style={[styles.card, { backgroundColor: cardBgColor }]}>
-
-      {/* ── Top row: icon + text left, illustration right ── */}
-      <View style={styles.topRow}>
-        <View style={styles.leftCol}>
-          <View style={[styles.iconBadge, { backgroundColor: iconBgColor }]}>
-            {icon}
-          </View>
-          <Text style={styles.title}>{title}</Text>
-          <Text style={styles.subtitle}>{subtitle}</Text>
-        </View>
-
-        {illustration ? (
-          <View style={styles.illustrationBox}>
-            {illustration}
-          </View>
-        ) : null}
-      </View>
-
-      {/* ── Stats — plain horizontal row ── */}
-      <View style={styles.statsRow}>
-        {stats.map((stat, i) => (
-          <View key={i} style={styles.statItem}>
-            {typeof stat.value === 'string' || typeof stat.value === 'number' ? (
-              <Text style={styles.statValue}>{stat.value}</Text>
-            ) : (
-              <>{stat.value}</>
-            )}
-            <Text style={styles.statLabel}>{stat.label}</Text>
-          </View>
-        ))}
-      </View>
-
-      {/* ── Button ── */}
-      <TouchableOpacity
-        activeOpacity={0.85}
-        onPress={onPressButton}
-        style={[
-          styles.btn,
-          isOutline
-            ? { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: buttonColor }
-            : { backgroundColor: buttonColor },
-        ]}
-      >
-        <Text style={[styles.btnText, { color: isOutline ? buttonColor : '#FFFFFF' }]}>
-          {buttonText}
-        </Text>
-      </TouchableOpacity>
-
-    </View>
-  );
-};
-
-const styles = StyleSheet.create({
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
   card: {
     borderRadius: 20,
     marginHorizontal: Spacing.screenH,
@@ -107,7 +40,6 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
     elevation: 3,
   },
-
   topRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -129,13 +61,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: FontSize.xl,
     fontWeight: FontWeight.extrabold,
-    color: '#0F172A',
+    color: colors.textPrimary,
     letterSpacing: -0.3,
     marginBottom: 3,
   },
   subtitle: {
     fontSize: 12,
-    color: '#64748B',
+    color: colors.textSecondary,
     fontWeight: FontWeight.normal,
     lineHeight: 17,
   },
@@ -146,14 +78,12 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     flexShrink: 0,
   },
-
-  // ── Stats ───────────────────────────────────────────────────────
   statsRow: {
     flexDirection: 'row',
     marginBottom: 14,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
+    borderTopColor: colors.borderLight,
   },
   statItem: {
     flex: 1,
@@ -161,17 +91,15 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: FontSize.xl,
     fontWeight: FontWeight.extrabold,
-    color: '#0F172A',
+    color: colors.textPrimary,
     letterSpacing: -0.3,
     marginBottom: 2,
   },
   statLabel: {
     fontSize: 11,
-    color: '#64748B',
+    color: colors.textSecondary,
     fontWeight: FontWeight.medium,
   },
-
-  // ── Button ──────────────────────────────────────────────────────
   btn: {
     height: 46,
     borderRadius: 100,
@@ -184,5 +112,73 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
   },
 });
+
+const HomeCard: React.FC<HomeCardProps> = ({
+  icon,
+  iconBgColor,
+  title,
+  subtitle,
+  illustration,
+  stats,
+  buttonText,
+  buttonColor,
+  buttonVariant = 'solid',
+  onPressButton,
+  cardBgColor,
+}) => {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const isOutline = buttonVariant === 'outline';
+
+  return (
+    <View style={[styles.card, { backgroundColor: cardBgColor ?? colors.white }]}>
+
+      <View style={styles.topRow}>
+        <View style={styles.leftCol}>
+          <View style={[styles.iconBadge, { backgroundColor: iconBgColor }]}>
+            {icon}
+          </View>
+          <Text style={styles.title}>{title}</Text>
+          <Text style={styles.subtitle}>{subtitle}</Text>
+        </View>
+
+        {illustration ? (
+          <View style={styles.illustrationBox}>
+            {illustration}
+          </View>
+        ) : null}
+      </View>
+
+      <View style={styles.statsRow}>
+        {stats.map((stat, i) => (
+          <View key={i} style={styles.statItem}>
+            {typeof stat.value === 'string' || typeof stat.value === 'number' ? (
+              <Text style={styles.statValue}>{stat.value}</Text>
+            ) : (
+              <>{stat.value}</>
+            )}
+            <Text style={styles.statLabel}>{stat.label}</Text>
+          </View>
+        ))}
+      </View>
+
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={onPressButton}
+        style={[
+          styles.btn,
+          isOutline
+            ? { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: buttonColor }
+            : { backgroundColor: buttonColor },
+        ]}
+      >
+        <Text style={[styles.btnText, { color: isOutline ? buttonColor : '#FFFFFF' }]}>
+          {buttonText}
+        </Text>
+      </TouchableOpacity>
+
+    </View>
+  );
+};
 
 export default HomeCard;

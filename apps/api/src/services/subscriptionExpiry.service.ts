@@ -17,7 +17,9 @@ export const subscriptionExpiryService = {
   processDueSubscriptions: async () => {
     const now = new Date();
     const due = await db.subscription.findMany({
-      where: { status: 'ACTIVE', renewalDate: { lte: now } },
+      // Skip subscriptions belonging to deleted/banned users — deletion cancels the
+      // sub, but this guards any historical orphans so they can never renew or charge.
+      where: { status: 'ACTIVE', renewalDate: { lte: now }, user: { deletedAt: null } },
       include: { planRef: true },
     });
 
@@ -47,6 +49,30 @@ export const subscriptionExpiryService = {
                 // Honor the original auto-renewal choice.
               },
             });
+
+            // Space-limit enforcement on downgrade: if the owner now has more
+            // active spaces than the new plan allows, warn them. We do NOT
+            // silently lock or delete spaces — instead we notify clearly so they
+            // can decide which to remove. New space creation will be blocked by
+            // assertCanCreateSpace() which re-reads the new plan limit.
+            const newMaxSpaces: number = (target as any).maxSpaces ?? 0;
+            if (newMaxSpaces >= 0) {
+              const activeSpaceCount = await db.space.count({
+                where: { ownerId: sub.userId, status: { notIn: ['REJECTED', 'BLOCKED'] }, deletedAt: null },
+              });
+              if (activeSpaceCount > newMaxSpaces) {
+                const excess = activeSpaceCount - newMaxSpaces;
+                await db.notification.create({
+                  data: {
+                    userId: sub.userId,
+                    title: 'Action required — space limit exceeded',
+                    message: `Your plan changed to ${target.name} (max ${newMaxSpaces} space${newMaxSpaces === 1 ? '' : 's'}). You currently have ${activeSpaceCount} active spaces — ${excess} over the limit. Existing spaces remain visible for now, but you cannot create or edit spaces until you are within the limit. Please remove ${excess} space${excess === 1 ? '' : 's'} to continue.`,
+                    category: 'SUBSCRIPTION',
+                  },
+                }).catch(() => {});
+              }
+            }
+
             await db.notification.create({
               data: {
                 userId: sub.userId,
@@ -92,9 +118,10 @@ export const subscriptionExpiryService = {
   },
 
   /**
-   * Send advance renewal reminders at 7, 3, and 1 day(s) before renewal — only
-   * for subscriptions that will EXPIRE (autoRenewal off). Each (subscription,
-   * dayBucket) reminder is sent at most once, deduped via a metadata marker.
+   * Send advance renewal reminders at 7, 3, and 1 day(s) before renewal —
+   * sent to ALL active subscriptions approaching their renewalDate, with
+   * different messaging depending on whether they will renew or expire.
+   * Each (subscription, dayBucket) reminder is sent at most once (deduped).
    */
   sendRenewalReminders: async () => {
     const now = new Date();
@@ -109,8 +136,9 @@ export const subscriptionExpiryService = {
       const subs = await db.subscription.findMany({
         where: {
           status: 'ACTIVE',
-          autoRenewal: false, // only those that will actually expire
+          // No autoRenewal filter — both groups get reminded, with different messages.
           renewalDate: { gte: start, lt: end },
+          user: { deletedAt: null },
         },
         include: { planRef: { select: { name: true } } },
       });
@@ -129,16 +157,25 @@ export const subscriptionExpiryService = {
 
         const planName = sub.planRef?.name || sub.planName || 'subscription';
         const when = daysOut === 1 ? 'tomorrow' : `in ${daysOut} days`;
+        const willRenew = sub.autoRenewal;
+
+        const title = willRenew
+          ? `Your ${planName} plan renews ${when}`
+          : `Your ${planName} plan expires ${when}`;
+        const message = willRenew
+          ? `₹${Math.round(sub.price)} will be charged on your renewal date. You can manage auto-renewal from subscription settings.`
+          : `Renew now to keep your spaces listed and continue earning. Features will lock after expiry.`;
+
         await db.notification.create({
           data: {
             userId: sub.userId,
-            title: `Your ${planName} plan expires ${when}`,
-            message: `Renew to keep your spaces listed and continue using premium features.`,
+            title,
+            message,
             category: 'SUBSCRIPTION',
-            metadata: { reminderKey: `sub-${sub.id}-${daysOut}d`, subscriptionId: sub.id, daysOut },
+            metadata: { reminderKey: `sub-${sub.id}-${daysOut}d`, subscriptionId: sub.id, daysOut, willRenew },
           },
         }).catch(() => {});
-        emitToUser(sub.userId, 'subscription:updated', { reminder: daysOut });
+        emitToUser(sub.userId, 'subscription:updated', { reminder: daysOut, willRenew });
         sent++;
       }
     }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -17,7 +17,9 @@ import { Flag, ShieldAlert } from 'lucide-react-native';
 import { api } from '../../services/api';
 import { NETWORK_RECONNECTED } from '../../store/networkStore';
 import PageHeader from '../../components/PageHeader';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import type { ColorsType } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 
 interface AbuseReport {
   id: number;
@@ -31,14 +33,14 @@ interface AbuseReport {
 }
 
 // Abuse status → presentation. Covers the full server enum.
-const STATUS_STYLE: Record<string, { label: string; color: string; bg: string }> = {
-  REPORTED: { label: 'Under Review', color: Colors.info, bg: Colors.infoBg },
-  INVESTIGATING: { label: 'Investigating', color: Colors.warning, bg: Colors.warningBg },
-  WARNING_ISSUED: { label: 'Warning Issued', color: Colors.warning, bg: Colors.warningBg },
-  SUSPENDED_TEMP: { label: 'Action Taken', color: Colors.success, bg: Colors.successBg },
-  BANNED: { label: 'Action Taken', color: Colors.success, bg: Colors.successBg },
-  RESOLVED: { label: 'Resolved', color: Colors.success, bg: Colors.successBg },
-};
+const makeStatusStyle = (colors: ColorsType): Record<string, { label: string; color: string; bg: string }> => ({
+  REPORTED: { label: 'Under Review', color: colors.info, bg: colors.infoBg },
+  INVESTIGATING: { label: 'Investigating', color: colors.warning, bg: colors.warningBg },
+  WARNING_ISSUED: { label: 'Warning Issued', color: colors.warning, bg: colors.warningBg },
+  SUSPENDED_TEMP: { label: 'Action Taken', color: colors.success, bg: colors.successBg },
+  BANNED: { label: 'Action Taken', color: colors.success, bg: colors.successBg },
+  RESOLVED: { label: 'Resolved', color: colors.success, bg: colors.successBg },
+});
 
 const TYPE_LABELS: Record<string, string> = {
   FAKER_BOOKING: 'Fake Booking',
@@ -48,13 +50,19 @@ const TYPE_LABELS: Record<string, string> = {
   HARASSMENT: 'Harassment',
   FAKE_SPACE: 'Fake Space',
   UNSAFE_AREA: 'Unsafe Area',
-  OFFLINE_PAYMENT_DEMAND: 'Offline Payment Demand',
+  OFFLINE_PAYMENT_DEMAND: 'Asked for Extra Money',
   MISLEADING_LISTING: 'Misleading Listing',
+  UPI_NOT_WORKING: 'QR / UPI Not Working',
+  PAYMENT_NOT_RECEIVED: 'Payment Not Received',
+  LEFT_WITHOUT_PAYING: 'Left Without Paying',
   OTHER: 'Other',
 };
 
 export default function MyReportsScreen() {
   const router = useRouter();
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const STATUS_STYLE = useMemo(() => makeStatusStyle(colors), [colors]);
   const [reports, setReports] = useState<AbuseReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -101,7 +109,7 @@ export default function MyReportsScreen() {
       <TouchableOpacity style={styles.card} activeOpacity={0.7} onPress={() => setSelected(item)}>
         <View style={styles.cardTop}>
           <View style={styles.typeWrap}>
-            <ShieldAlert size={16} color={Colors.error} strokeWidth={2} />
+            <ShieldAlert size={16} color={colors.error} strokeWidth={2} />
             <Text style={styles.typeText}>{TYPE_LABELS[item.abuseType] ?? item.abuseType}</Text>
           </View>
           <View style={[styles.statusBadge, { backgroundColor: meta.bg }]}>
@@ -130,11 +138,11 @@ export default function MyReportsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <PageHeader title="My Reports" onBack={() => router.replace('/(home)')} />
 
       {loading ? (
-        <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>
+        <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>
       ) : (
         <FlatList
           data={reports}
@@ -146,7 +154,7 @@ export default function MyReportsScreen() {
           ListEmptyComponent={
             error ? (
               <View style={styles.center}>
-                <Flag size={40} color={Colors.error} strokeWidth={1.5} />
+                <Flag size={40} color={colors.error} strokeWidth={1.5} />
                 <Text style={styles.emptyText}>{error}</Text>
                 <TouchableOpacity style={styles.retryBtn} onPress={() => fetchReports()}>
                   <Text style={styles.retryBtnText}>Retry</Text>
@@ -154,13 +162,13 @@ export default function MyReportsScreen() {
               </View>
             ) : (
               <View style={styles.center}>
-                <Flag size={40} color={Colors.textMuted} strokeWidth={1.5} />
+                <Flag size={40} color={colors.textMuted} strokeWidth={1.5} />
                 <Text style={styles.emptyTitle}>No reports yet</Text>
                 <Text style={styles.emptyText}>Reports you submit about users or listings will appear here with their status.</Text>
               </View>
             )
           }
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchReports(true)} tintColor={Colors.primary} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchReports(true)} tintColor={colors.primary} />}
         />
       )}
 
@@ -209,44 +217,44 @@ export default function MyReportsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.white },
-  scrollView: { flex: 1, backgroundColor: Colors.screenBg },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.lg, padding: Spacing['4xl'], backgroundColor: Colors.screenBg },
-  emptyTitle: { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: Colors.textPrimary },
-  emptyText: { fontSize: FontSize.base, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
-  retryBtn: { paddingHorizontal: Spacing['3xl'], paddingVertical: Spacing.lg, backgroundColor: Colors.primaryBg, borderRadius: BorderRadius.lg },
-  retryBtnText: { color: Colors.primary, fontWeight: FontWeight.bold },
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.white },
+  scrollView: { flex: 1, backgroundColor: colors.screenBg },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.lg, padding: Spacing['4xl'], backgroundColor: colors.screenBg },
+  emptyTitle: { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: colors.textPrimary },
+  emptyText: { fontSize: FontSize.base, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },
+  retryBtn: { paddingHorizontal: Spacing['3xl'], paddingVertical: Spacing.lg, backgroundColor: colors.primaryBg, borderRadius: BorderRadius.lg },
+  retryBtnText: { color: colors.primary, fontWeight: FontWeight.bold },
   list: { padding: Spacing.screenH },
   card: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: BorderRadius.xl,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: colors.borderLight,
     padding: Spacing['3xl'],
     marginBottom: Spacing.xl,
   },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md },
   typeWrap: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flexShrink: 1 },
-  typeText: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: Colors.textPrimary, flexShrink: 1 },
+  typeText: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: colors.textPrimary, flexShrink: 1 },
   statusBadge: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs, borderRadius: BorderRadius.sm },
   statusText: { fontSize: FontSize.xs, fontWeight: FontWeight.bold },
-  desc: { fontSize: FontSize.sm, color: Colors.textBody, lineHeight: 18, marginBottom: Spacing.md },
+  desc: { fontSize: FontSize.sm, color: colors.textBody, lineHeight: 18, marginBottom: Spacing.md },
   cardBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: Spacing.xs },
-  ref: { fontSize: FontSize.sm, fontWeight: FontWeight.extrabold, color: Colors.textSecondary, letterSpacing: 0.4 },
-  meta: { fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: FontWeight.medium, flexShrink: 1, textAlign: 'right', marginLeft: Spacing.md },
+  ref: { fontSize: FontSize.sm, fontWeight: FontWeight.extrabold, color: colors.textSecondary, letterSpacing: 0.4 },
+  meta: { fontSize: FontSize.xs, color: colors.textMuted, fontWeight: FontWeight.medium, flexShrink: 1, textAlign: 'right', marginLeft: Spacing.md },
   // Inline "Admin: …" banner on the card (one-liner preview)
-  adminBanner: { marginTop: Spacing.md, backgroundColor: Colors.primaryBg, borderRadius: BorderRadius.sm, paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs },
-  adminBannerText: { fontSize: FontSize.xs, color: Colors.primary, fontWeight: FontWeight.semibold },
+  adminBanner: { marginTop: Spacing.md, backgroundColor: colors.primaryBg, borderRadius: BorderRadius.sm, paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs },
+  adminBannerText: { fontSize: FontSize.xs, color: colors.primary, fontWeight: FontWeight.semibold },
   // Detail modal
   modalOverlay: { flex: 1, backgroundColor: ExtendedColors.overlayHeavy, justifyContent: 'center', padding: Spacing['4xl'] },
-  modalCard: { backgroundColor: Colors.white, borderRadius: BorderRadius.lg, padding: Spacing['4xl'] },
+  modalCard: { backgroundColor: colors.white, borderRadius: BorderRadius.lg, padding: Spacing['4xl'] },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.xl },
-  modalRef: { fontSize: FontSize.lg, fontWeight: FontWeight.extrabold, color: Colors.textPrimary, letterSpacing: 0.4 },
-  modalLabel: { fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: FontWeight.bold, marginTop: Spacing.lg, textTransform: 'uppercase', letterSpacing: 0.4 },
-  modalValue: { fontSize: FontSize.base, color: Colors.textPrimary, marginTop: 2 },
-  modalValueMuted: { fontSize: FontSize.base, color: Colors.textSecondary, marginTop: 2, fontStyle: 'italic' },
-  modalAdminText: { fontSize: FontSize.base, color: Colors.textPrimary, marginTop: Spacing.xs, backgroundColor: Colors.primaryBg, borderRadius: BorderRadius.sm, padding: Spacing.lg, lineHeight: 19 },
-  modalCloseBtn: { marginTop: Spacing['3xl'], backgroundColor: Colors.primary, borderRadius: BorderRadius.md, paddingVertical: Spacing.xl, alignItems: 'center' },
-  modalCloseText: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.white },
+  modalRef: { fontSize: FontSize.lg, fontWeight: FontWeight.extrabold, color: colors.textPrimary, letterSpacing: 0.4 },
+  modalLabel: { fontSize: FontSize.xs, color: colors.textMuted, fontWeight: FontWeight.bold, marginTop: Spacing.lg, textTransform: 'uppercase', letterSpacing: 0.4 },
+  modalValue: { fontSize: FontSize.base, color: colors.textPrimary, marginTop: 2 },
+  modalValueMuted: { fontSize: FontSize.base, color: colors.textSecondary, marginTop: 2, fontStyle: 'italic' },
+  modalAdminText: { fontSize: FontSize.base, color: colors.textPrimary, marginTop: Spacing.xs, backgroundColor: colors.primaryBg, borderRadius: BorderRadius.sm, padding: Spacing.lg, lineHeight: 19 },
+  modalCloseBtn: { marginTop: Spacing['3xl'], backgroundColor: colors.primary, borderRadius: BorderRadius.md, paddingVertical: Spacing.xl, alignItems: 'center' },
+  modalCloseText: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: colors.white },
 });

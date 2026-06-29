@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   getAuthToken,
   getUserId,
@@ -102,6 +103,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     await clearAuthData();
     set({ user: null, token: null });
+
+    // Clear notification read-state so the next user on this device starts fresh.
+    await AsyncStorage.removeItem('parkswift_read_notification_ids').catch(() => {});
 
     // Wipe any session bars so the signed-out welcome screen (and the next user
     // on this device) never sees the previous session's booking bar. Imported

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {View,
   Text,
   StyleSheet,
@@ -65,6 +65,9 @@ export default function BookingStatusScreen() {
   const setBar = useCallback((b: any) => setBarForSource('parker', b), [setBarForSource]);
   const clearBar = useCallback(() => clearSource('parker'), [clearSource]);
 
+  const isMounted = useRef(true);
+  useEffect(() => { return () => { isMounted.current = false; }; }, []);
+
   const [booking, setBooking] = useState<BookingData | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -74,7 +77,7 @@ export default function BookingStatusScreen() {
   const [selectedEtaMin, setSelectedEtaMin] = useState<number | null>(null);
   const [etaUpdating, setEtaUpdating] = useState(false);
 
-  // 2-minute approval countdown (ticks while waiting)
+  // 5-minute approval countdown (ticks while waiting)
   const [nowTs, setNowTs] = useState(Date.now());
 
   const fetchBooking = useCallback(async () => {
@@ -210,6 +213,7 @@ export default function BookingStatusScreen() {
   // Navigate forward when ACTIVE
   useEffect(() => {
     if (booking?.status === 'ACTIVE') {
+      if (!isMounted.current) return;
       router.replace({
         pathname: '/(find-space)/active-session',
         params: { bookingId },
@@ -235,10 +239,10 @@ export default function BookingStatusScreen() {
     return () => clearInterval(t);
   }, [booking?.status, fetchBooking]);
 
-  // Remaining seconds in the 2-minute approval window (null when not waiting)
+  // Remaining seconds in the 5-minute approval window (null when not waiting)
   const countdownSec =
     booking?.status === 'PENDING_APPROVAL' && booking?.createdAt
-      ? Math.max(0, 120 - Math.floor((nowTs - new Date(booking.createdAt).getTime()) / 1000))
+      ? Math.max(0, 300 - Math.floor((nowTs - new Date(booking.createdAt).getTime()) / 1000))
       : null;
 
   const shortId = booking ? `#${String(booking.id).slice(-6).toUpperCase()}` : '';
@@ -355,7 +359,7 @@ export default function BookingStatusScreen() {
     heroTint = '#475569'; heroSoft = '#E2E8F0';
     heroIcon = (c) => <Clock size={22} color={c} strokeWidth={2.5} />;
     heroTitle = 'Request Expired';
-    heroSub   = 'Owner did not respond within 2 minutes.';
+    heroSub   = 'Owner did not respond within 5 minutes.';
   }
 
   return (

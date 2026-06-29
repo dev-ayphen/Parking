@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {View,
   Text,
   StyleSheet,
@@ -7,14 +7,18 @@ import {View,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import PageHeader from '../../components/PageHeader';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
+import type { ColorsType } from '../../theme';
 
 const BookingTermsScreen = () => {
   const router = useRouter();
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
       <PageHeader title="Terms & Conditions" onBack={() => router.replace('/(find-space)')} />
 
@@ -32,7 +36,7 @@ const BookingTermsScreen = () => {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>2. Parker Terms & Conditions</Text>
-          
+
           <Text style={styles.subTitle}>Parking Responsibility</Text>
           <View style={styles.bulletList}>
             <Text style={styles.bulletItem}>• Parker must park in designated area within the space boundary</Text>
@@ -93,40 +97,40 @@ const BookingTermsScreen = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
   },
   content: {
     flex: 1,
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
     padding: Spacing.screenH,
   },
   section: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: BorderRadius.lg,        // 16 = lg ✓
     padding: Spacing.screenH,
     marginBottom: Spacing['3xl'],
     borderWidth: 1,
-    borderColor: Colors.border,           // '#E2E8F0' = border ✓
+    borderColor: colors.border,           // '#E2E8F0' = border ✓
   },
   sectionTitle: {
     fontSize: FontSize['2xl'],            // 18 = 2xl ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: Spacing['3xl'],
   },
   subTitle: {
     fontSize: FontSize.lg,                // 15 = lg ✓
     fontWeight: FontWeight.semibold,
-    color: Colors.textDark,
+    color: colors.textDark,
     marginTop: Spacing['3xl'],
     marginBottom: Spacing.md,
   },
   paragraph: {
     fontSize: FontSize.md,                // 14 = md ✓
-    color: Colors.textBody,
+    color: colors.textSecondary,
     lineHeight: 22,
   },
   bulletList: {
@@ -134,7 +138,7 @@ const styles = StyleSheet.create({
   },
   bulletItem: {
     fontSize: FontSize.md,                // 14 = md ✓
-    color: Colors.textBody,
+    color: colors.textSecondary,
     lineHeight: 22,
   },
 });

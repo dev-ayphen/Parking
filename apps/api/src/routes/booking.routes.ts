@@ -7,9 +7,13 @@ import { createBookingSchema } from '../validations/booking.validation';
 import { bookingController } from '../controllers/booking.controller';
 import { invoiceController } from '../controllers/invoice.controller';
 
-const router = Router();
+// Invoice GET is registered separately — it authenticates inside the controller
+// because it accepts either a signed_token (no session JWT needed) or the legacy
+// ?token= query param. All other routes go through authenticate middleware.
+const publicRouter = Router();
+publicRouter.get('/:id/invoice', invoiceController.download);
 
-// All booking routes require authentication
+const router = Router();
 router.use(authenticate);
 
 // Booking creation: rate-limited (per-IP + per-user) + idempotent + validated
@@ -40,7 +44,7 @@ router.get('/:id/otp', bookingController.generateSessionOtp);
 router.post('/:id/verify-otp', sessionOtpVerifyLimiter, bookingController.verifySessionOtp);
 router.put('/:id/leaving', bookingController.markLeavingSession);
 router.put('/:id/self-complete', bookingController.selfCompleteBooking);
-router.put('/:id/mark-paid', bookingController.markBookingPaid);
+router.put('/:id/payment-received', bookingController.markPaymentReceived);
 router.put('/:id/release', bookingController.releaseSpace);
 router.post('/:id/verification', bookingController.submitVerification);
 router.get('/:id/verification', bookingController.getVerification);
@@ -48,7 +52,8 @@ router.put('/:id/verification/accept', bookingController.acceptVerification);
 router.post('/:id/consent', bookingController.recordBookingConsent);
 router.get('/:id/consent', bookingController.getBookingConsent);
 
-// Invoice PDF download
-router.get('/:id/invoice', invoiceController.download);
+// Invoice token: requires auth — POST /:id/invoice-token issues a 60s single-use token
+router.post('/:id/invoice-token', invoiceController.issueToken);
 
+export { publicRouter };
 export default router;

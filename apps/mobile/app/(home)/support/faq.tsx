@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {View,
   Text,
   StyleSheet,
@@ -13,7 +13,9 @@ import { useRouter } from 'expo-router';
 import { ChevronDown, ChevronUp, Car, Home, CreditCard, User, HelpCircle } from 'lucide-react-native';
 import { api } from '../../../services/api';
 import PageHeader from '../../../components/PageHeader';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../../theme';
+import { useTheme } from '../../../hooks/useTheme';
+import { FontSize, FontWeight, BorderRadius, Spacing } from '../../../theme';
+import type { ColorsType } from '../../../theme';
 
 interface FAQItem {
   q: string;
@@ -30,17 +32,24 @@ interface FAQCategory {
 
 // Per-category presentation (icon/colour) — UI metadata the API doesn't carry.
 // Keyed by the server's category `title`; falls back to a neutral default.
-const CATEGORY_STYLE: Record<string, { icon: React.ReactNode; color: string; bg: string }> = {
-  Booking: { icon: <Car size={20} color={Colors.info} />, color: Colors.info, bg: Colors.infoBg },
-  'Space Owner': { icon: <Home size={20} color={Colors.successAlt} />, color: Colors.successAlt, bg: Colors.successBg },
-  Subscription: { icon: <CreditCard size={20} color={Colors.warningAlt} />, color: Colors.warningAlt, bg: Colors.warningBg },
-  Account: { icon: <User size={20} color={Colors.errorAlt} />, color: Colors.errorAlt, bg: Colors.errorBg },
+// Built from theme `colors` so icons/tints respond to dark/light mode.
+const buildCategoryStyle = (colors: ColorsType): Record<string, { icon: React.ReactNode; color: string; bg: string }> => ({
+  Booking: { icon: <Car size={20} color={colors.info} />, color: colors.info, bg: colors.infoBg },
+  'Space Owner': { icon: <Home size={20} color={colors.successAlt} />, color: colors.successAlt, bg: colors.successBg },
+  Subscription: { icon: <CreditCard size={20} color={colors.warningAlt} />, color: colors.warningAlt, bg: colors.warningBg },
+  Account: { icon: <User size={20} color={colors.errorAlt} />, color: colors.errorAlt, bg: colors.errorBg },
+});
+const buildStyleFor = (colors: ColorsType) => {
+  const map = buildCategoryStyle(colors);
+  return (title: string) =>
+    map[title] ?? { icon: <HelpCircle size={20} color={colors.textSecondary} />, color: colors.textSecondary, bg: colors.surfaceBg };
 };
-const styleFor = (title: string) =>
-  CATEGORY_STYLE[title] ?? { icon: <HelpCircle size={20} color={Colors.textSecondary} />, color: Colors.textSecondary, bg: Colors.surfaceBg };
 
 export default function FAQScreen() {
   const router = useRouter();
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const styleFor = useMemo(() => buildStyleFor(colors), [colors]);
   const [categories, setCategories] = useState<FAQCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedCategory, setExpandedCategory] = useState<number | null>(0);
@@ -62,7 +71,7 @@ export default function FAQScreen() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [styleFor]);
 
   useEffect(() => {
     fetchFaq();
@@ -81,14 +90,14 @@ export default function FAQScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <PageHeader title="FAQ" onBack={() => router.replace('/(home)/help-support')} />
 
       {loading ? (
-        <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>
+        <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>
       ) : categories.length === 0 ? (
         <View style={styles.center}>
-          <HelpCircle size={40} color={Colors.textMuted} strokeWidth={1.5} />
+          <HelpCircle size={40} color={colors.textMuted} strokeWidth={1.5} />
           <Text style={styles.emptyText}>FAQs are unavailable right now. Please try again later.</Text>
         </View>
       ) : (
@@ -114,9 +123,9 @@ export default function FAQScreen() {
                   </View>
                 </View>
                 {isCatOpen ? (
-                  <ChevronUp size={20} color={Colors.textMuted} />
+                  <ChevronUp size={20} color={colors.textMuted} />
                 ) : (
-                  <ChevronDown size={20} color={Colors.textMuted} />
+                  <ChevronDown size={20} color={colors.textMuted} />
                 )}
               </TouchableOpacity>
 
@@ -138,7 +147,7 @@ export default function FAQScreen() {
                           {isOpen ? (
                             <ChevronUp size={18} color={cat.color} />
                           ) : (
-                            <ChevronDown size={18} color={Colors.borderMuted} />
+                            <ChevronDown size={18} color={colors.borderMuted} />
                           )}
                         </TouchableOpacity>
                         {isOpen && (
@@ -162,27 +171,27 @@ export default function FAQScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
   },
   content: {
     padding: Spacing.screenH,
   },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.lg, padding: Spacing['4xl'] },
-  emptyText: { fontSize: FontSize.base, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
+  emptyText: { fontSize: FontSize.base, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },
   subtitle: {
     fontSize: FontSize.lg,                          // 15 = lg ✓
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     marginBottom: Spacing['4xl'],
   },
   categoryCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: BorderRadius.lg,                  // 16 = lg ✓
     marginBottom: Spacing['3xl'],
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     overflow: 'hidden',
     ...Platform.select({
       ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 8 },
@@ -210,10 +219,10 @@ const styles = StyleSheet.create({
   categoryTitle: {
     fontSize: FontSize.xl,                          // 16 = xl ✓
     fontWeight: FontWeight.semibold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   countBadge: {
-    backgroundColor: Colors.surfaceBg,
+    backgroundColor: colors.surfaceBg,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.micro,
     borderRadius: BorderRadius.input,               // 10 = input ✓
@@ -221,11 +230,11 @@ const styles = StyleSheet.create({
   countText: {
     fontSize: FontSize.sm,                          // 12 = sm ✓
     fontWeight: FontWeight.semibold,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   categoryBody: {
     borderTopWidth: 1,
-    borderTopColor: Colors.surfaceBg,
+    borderTopColor: colors.surfaceBg,
   },
   faqQuestion: {
     flexDirection: 'row',
@@ -234,12 +243,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing['3xl'],
     paddingVertical: Spacing['2xl'],
     borderTopWidth: 1,
-    borderTopColor: Colors.surfaceBg,
+    borderTopColor: colors.surfaceBg,
   },
   faqQuestionText: {
     fontSize: FontSize.md,                          // 14 = md ✓
     fontWeight: FontWeight.medium,
-    color: Colors.textDark,
+    color: colors.textDark,
     flex: 1,
     marginRight: Spacing.xl,
     lineHeight: 20,
@@ -250,11 +259,11 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.xs,
     marginLeft: Spacing['3xl'],
     borderLeftWidth: 3,
-    borderLeftColor: Colors.info,
+    borderLeftColor: colors.info,
   },
   faqAnswerText: {
     fontSize: FontSize.md,                          // 14 = md ✓
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     lineHeight: 22,
   },
   bottomPad: {

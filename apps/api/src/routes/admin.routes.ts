@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import { adminController } from '../controllers/admin.controller';
+import { adminStaffController } from '../controllers/admin';
 import { settingsController } from '../controllers/settings.controller';
 import { documentController } from '../controllers/document.controller';
 import { abuseController } from '../controllers/abuse.controller';
 import { ratingAdminController } from '../controllers/ratingAdmin.controller';
 import { vehicleController } from '../controllers/vehicle.controller';
-import { authenticate, requireRole } from '../middleware/auth';
+import { authenticate, requireRole, requireSuperAdmin } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import {
   suspendUserSchema,
@@ -112,6 +113,11 @@ router.put('/settings', validate(updateSettingsSchema), settingsController.updat
 router.post('/communications/notify', validate(sendBroadcastSchema), adminController.sendBroadcast);
 router.get('/communications/history', adminController.listBroadcastHistory);
 
+// Broadcast templates (DB-backed; replaces the old localStorage store)
+router.get('/broadcast-templates', adminController.listBroadcastTemplates);
+router.post('/broadcast-templates', adminController.createBroadcastTemplate);
+router.delete('/broadcast-templates/:id', adminController.deleteBroadcastTemplate);
+
 // ─── Vehicle RC book (admin view of private docs) ────────────────────
 router.get('/vehicles/:id/rcbook-url', vehicleController.getRcBookUrl);
 
@@ -124,5 +130,12 @@ router.get('/legal/documents', adminController.listLegalDocuments);
 router.put('/legal/documents/:slug', adminController.upsertLegalDocument);
 router.get('/legal/compliance', adminController.listComplianceLogs);
 router.put('/legal/compliance/:id', adminController.updateComplianceLog);
+
+// ─── Staff management (SUPER_ADMIN only) ─────────────────────────────
+router.get('/staff', requireSuperAdmin, adminStaffController.list);
+router.post('/staff', requireSuperAdmin, adminStaffController.create);
+router.put('/staff/:id/deactivate', requireSuperAdmin, adminStaffController.deactivate);
+router.put('/staff/:id/reactivate', requireSuperAdmin, adminStaffController.reactivate);
+router.put('/staff/:id/reset-password', requireSuperAdmin, adminStaffController.resetPassword);
 
 export default router;

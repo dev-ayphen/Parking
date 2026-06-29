@@ -10,6 +10,11 @@ export const ABUSE_TYPES = [
   'UNSAFE_AREA',
   'OFFLINE_PAYMENT_DEMAND',
   'MISLEADING_LISTING',
+  // Payment-dispute types. Since ParkSwift never verifies payments, a non-payment
+  // is a dispute between the two users — either side can report the other.
+  'UPI_NOT_WORKING',        // parker → owner: owner's QR/UPI didn't work
+  'PAYMENT_NOT_RECEIVED',   // owner → parker: parker never paid
+  'LEFT_WITHOUT_PAYING',    // owner → parker: parker left without paying
   'OTHER',
 ] as const;
 

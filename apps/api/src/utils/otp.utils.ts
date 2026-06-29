@@ -5,6 +5,7 @@
  * In production: Calls MSG91 API (fails loudly if not configured)
  */
 import crypto from 'crypto';
+import { env as appEnv } from '../config/env';
 
 /**
  * Generate a cryptographically-secure random 6-digit OTP.
@@ -34,9 +35,9 @@ export const sendOTPViaSMS = async (
 
   // Production: send via MSG91. Fails LOUDLY if not configured or the call
   // fails, so we never tell the user "OTP sent" when no SMS went out.
-  const authKey = process.env.MSG91_API_KEY;
-  const templateId = process.env.MSG91_TEMPLATE_ID;
-  const senderId = process.env.MSG91_SENDER_ID;
+  const authKey = appEnv.MSG91_API_KEY;
+  const templateId = appEnv.MSG91_TEMPLATE_ID;
+  const senderId = appEnv.MSG91_SENDER_ID;
   if (!authKey || !templateId) {
     throw new Error('SMS service is not configured (MSG91 credentials missing).');
   }

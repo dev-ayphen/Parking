@@ -14,6 +14,7 @@ import { io as createSocket, Socket } from 'socket.io-client';
 import { adminApi } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
 import { SOCKET_URL } from '@/lib/config';
+import { Badge } from '@/components/ui/Badge';
 
 interface Assignee {
   id: number;
@@ -252,7 +253,7 @@ export default function SupportPage() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="sticky top-0 z-10 bg-gray-50 -mx-6 px-6 py-4 -mt-4 mb-2 flex items-center justify-between border-b border-gray-200">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Support & Issues</h1>
           <p className="text-gray-500 mt-1">Manage user tickets, complaints, and bug reports.</p>
@@ -393,29 +394,27 @@ export default function SupportPage() {
                         </span>
                       </td>
                       <td className="px-6 py-4">
-                        <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${priority.bg} ${priority.text}`}>
-                          <priority.icon size={12} />
+                        <Badge className={`${priority.bg} ${priority.text}`} icon={<priority.icon size={12} />}>
                           {priority.label}
-                        </div>
+                        </Badge>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex flex-col items-start gap-1.5">
-                          <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${status.bg} ${status.text}`}>
-                            <status.icon size={12} />
+                          <Badge className={`${status.bg} ${status.text}`} icon={<status.icon size={12} />}>
                             {status.label}
-                          </div>
+                          </Badge>
                           <SlaBadge slaDueAt={ticket.slaDueAt} status={ticket.status} />
                         </div>
                       </td>
                       <td className="px-6 py-4">
                         {ticket.assignedTo ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700">
-                            <UserIcon size={12} /> {ticket.assignedTo.name}
-                          </span>
+                          <Badge className="bg-indigo-50 text-indigo-700" icon={<UserIcon size={12} />}>
+                            {ticket.assignedTo.name}
+                          </Badge>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-500">
+                          <Badge className="bg-gray-100 text-gray-500">
                             Unassigned
-                          </span>
+                          </Badge>
                         )}
                       </td>
                       <td className="px-6 py-4">
@@ -753,13 +752,13 @@ function TicketDetailsModal({ ticket, onClose, onChanged, onTicketUpdate }: {
         <div className="px-6 py-3 border-b border-gray-100 flex flex-wrap items-center gap-3">
           <span className="text-xs font-bold uppercase text-gray-500">Assignee:</span>
           {ticket.assignedTo ? (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700">
-              <UserIcon size={12} /> {ticket.assignedTo.name}
-            </span>
+            <Badge className="bg-indigo-50 text-indigo-700" icon={<UserIcon size={12} />}>
+              {ticket.assignedTo.name}
+            </Badge>
           ) : (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-500">
+            <Badge className="bg-gray-100 text-gray-500">
               Unassigned
-            </span>
+            </Badge>
           )}
           <div className="flex items-center gap-2 ml-auto">
             <button

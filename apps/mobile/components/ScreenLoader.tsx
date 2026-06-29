@@ -1,7 +1,8 @@
 import React from 'react';
-import {View, Text, StyleSheet} from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Spinner from './Loading/Spinner';
+import { useTheme } from '../hooks/useTheme';
 
 interface ScreenLoaderProps {
   message?: string;
@@ -12,15 +13,21 @@ const ScreenLoader: React.FC<ScreenLoaderProps> = ({
   message = 'Loading...',
   fullScreen = false,
 }) => {
+  const { colors } = useTheme();
+
   const inner = (
     <View style={styles.inner}>
-      <Spinner size={40} color="#DC0159" />
-      {message ? <Text style={styles.message}>{message}</Text> : null}
+      <Spinner size={40} color={colors.primary} />
+      {message ? <Text style={[styles.message, { color: colors.textSecondary }]}>{message}</Text> : null}
     </View>
   );
 
   if (fullScreen) {
-    return <SafeAreaView style={styles.fullScreen}>{inner}</SafeAreaView>;
+    return (
+      <SafeAreaView style={[styles.fullScreen, { backgroundColor: colors.screenBg }]}>
+        {inner}
+      </SafeAreaView>
+    );
   }
 
   return <View style={styles.flex}>{inner}</View>;
@@ -29,7 +36,6 @@ const ScreenLoader: React.FC<ScreenLoaderProps> = ({
 const styles = StyleSheet.create({
   fullScreen: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
   },
   flex: {
     flex: 1,
@@ -41,7 +47,6 @@ const styles = StyleSheet.create({
   },
   message: {
     marginTop: 12,
-    color: '#64748B',
     fontSize: 14,
     fontWeight: '500',
   },

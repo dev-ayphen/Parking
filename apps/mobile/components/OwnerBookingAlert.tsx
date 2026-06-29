@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Modal, View, Text, TouchableOpacity, StyleSheet,
   ActivityIndicator, Animated, Vibration, Alert,
@@ -10,7 +10,8 @@ import { Clock, User, Car, MapPin, CheckCircle2, XCircle, Star } from 'lucide-re
 import { API_BASE } from '../config/api.config';
 import { getAuthToken } from '../utils/secureStorage';
 import { useAuthStore } from '../store/authStore';
-import { Colors } from '../theme';
+import { useTheme } from '../hooks/useTheme';
+import type { ColorsType } from '../theme';
 
 const APPROVAL_WINDOW_SEC = 120;
 
@@ -54,9 +55,99 @@ interface BookingDetails {
   parkerRating?: { avg: number; count: number };
 }
 
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: colors.white,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingBottom: 40, overflow: 'hidden',
+  },
+
+  // Header
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: colors.warningBg, paddingHorizontal: 20, paddingVertical: 16,
+    borderBottomWidth: 1, borderBottomColor: colors.borderMuted,
+  },
+  headerUrgent: { backgroundColor: colors.errorBg, borderBottomColor: colors.borderMuted },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerEmoji: { fontSize: 20 },
+  headerTitle: { fontSize: 16, fontWeight: '800', color: colors.textPrimary },
+  countdownPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: colors.white, paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: 20, borderWidth: 1, borderColor: colors.borderMuted,
+  },
+  countdownPillUrgent: { borderColor: colors.error },
+  countdownText: { fontSize: 14, fontWeight: '800', color: colors.warning },
+  countdownTextUrgent: { color: colors.error },
+
+  // Loading
+  loadingWrap: { padding: 40, alignItems: 'center', gap: 12 },
+  loadingText: { color: colors.textSecondary, fontSize: 14 },
+
+  // Details
+  details: { paddingHorizontal: 20, paddingTop: 14 },
+  detailRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.borderLight,
+  },
+  detailLabel: { fontSize: 13, color: colors.textSecondary, fontWeight: '500', flex: 1 },
+  detailLabelIndent: { fontSize: 13, color: colors.textSecondary, fontWeight: '500', flex: 1, marginLeft: 25 },
+  detailValue: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, textAlign: 'right', flex: 2 },
+  parkerValueWrap: { flex: 2, alignItems: 'flex-end' },
+  vehiclePhotoCard: {
+    borderRadius: 12, borderWidth: 1, borderColor: colors.border,
+    overflow: 'hidden', marginBottom: 16,
+  },
+  vehiclePhotoTitle: {
+    fontSize: 13, fontWeight: '600', color: colors.textSecondary,
+    paddingHorizontal: 16, paddingVertical: 10,
+  },
+  vehiclePhotoImg: { width: '100%', height: 180 },
+  vehiclePhotoPlaceholder: {
+    height: 120, alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: colors.surfaceBg,
+  },
+  vehiclePhotoPlaceholderIcon: { fontSize: 32 },
+  vehiclePhotoPlaceholderText: { fontSize: 13, color: colors.textMuted },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
+  ratingText: { fontSize: 12, fontWeight: '700', color: colors.textPrimary },
+  ratingTextMuted: { fontSize: 12, fontWeight: '500', color: colors.textMuted },
+
+  // Actions
+  actions: { flexDirection: 'row', gap: 12, paddingHorizontal: 20, paddingTop: 20 },
+  rejectBtn: {
+    flex: 1, paddingVertical: 16, borderRadius: 14,
+    borderWidth: 2, borderColor: colors.error, alignItems: 'center',
+  },
+  rejectBtnText: { fontSize: 16, fontWeight: '700', color: colors.error },
+  acceptBtn: {
+    flex: 1.5, paddingVertical: 16, borderRadius: 14,
+    backgroundColor: colors.success, alignItems: 'center',
+  },
+  acceptBtnText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
+  laterBtn: { alignItems: 'center', paddingVertical: 14, marginTop: 4 },
+  laterBtnText: { fontSize: 14, fontWeight: '600', color: colors.textSecondary },
+
+  // Terminal state result box
+  resultBox: {
+    margin: 20, borderRadius: 20, padding: 36,
+    alignItems: 'center', gap: 12,
+  },
+  resultTitle: { fontSize: 20, fontWeight: '800', textAlign: 'center' },
+  resultSub: { fontSize: 14, color: colors.textSecondary, textAlign: 'center' },
+});
+
 export default function OwnerBookingAlert() {
   const router = useRouter();
   const currentUser = useAuthStore((s) => s.user);
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [visible, setVisible]     = useState(false);
   const [bookingId, setBookingId] = useState<string | null>(null);
@@ -336,9 +427,9 @@ export default function OwnerBookingAlert() {
       <Modal visible transparent animationType="none">
         <View style={styles.overlay}>
           <Animated.View style={[styles.sheet, { transform: [{ translateY: slideAnim }] }]}>
-            <View style={[styles.resultBox, { backgroundColor: '#F0FDF4' }]}>
-              <CheckCircle2 size={52} color="#16A34A" />
-              <Text style={[styles.resultTitle, { color: '#16A34A' }]}>Booking Accepted!</Text>
+            <View style={[styles.resultBox, { backgroundColor: colors.successBg }]}>
+              <CheckCircle2 size={52} color={colors.success} />
+              <Text style={[styles.resultTitle, { color: colors.success }]}>Booking Accepted!</Text>
               <Text style={styles.resultSub}>Navigating to active bookings…</Text>
             </View>
           </Animated.View>
@@ -352,9 +443,9 @@ export default function OwnerBookingAlert() {
       <Modal visible transparent animationType="none">
         <View style={styles.overlay}>
           <Animated.View style={[styles.sheet, { transform: [{ translateY: slideAnim }] }]}>
-            <View style={[styles.resultBox, { backgroundColor: '#FEF2F2' }]}>
-              <XCircle size={52} color="#DC2626" />
-              <Text style={[styles.resultTitle, { color: '#DC2626' }]}>Request Rejected</Text>
+            <View style={[styles.resultBox, { backgroundColor: colors.errorBg }]}>
+              <XCircle size={52} color={colors.error} />
+              <Text style={[styles.resultTitle, { color: colors.error }]}>Request Rejected</Text>
               <Text style={styles.resultSub}>Parker has been notified.</Text>
             </View>
           </Animated.View>
@@ -368,9 +459,9 @@ export default function OwnerBookingAlert() {
       <Modal visible transparent animationType="none">
         <View style={styles.overlay}>
           <Animated.View style={[styles.sheet, { transform: [{ translateY: slideAnim }] }]}>
-            <View style={[styles.resultBox, { backgroundColor: '#F1F5F9' }]}>
-              <Clock size={52} color="#64748B" />
-              <Text style={[styles.resultTitle, { color: '#64748B' }]}>Request Expired</Text>
+            <View style={[styles.resultBox, { backgroundColor: colors.surfaceBg }]}>
+              <Clock size={52} color={colors.textSecondary} />
+              <Text style={[styles.resultTitle, { color: colors.textSecondary }]}>Request Expired</Text>
               <Text style={styles.resultSub}>No response within 2 minutes.</Text>
             </View>
           </Animated.View>
@@ -384,9 +475,9 @@ export default function OwnerBookingAlert() {
       <Modal visible transparent animationType="none">
         <View style={styles.overlay}>
           <Animated.View style={[styles.sheet, { transform: [{ translateY: slideAnim }] }]}>
-            <View style={[styles.resultBox, { backgroundColor: '#FEF2F2' }]}>
-              <XCircle size={52} color="#64748B" />
-              <Text style={[styles.resultTitle, { color: '#64748B' }]}>Booking Cancelled</Text>
+            <View style={[styles.resultBox, { backgroundColor: colors.surfaceBg }]}>
+              <XCircle size={52} color={colors.textSecondary} />
+              <Text style={[styles.resultTitle, { color: colors.textSecondary }]}>Booking Cancelled</Text>
               <Text style={styles.resultSub}>Parker cancelled this request.</Text>
             </View>
           </Animated.View>
@@ -438,14 +529,14 @@ export default function OwnerBookingAlert() {
                     <Text style={styles.detailValue} numberOfLines={1}>{parkerName}</Text>
                     {(booking.parkerRating?.count ?? 0) > 0 ? (
                       <View style={styles.ratingRow}>
-                        <Star size={14} color={Colors.warning} fill={Colors.warning} />
+                        <Star size={14} color={colors.warning} fill={colors.warning} />
                         <Text style={styles.ratingText}>
                           {(booking.parkerRating?.avg ?? 0).toFixed(1)} ({booking.parkerRating?.count})
                         </Text>
                       </View>
                     ) : (
                       <View style={styles.ratingRow}>
-                        <Star size={14} color={Colors.textMuted} />
+                        <Star size={14} color={colors.textMuted} />
                         <Text style={styles.ratingTextMuted}>New parker</Text>
                       </View>
                     )}
@@ -478,7 +569,7 @@ export default function OwnerBookingAlert() {
                 </View>
                 <View style={[styles.detailRow, { borderBottomWidth: 0 }]}>
                   <Text style={styles.detailLabelIndent}>Amount</Text>
-                  <Text style={[styles.detailValue, { color: '#DC0159', fontWeight: '800', fontSize: 18 }]}>
+                  <Text style={[styles.detailValue, { color: colors.primary, fontWeight: '800', fontSize: 18 }]}>
                     ₹{booking.totalAmount}
                   </Text>
                 </View>
@@ -492,6 +583,7 @@ export default function OwnerBookingAlert() {
                     source={{ uri: booking.vehicle.frontPhotoUrl }}
                     style={styles.vehiclePhotoImg}
                     resizeMode="cover"
+                    onError={() => {}}
                   />
                 ) : (
                   <View style={styles.vehiclePhotoPlaceholder}>
@@ -539,91 +631,3 @@ export default function OwnerBookingAlert() {
     </Modal>
   );
 }
-
-const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
-  },
-  sheet: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingBottom: 40, overflow: 'hidden',
-  },
-
-  // Header
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: '#FEF3C7', paddingHorizontal: 20, paddingVertical: 16,
-    borderBottomWidth: 1, borderBottomColor: '#FDE68A',
-  },
-  headerUrgent: { backgroundColor: '#FEF2F2', borderBottomColor: '#FECACA' },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headerEmoji: { fontSize: 20 },
-  headerTitle: { fontSize: 16, fontWeight: '800', color: '#0F172A' },
-  countdownPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: '#FFFFFF', paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: 20, borderWidth: 1, borderColor: '#FDE68A',
-  },
-  countdownPillUrgent: { borderColor: '#FECACA' },
-  countdownText: { fontSize: 14, fontWeight: '800', color: '#D97706' },
-  countdownTextUrgent: { color: '#DC2626' },
-
-  // Loading
-  loadingWrap: { padding: 40, alignItems: 'center', gap: 12 },
-  loadingText: { color: '#64748B', fontSize: 14 },
-
-  // Details
-  details: { paddingHorizontal: 20, paddingTop: 14 },
-  detailRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F1F5F9',
-  },
-  detailLabel: { fontSize: 13, color: '#64748B', fontWeight: '500', flex: 1 },
-  detailLabelIndent: { fontSize: 13, color: '#64748B', fontWeight: '500', flex: 1, marginLeft: 25 },
-  detailValue: { fontSize: 13, fontWeight: '700', color: '#0F172A', textAlign: 'right', flex: 2 },
-  parkerValueWrap: { flex: 2, alignItems: 'flex-end' },
-  vehiclePhotoCard: {
-    borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0',
-    overflow: 'hidden', marginBottom: 16,
-  },
-  vehiclePhotoTitle: {
-    fontSize: 13, fontWeight: '600', color: '#64748B',
-    paddingHorizontal: 16, paddingVertical: 10,
-  },
-  vehiclePhotoImg: { width: '100%', height: 180 },
-  vehiclePhotoPlaceholder: {
-    height: 120, alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: '#F8FAFC',
-  },
-  vehiclePhotoPlaceholderIcon: { fontSize: 32 },
-  vehiclePhotoPlaceholderText: { fontSize: 13, color: '#94A3B8' },
-  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
-  ratingText: { fontSize: 12, fontWeight: '700', color: Colors.textPrimary },
-  ratingTextMuted: { fontSize: 12, fontWeight: '500', color: Colors.textMuted },
-
-  // Actions
-  actions: { flexDirection: 'row', gap: 12, paddingHorizontal: 20, paddingTop: 20 },
-  rejectBtn: {
-    flex: 1, paddingVertical: 16, borderRadius: 14,
-    borderWidth: 2, borderColor: '#DC2626', alignItems: 'center',
-  },
-  rejectBtnText: { fontSize: 16, fontWeight: '700', color: '#DC2626' },
-  acceptBtn: {
-    flex: 1.5, paddingVertical: 16, borderRadius: 14,
-    backgroundColor: '#16A34A', alignItems: 'center',
-  },
-  acceptBtnText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
-  laterBtn: { alignItems: 'center', paddingVertical: 14, marginTop: 4 },
-  laterBtnText: { fontSize: 14, fontWeight: '600', color: '#64748B' },
-
-  // Terminal state result box
-  resultBox: {
-    margin: 20, borderRadius: 20, padding: 36,
-    alignItems: 'center', gap: 12,
-  },
-  resultTitle: { fontSize: 20, fontWeight: '800', textAlign: 'center' },
-  resultSub: { fontSize: 14, color: '#64748B', textAlign: 'center' },
-});

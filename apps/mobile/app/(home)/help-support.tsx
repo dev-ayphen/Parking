@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -22,7 +22,9 @@ import {
   X,
   MessageSquare,
 } from 'lucide-react-native';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
+import type { ColorsType } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 
 interface FAQItem {
   question: string;
@@ -58,6 +60,8 @@ const FAQ_DATA: FAQItem[] = [
 
 export default function HelpSupportScreen() {
   const router = useRouter();
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
 
@@ -73,12 +77,12 @@ export default function HelpSupportScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <PageHeader title="Help & Support"  onBack={() => router.replace('/(home)')} />
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
         <View style={styles.searchContainer}>
-          <Search size={20} color={Colors.textMuted} style={styles.searchIcon} />
+          <Search size={20} color={colors.textMuted} style={styles.searchIcon} />
           <TextInput
             value={searchQuery}
             onChangeText={(text) => {
@@ -86,12 +90,12 @@ export default function HelpSupportScreen() {
               setExpandedIndex(null);
             }}
             placeholder="Search for help..."
-            placeholderTextColor={Colors.textMuted}
+            placeholderTextColor={colors.textMuted}
             style={styles.searchInput}
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery('')} activeOpacity={0.7}>
-              <X size={18} color={Colors.textMuted} />
+              <X size={18} color={colors.textMuted} />
             </TouchableOpacity>
           )}
         </View>
@@ -101,8 +105,8 @@ export default function HelpSupportScreen() {
             style={styles.gridItem}
             onPress={() => router.push('/(home)/support/faq')}
           >
-            <View style={[styles.iconContainer, { backgroundColor: Colors.infoBg }]}>
-              <HelpCircle size={24} color={Colors.info} />
+            <View style={[styles.iconContainer, { backgroundColor: colors.infoBg }]}>
+              <HelpCircle size={24} color={colors.info} />
             </View>
             <Text style={styles.gridTitle}>View FAQ</Text>
             <Text style={styles.gridDesc}>Common questions</Text>
@@ -111,8 +115,8 @@ export default function HelpSupportScreen() {
             style={styles.gridItem}
             onPress={() => router.push('/(home)/support/articles')}
           >
-            <View style={[styles.iconContainer, { backgroundColor: Colors.successBg }]}>
-              <FileText size={24} color={Colors.successAlt} />
+            <View style={[styles.iconContainer, { backgroundColor: colors.successBg }]}>
+              <FileText size={24} color={colors.successAlt} />
             </View>
             <Text style={styles.gridTitle}>Articles</Text>
             <Text style={styles.gridDesc}>Detailed guides</Text>
@@ -121,8 +125,8 @@ export default function HelpSupportScreen() {
             style={[styles.gridItem, styles.gridItemFull]}
             onPress={() => router.push('/(home)/support/create-ticket')}
           >
-            <View style={[styles.iconContainer, { backgroundColor: Colors.errorBg }]}>
-              <Ticket size={24} color={Colors.errorAlt} />
+            <View style={[styles.iconContainer, { backgroundColor: colors.errorBg }]}>
+              <Ticket size={24} color={colors.errorAlt} />
             </View>
             <Text style={styles.gridTitle}>Contact Support</Text>
             <Text style={styles.gridDesc}>Raise a support ticket</Text>
@@ -135,10 +139,10 @@ export default function HelpSupportScreen() {
           activeOpacity={0.7}
         >
           <View style={styles.myTicketsLeft}>
-            <FileText size={18} color={Colors.textSecondary} />
+            <FileText size={18} color={colors.textSecondary} />
             <Text style={styles.myTicketsText}>My Support Tickets</Text>
           </View>
-          <ChevronDown size={18} color={Colors.textMuted} style={{ transform: [{ rotate: '-90deg' }] }} />
+          <ChevronDown size={18} color={colors.textMuted} style={{ transform: [{ rotate: '-90deg' }] }} />
         </TouchableOpacity>
 
         <View style={styles.faqSection}>
@@ -155,9 +159,9 @@ export default function HelpSupportScreen() {
                   >
                     <Text style={styles.faqQuestion}>{faq.question}</Text>
                     {isExpanded ? (
-                      <ChevronUp size={20} color={Colors.textSecondary} />
+                      <ChevronUp size={20} color={colors.textSecondary} />
                     ) : (
-                      <ChevronDown size={20} color={Colors.textSecondary} />
+                      <ChevronDown size={20} color={colors.textSecondary} />
                     )}
                   </TouchableOpacity>
                   {isExpanded && (
@@ -178,7 +182,7 @@ export default function HelpSupportScreen() {
         <View style={styles.contactCard}>
           <View style={styles.contactGradient}>
             <View style={styles.contactIcon}>
-              <HelpCircle size={32} color={Colors.white} strokeWidth={1.5} />
+              <HelpCircle size={32} color={colors.white} strokeWidth={1.5} />
             </View>
             <View style={styles.contactContent}>
               <Text style={styles.contactTitle}>Can't find the answer?</Text>
@@ -190,7 +194,7 @@ export default function HelpSupportScreen() {
                 onPress={() => router.push('/(home)/support/create-ticket')}
                 activeOpacity={0.85}
               >
-                <Ticket size={16} color={Colors.white} style={{ marginRight: Spacing.sm }} />
+                <Ticket size={16} color={colors.white} style={{ marginRight: Spacing.sm }} />
                 <Text style={styles.contactButtonText}>Open Support Ticket</Text>
               </TouchableOpacity>
             </View>
@@ -201,25 +205,25 @@ export default function HelpSupportScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
   },
-  scrollView: { backgroundColor: Colors.screenBg },
+  scrollView: { backgroundColor: colors.screenBg },
   content: {
     padding: Spacing.screenH,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     paddingHorizontal: Spacing.xl,
     borderRadius: BorderRadius.md,
     gap: Spacing.md,
     marginBottom: Spacing['4xl'],
     borderWidth: 1.5,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     height: 48,
   },
   searchIcon: {
@@ -229,7 +233,7 @@ const styles = StyleSheet.create({
     flex: 1,
     height: '100%',
     fontSize: FontSize.md,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     fontWeight: FontWeight.medium,
     padding: 0,
   },
@@ -241,7 +245,7 @@ const styles = StyleSheet.create({
   },
   gridItem: {
     width: '47%',
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: BorderRadius.lg,
     padding: Spacing['3xl'],
     ...Platform.select({
@@ -270,24 +274,24 @@ const styles = StyleSheet.create({
   gridTitle: {
     fontSize: FontSize.xl,
     fontWeight: FontWeight.semibold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: Spacing.xs,
   },
   gridDesc: {
     fontSize: FontSize.sm,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   myTicketsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: BorderRadius.button,
     paddingVertical: Spacing['3xl'],
     paddingHorizontal: Spacing.screenH,
     marginBottom: Spacing['4xl'],
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
   },
   myTicketsLeft: {
     flexDirection: 'row',
@@ -297,7 +301,7 @@ const styles = StyleSheet.create({
   myTicketsText: {
     fontSize: FontSize.lg,
     fontWeight: FontWeight.semibold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   faqSection: {
     marginBottom: Spacing['6xl'],
@@ -305,14 +309,14 @@ const styles = StyleSheet.create({
   faqSectionTitle: {
     fontSize: FontSize.xl,
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: Spacing['3xl'],
   },
   faqCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: BorderRadius.md,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: colors.borderLight,
     marginBottom: Spacing.xl,
     overflow: 'hidden',
   },
@@ -326,18 +330,18 @@ const styles = StyleSheet.create({
   faqQuestion: {
     fontSize: FontSize.md,
     fontWeight: FontWeight.semibold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     flex: 1,
   },
   faqAnswerContainer: {
     paddingHorizontal: Spacing['3xl'],
     paddingBottom: Spacing['3xl'],
     borderTopWidth: 1,
-    borderTopColor: Colors.borderLighter,
+    borderTopColor: colors.borderLighter,
   },
   faqAnswer: {
     fontSize: FontSize.md,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     lineHeight: 20,
     marginTop: Spacing.md,
   },
@@ -347,14 +351,14 @@ const styles = StyleSheet.create({
   },
   emptySearchText: {
     fontSize: FontSize.md,
-    color: Colors.textMuted,
+    color: colors.textMuted,
   },
   contactCard: {
     marginBottom: Spacing['7xl'],
     paddingHorizontal: Spacing.xs,
   },
   contactGradient: {
-    backgroundColor: Colors.primaryBg,
+    backgroundColor: colors.primaryBg,
     borderRadius: BorderRadius.xl,
     padding: Spacing['4xl'],
     flexDirection: 'row',
@@ -376,7 +380,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: BorderRadius.lg,
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
@@ -388,17 +392,17 @@ const styles = StyleSheet.create({
   contactTitle: {
     fontSize: FontSize.xl,
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: Spacing.md,
   },
   contactDesc: {
     fontSize: FontSize.sm,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     marginBottom: Spacing['3xl'],
     lineHeight: 20,
   },
   contactButton: {
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     paddingHorizontal: Spacing['3xl'],
     paddingVertical: Spacing.lg,
     borderRadius: BorderRadius.button,
@@ -407,7 +411,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   contactButtonText: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: FontSize.md,
     fontWeight: FontWeight.bold,
   },

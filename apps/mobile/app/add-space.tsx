@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -24,8 +24,8 @@ import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { api } from '../services/api';
-import { Colors, FontSize, FontWeight, BorderRadius, ExtendedColors } from '../theme';
-import { styles } from '../components/AddSpace/addSpaceStyles';
+import { FontSize, FontWeight, BorderRadius } from '../theme';
+import { makeAddSpaceStyles } from '../components/AddSpace/addSpaceStyles';
 import Step1BasicDetails from '../components/AddSpace/Step1BasicDetails';
 import Step2Location from '../components/AddSpace/Step2Location';
 import Step3Pricing from '../components/AddSpace/Step3Pricing';
@@ -214,6 +214,8 @@ type SpaceFormData = z.infer<typeof createSpaceSchema>;
 
 export default function AddSpaceScreen() {
   const theme = useTheme();
+  const { colors } = theme;
+  const styles = useMemo(() => makeAddSpaceStyles(colors), [colors]);
   const router = useRouter();
   const params = useLocalSearchParams<{ edit?: string }>();
   const editId = params.edit ? parseInt(params.edit, 10) : null;
@@ -295,7 +297,7 @@ export default function AddSpaceScreen() {
     formState: { errors },
   } = useForm<SpaceFormData>({
     resolver: zodResolver(createSpaceSchema),
-    defaultValues: EMPTY_DEFAULTS,
+    defaultValues: EMPTY_DEFAULTS as any,
   });
 
   // Reset everything when screen is focused (handles back-navigation reuse).
@@ -303,7 +305,7 @@ export default function AddSpaceScreen() {
   useFocusEffect(
     useCallback(() => {
       if (isEdit) return;
-      reset(EMPTY_DEFAULTS);
+      reset(EMPTY_DEFAULTS as any);
       setStep(1);
       setUploadedDocs([]);
       setLocationQuery('');
@@ -662,7 +664,7 @@ export default function AddSpaceScreen() {
     }
   };
 
-  const onSubmit = async (data: SpaceFormData) => {
+  const onSubmit = async (data: any) => {
     try {
       setIsSubmitting(true);
 
@@ -868,7 +870,7 @@ export default function AddSpaceScreen() {
           {/* Icon */}
           <View style={styles.successIconWrap}>
             <View style={styles.successIconOuter}>
-              <CheckCircle size={56} color={Colors.success} strokeWidth={1.5} />
+              <CheckCircle size={56} color={colors.success} strokeWidth={1.5} />
             </View>
           </View>
 
@@ -938,7 +940,7 @@ export default function AddSpaceScreen() {
         <StatusBar barStyle="dark-content" />
         <PageHeader title="Edit Space" onBack={() => router.back()} />
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       </SafeAreaView>
     );
@@ -965,7 +967,7 @@ export default function AddSpaceScreen() {
             disabled={isSubmitting}
           >
             {isSubmitting ? (
-              <ActivityIndicator size="small" color={Colors.primary} />
+              <ActivityIndicator size="small" color={colors.primary} />
             ) : (
               <Text style={styles.headerBtnText} numberOfLines={1}>{step === 5 ? 'Submit' : 'Next'}</Text>
             )}

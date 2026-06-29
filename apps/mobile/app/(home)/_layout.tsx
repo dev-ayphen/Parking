@@ -1,15 +1,14 @@
 import React from 'react';
 import { Stack, Redirect } from 'expo-router';
 import { useAuthStore } from '../../store/authStore';
+import ScreenLoader from '../../components/ScreenLoader';
 
 export default function HomeLayout() {
   const isHydrated = useAuthStore((s) => s.isHydrated);
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
 
-  // Only redirect once auth state is KNOWN (hydrated). During hydration we render
-  // nothing to avoid a flicker/redirect loop. After hydration, no token/user → login.
-  if (!isHydrated) return null;
+  if (!isHydrated) return <ScreenLoader fullScreen message="" />;
   if (!token || !user) return <Redirect href="/(auth)/login" />;
 
   return (

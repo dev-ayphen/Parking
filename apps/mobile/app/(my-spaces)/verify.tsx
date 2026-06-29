@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {View,
   Text,
   StyleSheet,
@@ -20,7 +20,9 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { PageHeader } from '../../components';
 import { api } from '../../services/api';
 import { useNetworkStore } from '../../store/networkStore';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import type { ColorsType } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 import { useSessionBarStore } from '../../store/sessionBarStore';
 
 interface OwnerRequest {
@@ -48,6 +50,8 @@ const formatEta = (eta: string | null | undefined) => {
 };
 
 export default function VerifyScreen() {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const router = useRouter();
   const setBarForSource = useSessionBarStore((s) => s.setBarForSource);
   const clearSource = useSessionBarStore((s) => s.clearSource);
@@ -352,10 +356,10 @@ export default function VerifyScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <StatusBar barStyle="dark-content" />
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
         <PageHeader title="Verify Session"  onBack={() => router.replace('/(my-spaces)')} />
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       </SafeAreaView>
     );
@@ -365,17 +369,17 @@ export default function VerifyScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <PageHeader title="Verify Session"  onBack={() => router.replace('/(my-spaces)')} />
 
       <ScrollView
         style={styles.container}
         contentContainerStyle={{ flexGrow: 1, paddingBottom: 120, paddingTop: Spacing['3xl'] }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchRequests('refresh')} tintColor={Colors.primary} colors={[Colors.primary]} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchRequests('refresh')} tintColor={colors.primary} colors={[colors.primary]} />}
       >
         {isEmpty && (
           <View style={styles.emptyState}>
-            <ShieldCheck size={64} color={Colors.borderMuted} strokeWidth={1} style={{ marginBottom: 16 }} />
+            <ShieldCheck size={64} color={colors.borderMuted} strokeWidth={1} style={{ marginBottom: 16 }} />
             <Text style={styles.emptyTitle}>Nothing to Verify</Text>
             <Text style={styles.emptySubtitle}>
               If you have an approved booking, this screen will update automatically when the parker taps "I Have Arrived".
@@ -428,7 +432,7 @@ export default function VerifyScreen() {
                     onPress={() => { setRejectTarget(req); setRejectReason(''); }}
                     disabled={acceptingId === req.id}
                   >
-                    <X size={20} color={Colors.error} />
+                    <X size={20} color={colors.error} />
                     <Text style={styles.declineText}>Decline</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
@@ -437,10 +441,10 @@ export default function VerifyScreen() {
                     disabled={acceptingId === req.id}
                   >
                     {acceptingId === req.id ? (
-                      <ActivityIndicator size="small" color={Colors.white} />
+                      <ActivityIndicator size="small" color={colors.white} />
                     ) : (
                       <>
-                        <Check size={20} color={Colors.white} />
+                        <Check size={20} color={colors.white} />
                         <Text style={styles.acceptText}>Accept Booking</Text>
                       </>
                     )}
@@ -461,7 +465,7 @@ export default function VerifyScreen() {
               <View key={req.id} style={styles.enRouteCard}>
                 <View style={styles.enRouteBanner}>
                   <View style={styles.enRouteBannerIcon}>
-                    <Navigation size={20} color={Colors.info} strokeWidth={2.4} fill={Colors.info} />
+                    <Navigation size={20} color={colors.info} strokeWidth={2.4} fill={colors.info} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.enRouteBannerTitle}>Parker is on the way</Text>
@@ -487,7 +491,7 @@ export default function VerifyScreen() {
                       <Text style={styles.detailValue}>{req.etaText}</Text>
                       {req.etaUpdatedAt && (
                         <View style={styles.etaUpdatedBadge}>
-                          <Clock size={10} color={Colors.warningAlt} strokeWidth={2.5} />
+                          <Clock size={10} color={colors.warningAlt} strokeWidth={2.5} />
                           <Text style={styles.etaUpdatedBadgeText}>Updated</Text>
                         </View>
                       )}
@@ -504,11 +508,11 @@ export default function VerifyScreen() {
                   )}
                   <View style={[styles.detailRow, { borderBottomWidth: 0 }]}>
                     <Text style={styles.detailLabel}>Amount</Text>
-                    <Text style={[styles.detailValue, { color: Colors.primary, fontWeight: FontWeight.extrabold }]}>₹{req.amount}</Text>
+                    <Text style={[styles.detailValue, { color: colors.primary, fontWeight: FontWeight.extrabold }]}>₹{req.amount}</Text>
                   </View>
                 </View>
                 <TouchableOpacity style={styles.enRouteContactBtn} onPress={() => callParker(req.phone)}>
-                  <Phone size={16} color={Colors.primary} />
+                  <Phone size={16} color={colors.primary} />
                   <Text style={styles.enRouteContactText}>Contact Parker</Text>
                 </TouchableOpacity>
               </View>
@@ -527,29 +531,29 @@ export default function VerifyScreen() {
                 <View style={styles.approvedRow}>
                   <View style={styles.approvedIcon}>
                     {req.parkerPhotoUrl ? (
-                      <Image source={{ uri: req.parkerPhotoUrl }} style={styles.approvedAvatarImg} resizeMode="cover" />
+                      <Image source={{ uri: req.parkerPhotoUrl }} style={styles.approvedAvatarImg} resizeMode="cover" onError={() => {}} />
                     ) : (
-                      <CheckCircle size={18} color={Colors.success} />
+                      <CheckCircle size={18} color={colors.success} />
                     )}
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.boldText}>{req.parkerName}</Text>
                     <View style={styles.metaRow}>
-                      <Car size={13} color={Colors.textSecondary} />
+                      <Car size={13} color={colors.textSecondary} />
                       <Text style={styles.subText}>{req.vehicle}</Text>
                     </View>
                     <View style={styles.metaRow}>
-                      <MapPin size={13} color={Colors.textSecondary} />
+                      <MapPin size={13} color={colors.textSecondary} />
                       <Text style={styles.subText}>{req.spaceName}</Text>
                     </View>
                   </View>
                   <TouchableOpacity style={styles.callIconBtn} onPress={() => callParker(req.phone)}>
-                    <Phone size={18} color={Colors.textDark} />
+                    <Phone size={18} color={colors.textDark} />
                   </TouchableOpacity>
                 </View>
 
                 <TouchableOpacity style={styles.verifyBtn} onPress={() => openVerify(req)}>
-                  <ShieldCheck size={18} color={Colors.white} style={{ marginRight: 8 }} />
+                  <ShieldCheck size={18} color={colors.white} style={{ marginRight: 8 }} />
                   <Text style={styles.verifyBtnText}>Verify Arrival & Start</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.cancelApprovedBtn} onPress={() => cancelApproved(req)}>
@@ -570,7 +574,7 @@ export default function VerifyScreen() {
             <TextInput
               style={styles.reasonInput}
               placeholder="e.g. Space no longer available"
-              placeholderTextColor={Colors.textMuted}
+              placeholderTextColor={colors.textMuted}
               value={rejectReason}
               onChangeText={setRejectReason}
               multiline
@@ -581,7 +585,7 @@ export default function VerifyScreen() {
                 <Text style={styles.cancelBtnText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.dangerBtn} onPress={confirmReject} disabled={rejecting}>
-                {rejecting ? <ActivityIndicator size="small" color={Colors.white} /> : <Text style={styles.confirmBtnText}>Decline</Text>}
+                {rejecting ? <ActivityIndicator size="small" color={colors.white} /> : <Text style={styles.confirmBtnText}>Decline</Text>}
               </TouchableOpacity>
             </View>
           </View>
@@ -604,7 +608,7 @@ export default function VerifyScreen() {
                   onPress={submitNoConcern}
                   disabled={submittingVerify}
                 >
-                  <CheckCircle size={22} color={Colors.success} />
+                  <CheckCircle size={22} color={colors.success} />
                   <View style={{ flex: 1, marginLeft: 12 }}>
                     <Text style={styles.damageOptionTitle}>No Visible Damage</Text>
                     <Text style={styles.damageOptionDesc}>Start the session right away.</Text>
@@ -616,7 +620,7 @@ export default function VerifyScreen() {
                   onPress={() => setVerifyStep('PHOTOS')}
                   disabled={submittingVerify}
                 >
-                  <Camera size={22} color={Colors.warning} />
+                  <Camera size={22} color={colors.warning} />
                   <View style={{ flex: 1, marginLeft: 12 }}>
                     <Text style={styles.damageOptionTitle}>Damage Found</Text>
                     <Text style={styles.damageOptionDesc}>Photograph the existing damage first.</Text>
@@ -624,7 +628,7 @@ export default function VerifyScreen() {
                 </TouchableOpacity>
 
                 {submittingVerify && (
-                  <ActivityIndicator size="small" color={Colors.primary} style={{ marginTop: 16 }} />
+                  <ActivityIndicator size="small" color={colors.primary} style={{ marginTop: 16 }} />
                 )}
 
                 <TouchableOpacity style={styles.cancelLink} onPress={closeVerify} disabled={submittingVerify}>
@@ -643,15 +647,15 @@ export default function VerifyScreen() {
                 <View style={styles.photoGrid}>
                   {damagePhotos.map((uri) => (
                     <View key={uri} style={styles.photoThumb}>
-                      <Image source={{ uri }} style={styles.photoImg} />
+                      <Image source={{ uri }} style={styles.photoImg} onError={() => {}} />
                       <TouchableOpacity style={styles.photoRemove} onPress={() => removeDamagePhoto(uri)}>
-                        <X size={12} color={Colors.white} strokeWidth={3} />
+                        <X size={12} color={colors.white} strokeWidth={3} />
                       </TouchableOpacity>
                     </View>
                   ))}
                   {damagePhotos.length < 6 && (
                     <TouchableOpacity style={styles.photoAdd} onPress={pickDamagePhoto} disabled={submittingVerify}>
-                      <Plus size={20} color={Colors.textMuted} />
+                      <Plus size={20} color={colors.textMuted} />
                       <Text style={styles.photoAddText}>Add</Text>
                     </TouchableOpacity>
                   )}
@@ -663,7 +667,7 @@ export default function VerifyScreen() {
                   disabled={submittingVerify || damagePhotos.length === 0}
                 >
                   {submittingVerify
-                    ? <ActivityIndicator color={Colors.white} />
+                    ? <ActivityIndicator color={colors.white} />
                     : <Text style={styles.verifyBtnText}>Save & Continue</Text>}
                 </TouchableOpacity>
 
@@ -676,7 +680,7 @@ export default function VerifyScreen() {
             {verifyStep === 'OTP' && (
               <>
                 <View style={styles.successBanner}>
-                  <CheckCircle size={20} color={Colors.success} />
+                  <CheckCircle size={20} color={colors.success} />
                   <Text style={styles.successText}>Condition recorded</Text>
                 </View>
                 <Text style={styles.modalTitle}>Enter Parker's OTP</Text>
@@ -692,7 +696,7 @@ export default function VerifyScreen() {
                     keyboardType="number-pad"
                     maxLength={4}
                     placeholder="0000"
-                    placeholderTextColor={Colors.borderMuted}
+                    placeholderTextColor={colors.borderMuted}
                     autoFocus
                     editable={!verifyingOtp}
                   />
@@ -703,7 +707,7 @@ export default function VerifyScreen() {
                   onPress={verifyOtp}
                   disabled={enteredOtp.length !== 4 || verifyingOtp}
                 >
-                  {verifyingOtp ? <ActivityIndicator size="small" color={Colors.white} /> : <Text style={styles.primaryBtnText}>Verify & Start Session</Text>}
+                  {verifyingOtp ? <ActivityIndicator size="small" color={colors.white} /> : <Text style={styles.primaryBtnText}>Verify & Start Session</Text>}
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.cancelLink} onPress={closeVerify} disabled={verifyingOtp}>
@@ -718,47 +722,47 @@ export default function VerifyScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
   // White SafeAreaView so the header + top inset match every other screen; the
   // scroll content below stays grey so the white cards stand out.
-  safeArea: { flex: 1, backgroundColor: Colors.white },
-  container: { flex: 1, backgroundColor: Colors.screenBg },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.screenBg },
-  sectionHeader: { fontSize: FontSize.md, fontWeight: FontWeight.extrabold, color: Colors.textPrimary, marginBottom: Spacing.xl, paddingHorizontal: Spacing.screenH, paddingTop: Spacing['3xl'] },  // 14 = md ✓
+  safeArea: { flex: 1, backgroundColor: colors.white },
+  container: { flex: 1, backgroundColor: colors.screenBg },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.screenBg },
+  sectionHeader: { fontSize: FontSize.md, fontWeight: FontWeight.extrabold, color: colors.textPrimary, marginBottom: Spacing.xl, paddingHorizontal: Spacing.screenH, paddingTop: Spacing['3xl'] },  // 14 = md ✓
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: Spacing['7xl'], paddingTop: 80 },
-  emptyTitle: { fontSize: FontSize['3xl'], fontWeight: FontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.md },  // 20 = 3xl ✓
-  emptySubtitle: { fontSize: FontSize.md, color: Colors.textSecondary, textAlign: 'center', paddingHorizontal: Spacing.screenH, lineHeight: 20 },  // 14 = md ✓
+  emptyTitle: { fontSize: FontSize['3xl'], fontWeight: FontWeight.bold, color: colors.textPrimary, marginBottom: Spacing.md },  // 20 = 3xl ✓
+  emptySubtitle: { fontSize: FontSize.md, color: colors.textSecondary, textAlign: 'center', paddingHorizontal: Spacing.screenH, lineHeight: 20 },  // 14 = md ✓
   card: {
-    backgroundColor: Colors.white, borderRadius: BorderRadius.lg, padding: Spacing.screenH, marginBottom: Spacing['3xl'], marginHorizontal: Spacing.screenH,  // 16 = lg ✓
+    backgroundColor: colors.white, borderRadius: BorderRadius.lg, padding: Spacing.screenH, marginBottom: Spacing['3xl'], marginHorizontal: Spacing.screenH,  // 16 = lg ✓
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 12, elevation: 3,
   },
   alertHeader: {
-    backgroundColor: Colors.infoBg, margin: -20, padding: Spacing['3xl'],
+    backgroundColor: colors.infoBg, margin: -20, padding: Spacing['3xl'],
     borderTopLeftRadius: BorderRadius.lg, borderTopRightRadius: BorderRadius.lg, marginBottom: Spacing.screenH,  // 16 = lg ✓
   },
   alertTitle: { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: ExtendedColors.blueDeep },  // 16 = xl ✓, '#1D4ED8' ✓
   section: { marginBottom: Spacing['3xl'] },
-  sectionLabel: { fontSize: FontSize.xs, fontWeight: FontWeight.bold, color: Colors.textMuted, marginBottom: Spacing.sm, letterSpacing: 1 },  // 11 = xs ✓
-  boldText: { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.micro },  // 16 = xl ✓
-  subText: { fontSize: FontSize.base, color: Colors.textSecondary },  // 13 = base ✓
+  sectionLabel: { fontSize: FontSize.xs, fontWeight: FontWeight.bold, color: colors.textMuted, marginBottom: Spacing.sm, letterSpacing: 1 },  // 11 = xs ✓
+  boldText: { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: colors.textPrimary, marginBottom: Spacing.micro },  // 16 = xl ✓
+  subText: { fontSize: FontSize.base, color: colors.textSecondary },  // 13 = base ✓
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.micro },
   detailRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: Spacing.md, alignItems: 'center' },
-  detailLabel: { fontSize: FontSize.md, color: Colors.textSecondary },  // 14 = md ✓
-  detailValue: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.textPrimary },  // 14 = md ✓
+  detailLabel: { fontSize: FontSize.md, color: colors.textSecondary },  // 14 = md ✓
+  detailValue: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: colors.textPrimary },  // 14 = md ✓
   // "Updated ETA" — value + amber badge on the right, and a callout note below.
   etaValueWrap: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   etaUpdatedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: Colors.warningBgAlt,
+    backgroundColor: colors.warningBgAlt,
     paddingHorizontal: Spacing.sm,
     paddingVertical: 2,
     borderRadius: BorderRadius.badge,
   },
-  etaUpdatedBadgeText: { fontSize: FontSize.micro, fontWeight: FontWeight.extrabold, color: Colors.warningAlt },
+  etaUpdatedBadgeText: { fontSize: FontSize.micro, fontWeight: FontWeight.extrabold, color: colors.warningAlt },
   etaUpdatedNote: {
-    backgroundColor: Colors.warningBgAlt,
+    backgroundColor: colors.warningBgAlt,
     borderRadius: BorderRadius.sm,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
@@ -768,86 +772,86 @@ const styles = StyleSheet.create({
   actionRow: { flexDirection: 'row', gap: Spacing.xl, marginTop: Spacing.md },
   declineBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing['2xl'],
-    backgroundColor: Colors.errorBg, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: ExtendedColors.redBorder,  // 12 = md ✓, '#FECACA' ✓
+    backgroundColor: colors.errorBg, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: ExtendedColors.redBorder,  // 12 = md ✓, '#FECACA' ✓
   },
-  declineText: { color: Colors.error, fontWeight: FontWeight.bold, marginLeft: Spacing.sm },
+  declineText: { color: colors.error, fontWeight: FontWeight.bold, marginLeft: Spacing.sm },
   acceptBtn: {
     flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingVertical: Spacing['2xl'], backgroundColor: Colors.success, borderRadius: BorderRadius.md,  // 12 = md ✓
+    paddingVertical: Spacing['2xl'], backgroundColor: colors.success, borderRadius: BorderRadius.md,  // 12 = md ✓
   },
-  acceptText: { color: Colors.white, fontWeight: FontWeight.bold, marginLeft: Spacing.sm },
+  acceptText: { color: colors.white, fontWeight: FontWeight.bold, marginLeft: Spacing.sm },
   approvedRow: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing['3xl'] },
   approvedIcon: {
-    width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.successBg,
+    width: 40, height: 40, borderRadius: 20, backgroundColor: colors.successBg,
     alignItems: 'center', justifyContent: 'center', marginRight: Spacing.xl, overflow: 'hidden',
   },
   approvedAvatarImg: { width: '100%', height: '100%', borderRadius: 20 },
   callIconBtn: {
-    width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.surfaceBg,
+    width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceBg,
     alignItems: 'center', justifyContent: 'center', marginLeft: Spacing.md,
   },
   verifyBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: Colors.primary, paddingVertical: Spacing['2xl'], borderRadius: BorderRadius.md,  // 12 = md ✓
+    backgroundColor: colors.primary, paddingVertical: Spacing['2xl'], borderRadius: BorderRadius.md,  // 12 = md ✓
   },
-  verifyBtnText: { color: Colors.white, fontWeight: FontWeight.bold, fontSize: FontSize.lg },  // 15 = lg ✓
+  verifyBtnText: { color: colors.white, fontWeight: FontWeight.bold, fontSize: FontSize.lg },  // 15 = lg ✓
   cancelApprovedBtn: { alignItems: 'center', paddingVertical: Spacing.lg, marginTop: Spacing.xs },
-  cancelApprovedText: { color: Colors.error, fontWeight: FontWeight.semibold, fontSize: FontSize.md },
-  modalOverlay: { flex: 1, backgroundColor: Colors.overlay, justifyContent: 'flex-end' },   // 'rgba(0,0,0,0.5)' ✓
+  cancelApprovedText: { color: colors.error, fontWeight: FontWeight.semibold, fontSize: FontSize.md },
+  modalOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },   // 'rgba(0,0,0,0.5)' ✓
   modalContent: {
-    backgroundColor: Colors.white, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl, padding: Spacing['4xl'], paddingBottom: Spacing['7xl'],  // 24 = xl ✓
+    backgroundColor: colors.white, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl, padding: Spacing['4xl'], paddingBottom: Spacing['7xl'],  // 24 = xl ✓
   },
-  modalTitle: { fontSize: FontSize['2xl'], fontWeight: FontWeight.extrabold, color: Colors.textPrimary, marginBottom: Spacing.md },  // 18 = 2xl ✓
-  modalSubtitle: { fontSize: FontSize.md, color: Colors.textSecondary, marginBottom: Spacing.screenH, lineHeight: 20 },  // 14 = md ✓
+  modalTitle: { fontSize: FontSize['2xl'], fontWeight: FontWeight.extrabold, color: colors.textPrimary, marginBottom: Spacing.md },  // 18 = 2xl ✓
+  modalSubtitle: { fontSize: FontSize.md, color: colors.textSecondary, marginBottom: Spacing.screenH, lineHeight: 20 },  // 14 = md ✓
   reasonInput: {
-    borderWidth: 1.5, borderColor: Colors.border, borderRadius: BorderRadius.md, padding: Spacing['2xl'],  // 12 = md ✓
-    fontSize: FontSize.lg, color: Colors.textPrimary, minHeight: 90, textAlignVertical: 'top', marginBottom: Spacing.screenH,  // 15 = lg ✓
+    borderWidth: 1.5, borderColor: colors.border, borderRadius: BorderRadius.md, padding: Spacing['2xl'],  // 12 = md ✓
+    fontSize: FontSize.lg, color: colors.textPrimary, minHeight: 90, textAlignVertical: 'top', marginBottom: Spacing.screenH,  // 15 = lg ✓
   },
   modalFooter: { flexDirection: 'row', gap: Spacing.xl },
-  cancelBtn: { flex: 1, paddingVertical: Spacing['2xl'], borderRadius: BorderRadius.input, backgroundColor: Colors.surfaceBg, alignItems: 'center' },  // 10 = input ✓
-  cancelBtnText: { fontWeight: FontWeight.bold, color: Colors.textBody },
-  dangerBtn: { flex: 2, paddingVertical: Spacing['2xl'], borderRadius: BorderRadius.input, backgroundColor: Colors.error, alignItems: 'center' },  // 10 = input ✓
-  confirmBtnText: { fontWeight: FontWeight.bold, color: Colors.white },
+  cancelBtn: { flex: 1, paddingVertical: Spacing['2xl'], borderRadius: BorderRadius.input, backgroundColor: colors.surfaceBg, alignItems: 'center' },  // 10 = input ✓
+  cancelBtnText: { fontWeight: FontWeight.bold, color: colors.textBody },
+  dangerBtn: { flex: 2, paddingVertical: Spacing['2xl'], borderRadius: BorderRadius.input, backgroundColor: colors.error, alignItems: 'center' },  // 10 = input ✓
+  confirmBtnText: { fontWeight: FontWeight.bold, color: colors.white },
   damageOption: {
     flexDirection: 'row', alignItems: 'center', padding: Spacing['3xl'], borderRadius: BorderRadius.md,  // 12 = md ✓
-    borderWidth: 1.5, borderColor: Colors.border, marginBottom: Spacing.xl,
+    borderWidth: 1.5, borderColor: colors.border, marginBottom: Spacing.xl,
   },
-  damageOptionTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textPrimary },  // 15 = lg ✓
-  damageOptionDesc: { fontSize: FontSize.base, color: Colors.textSecondary, marginTop: Spacing.micro },  // 13 = base ✓
+  damageOptionTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: colors.textPrimary },  // 15 = lg ✓
+  damageOptionDesc: { fontSize: FontSize.base, color: colors.textSecondary, marginTop: Spacing.micro },  // 13 = base ✓
   cancelLink: { alignItems: 'center', paddingVertical: Spacing['2xl'], marginTop: Spacing.xs },
-  cancelLinkText: { fontSize: FontSize.lg, fontWeight: FontWeight.semibold, color: Colors.textSecondary },  // 15 = lg ✓
+  cancelLinkText: { fontSize: FontSize.lg, fontWeight: FontWeight.semibold, color: colors.textSecondary },  // 15 = lg ✓
   photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md, marginVertical: Spacing.xl },
   photoThumb: { width: 72, height: 72, borderRadius: BorderRadius.md, overflow: 'hidden', position: 'relative' },
-  photoImg: { width: '100%', height: '100%', backgroundColor: Colors.surfaceBg },
+  photoImg: { width: '100%', height: '100%', backgroundColor: colors.surfaceBg },
   photoRemove: { position: 'absolute', top: 3, right: 3, width: 18, height: 18, borderRadius: 9, backgroundColor: ExtendedColors.darkOverlay, alignItems: 'center', justifyContent: 'center' },
-  photoAdd: { width: 72, height: 72, borderRadius: BorderRadius.md, borderWidth: 1.5, borderColor: Colors.border, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.screenBg, gap: 2 },
-  photoAddText: { fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: FontWeight.medium },
+  photoAdd: { width: 72, height: 72, borderRadius: BorderRadius.md, borderWidth: 1.5, borderColor: colors.border, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.screenBg, gap: 2 },
+  photoAddText: { fontSize: FontSize.xs, color: colors.textMuted, fontWeight: FontWeight.medium },
   successBanner: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.successBg,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.successBg,
     padding: Spacing.xl, borderRadius: BorderRadius.sm, marginBottom: Spacing.screenH,  // 8 = sm ✓
   },
-  successText: { marginLeft: Spacing.md, color: Colors.success, fontWeight: FontWeight.semibold, fontSize: FontSize.base },  // 13 = base ✓
-  primaryBtn: { backgroundColor: Colors.primary, paddingVertical: Spacing['3xl'], borderRadius: BorderRadius.md, alignItems: 'center' },  // 12 = md ✓
+  successText: { marginLeft: Spacing.md, color: colors.success, fontWeight: FontWeight.semibold, fontSize: FontSize.base },  // 13 = base ✓
+  primaryBtn: { backgroundColor: colors.primary, paddingVertical: Spacing['3xl'], borderRadius: BorderRadius.md, alignItems: 'center' },  // 12 = md ✓
   primaryBtnDisabled: { opacity: 0.5 },
-  primaryBtnText: { color: Colors.white, fontWeight: FontWeight.bold, fontSize: FontSize.lg },  // 15 = lg ✓
+  primaryBtnText: { color: colors.white, fontWeight: FontWeight.bold, fontSize: FontSize.lg },  // 15 = lg ✓
   otpInputBox: {
-    backgroundColor: Colors.screenBg, borderRadius: BorderRadius.lg, paddingVertical: Spacing['3xl'], alignItems: 'center',  // 16 = lg ✓
-    borderWidth: 1.5, borderColor: Colors.border, marginBottom: Spacing['3xl'],
+    backgroundColor: colors.screenBg, borderRadius: BorderRadius.lg, paddingVertical: Spacing['3xl'], alignItems: 'center',  // 16 = lg ✓
+    borderWidth: 1.5, borderColor: colors.border, marginBottom: Spacing['3xl'],
   },
   otpInput: {
-    fontSize: FontSize['11xl'], fontWeight: FontWeight.extrabold, color: Colors.primary, letterSpacing: 16,  // 40 = 11xl ✓
+    fontSize: FontSize['11xl'], fontWeight: FontWeight.extrabold, color: colors.primary, letterSpacing: 16,  // 40 = 11xl ✓
     textAlign: 'center', minWidth: 200, paddingLeft: Spacing['3xl'],
   },
 
   // ── En-route card (parker approved, not yet arrived) ──────────────────
   enRouteCard: {
-    backgroundColor: Colors.white, borderRadius: BorderRadius.lg,
-    borderWidth: 1, borderColor: Colors.border, marginHorizontal: Spacing.screenH,
+    backgroundColor: colors.white, borderRadius: BorderRadius.lg,
+    borderWidth: 1, borderColor: colors.border, marginHorizontal: Spacing.screenH,
     marginBottom: Spacing['2xl'], overflow: 'hidden',
   },
   enRouteBanner: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.lg,
-    backgroundColor: Colors.infoBg, padding: Spacing['3xl'],
+    backgroundColor: colors.infoBg, padding: Spacing['3xl'],
   },
   // Clean circular icon badge (replaces the out-of-place 🚗 emoji) — matches the
   // app's icon-in-circle pattern used across cards.
@@ -855,18 +859,18 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  enRouteBannerTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textPrimary },
-  enRouteBannerSub: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 2 },
+  enRouteBannerTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: colors.textPrimary },
+  enRouteBannerSub: { fontSize: FontSize.sm, color: colors.textSecondary, marginTop: 2 },
   enRouteDetails: { paddingHorizontal: Spacing['3xl'], paddingTop: Spacing.xl },
   enRouteContactBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: Spacing.md, margin: Spacing['3xl'], marginTop: Spacing.xl,
     paddingVertical: Spacing.xl, borderRadius: BorderRadius.md,
-    borderWidth: 1.5, borderColor: Colors.primary,
+    borderWidth: 1.5, borderColor: colors.primary,
   },
-  enRouteContactText: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.primary },
+  enRouteContactText: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: colors.primary },
 });

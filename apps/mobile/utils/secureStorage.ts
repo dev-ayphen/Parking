@@ -19,7 +19,7 @@ export async function saveAuthToken(token: string, expiresIn?: number): Promise<
       await SecureStore.setItemAsync(TOKEN_EXPIRY_KEY, String(expiryTime));
     }
   } catch (error) {
-    console.error('[SecureStorage] Failed to save token:', error);
+    if (__DEV__) console.error('[SecureStorage] Failed to save token:', error);
     throw error;
   }
 }
@@ -31,7 +31,7 @@ export async function saveRefreshToken(refreshToken: string): Promise<void> {
   try {
     await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, refreshToken);
   } catch (error) {
-    console.error('[SecureStorage] Failed to save refresh token:', error);
+    if (__DEV__) console.error('[SecureStorage] Failed to save refresh token:', error);
     throw error;
   }
 }
@@ -44,7 +44,7 @@ export async function getRefreshToken(): Promise<string | null> {
     const refreshToken = await SecureStore.getItemAsync(REFRESH_TOKEN_KEY);
     return refreshToken || null;
   } catch (error) {
-    console.error('[SecureStorage] Failed to retrieve refresh token:', error);
+    if (__DEV__) console.error('[SecureStorage] Failed to retrieve refresh token:', error);
     return null;
   }
 }
@@ -57,7 +57,7 @@ export async function getRefreshToken(): Promise<string | null> {
 export async function isTokenExpiringSoon(): Promise<boolean> {
   try {
     const expiryTimeStr = await SecureStore.getItemAsync(TOKEN_EXPIRY_KEY);
-    if (!expiryTimeStr) return true; // No expiry time, consider expiring (refresh)
+    if (!expiryTimeStr) return false; // No expiry stored — rely on 401 path, not proactive refresh
 
     const expiryTime = parseInt(expiryTimeStr, 10);
     const now = Date.now();
@@ -66,7 +66,7 @@ export async function isTokenExpiringSoon(): Promise<boolean> {
     // Return true if expires within 1 minute
     return timeUntilExpiry < 60 * 1000;
   } catch (error) {
-    console.error('[SecureStorage] Failed to check token expiry:', error);
+    if (__DEV__) console.error('[SecureStorage] Failed to check token expiry:', error);
     return true; // On error, consider expiring (refresh)
   }
 }
@@ -86,7 +86,7 @@ async function isTokenExpired(): Promise<boolean> {
     const expiryTime = parseInt(expiryTimeStr, 10);
     return Date.now() >= expiryTime;
   } catch (error) {
-    console.error('[SecureStorage] Failed to check token expiry:', error);
+    if (__DEV__) console.error('[SecureStorage] Failed to check token expiry:', error);
     return false; // On error, don't destroy auth — let request-level 401 handle it
   }
 }
@@ -112,7 +112,7 @@ export async function getAuthToken(): Promise<string | null> {
 
     return token;
   } catch (error) {
-    console.error('[SecureStorage] Failed to retrieve token:', error);
+    if (__DEV__) console.error('[SecureStorage] Failed to retrieve token:', error);
     return null;
   }
 }
@@ -124,7 +124,7 @@ export async function saveUserId(userId: string | number): Promise<void> {
   try {
     await SecureStore.setItemAsync(USER_ID_KEY, String(userId));
   } catch (error) {
-    console.error('[SecureStorage] Failed to save user ID:', error);
+    if (__DEV__) console.error('[SecureStorage] Failed to save user ID:', error);
     throw error;
   }
 }
@@ -137,7 +137,7 @@ export async function getUserId(): Promise<string | null> {
     const userId = await SecureStore.getItemAsync(USER_ID_KEY);
     return userId || null;
   } catch (error) {
-    console.error('[SecureStorage] Failed to retrieve user ID:', error);
+    if (__DEV__) console.error('[SecureStorage] Failed to retrieve user ID:', error);
     return null;
   }
 }
@@ -149,7 +149,7 @@ export async function saveUserPhone(phone: string): Promise<void> {
   try {
     await SecureStore.setItemAsync(USER_PHONE_KEY, phone);
   } catch (error) {
-    console.error('[SecureStorage] Failed to save phone:', error);
+    if (__DEV__) console.error('[SecureStorage] Failed to save phone:', error);
     throw error;
   }
 }
@@ -162,7 +162,7 @@ export async function getUserPhone(): Promise<string | null> {
     const phone = await SecureStore.getItemAsync(USER_PHONE_KEY);
     return phone || null;
   } catch (error) {
-    console.error('[SecureStorage] Failed to retrieve phone:', error);
+    if (__DEV__) console.error('[SecureStorage] Failed to retrieve phone:', error);
     return null;
   }
 }
@@ -180,7 +180,7 @@ export async function clearAuthData(): Promise<void> {
       SecureStore.deleteItemAsync(USER_PHONE_KEY),
     ]);
   } catch (error) {
-    console.error('[SecureStorage] Failed to clear auth data:', error);
+    if (__DEV__) console.error('[SecureStorage] Failed to clear auth data:', error);
     throw error;
   }
 }

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,8 +11,9 @@ import {
 } from 'react-native';
 import { Car, Trash2, ChevronRight, Camera, UploadCloud, CheckCircle2, Check } from 'lucide-react-native';
 import FormLabel from '../FormLabel';
-import { Colors } from '../../theme';
-import { styles } from './findSpaceStyles';
+import { useTheme } from '../../hooks/useTheme';
+import type { ColorsType } from '../../theme';
+import { makeFindSpaceStyles } from './findSpaceStyles';
 
 interface MyVehiclesTabProps {
   vehiclesLoading: boolean;
@@ -69,6 +70,7 @@ interface MyVehiclesTabProps {
   handleEditPress: (vehicle: any) => void;
 }
 
+
 const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
   vehiclesLoading,
   isRefreshingVehicles,
@@ -121,10 +123,13 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
   handleDeleteVehicle,
   handleEditPress,
 }) => {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeFindSpaceStyles(colors), [colors]);
+
   if (vehiclesLoading) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -138,8 +143,8 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
         <RefreshControl
           refreshing={isRefreshingVehicles}
           onRefresh={handleRefreshVehicles}
-          tintColor={Colors.primary}
-          colors={[Colors.primary]}
+          tintColor={colors.primary}
+          colors={[colors.primary]}
         />
       }
     >
@@ -151,7 +156,7 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
           <TextInput
             style={styles.formInput}
             placeholder="e.g. Maruti Swift"
-            placeholderTextColor={Colors.textMuted}
+            placeholderTextColor={colors.textMuted}
             value={newVehicleName}
             onChangeText={setNewVehicleName}
           />
@@ -160,7 +165,7 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
           <TextInput
             style={styles.formInput}
             placeholder="e.g. MH-01-1234"
-            placeholderTextColor={Colors.textMuted}
+            placeholderTextColor={colors.textMuted}
             autoCapitalize="characters"
             value={newVehiclePlate}
             onChangeText={setNewVehiclePlate}
@@ -220,9 +225,9 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
               onPress={onPickFrontPhoto}
             >
               {newVehicleFrontPhotoUri ? (
-                <Image source={{ uri: newVehicleFrontPhotoUri }} style={{ width: 48, height: 48, borderRadius: 6, marginBottom: 4 }} />
+                <Image source={{ uri: newVehicleFrontPhotoUri }} style={{ width: 48, height: 48, borderRadius: 6, marginBottom: 4 }} onError={() => {}} />
               ) : (
-                <Camera size={24} color={Colors.textMuted} />
+                <Camera size={24} color={colors.textMuted} />
               )}
               <Text style={styles.uploadBoxText}>Front View</Text>
             </TouchableOpacity>
@@ -232,9 +237,9 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
               onPress={onPickSidePhoto}
             >
               {newVehicleSidePhotoUri ? (
-                <Image source={{ uri: newVehicleSidePhotoUri }} style={{ width: 48, height: 48, borderRadius: 6, marginBottom: 4 }} />
+                <Image source={{ uri: newVehicleSidePhotoUri }} style={{ width: 48, height: 48, borderRadius: 6, marginBottom: 4 }} onError={() => {}} />
               ) : (
-                <Camera size={24} color={Colors.textMuted} />
+                <Camera size={24} color={colors.textMuted} />
               )}
               <Text style={styles.uploadBoxText}>Side View</Text>
             </TouchableOpacity>
@@ -246,9 +251,9 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
             onPress={onPickRCBook}
           >
             {newVehicleRCBookUri ? (
-              <CheckCircle2 size={24} color={Colors.successAlt} />
+              <CheckCircle2 size={24} color={colors.successAlt} />
             ) : (
-              <UploadCloud size={24} color={Colors.textMuted} />
+              <UploadCloud size={24} color={colors.textMuted} />
             )}
             <Text style={styles.uploadBoxText}>
               {newVehicleRCBookUri ? 'RC Book Selected ✓' : 'Upload RC for verified vehicle badge'}
@@ -283,7 +288,7 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
             activeOpacity={0.7}
           >
             <View style={[styles.checkbox, vehicleAuthAccepted && styles.checkboxChecked]}>
-              {vehicleAuthAccepted && <Check size={14} color={Colors.white} strokeWidth={3} />}
+              {vehicleAuthAccepted && <Check size={14} color={colors.white} strokeWidth={3} />}
             </View>
             <Text style={styles.checkboxLabel}>
               I confirm this vehicle belongs to me or I have authorization to use it
@@ -322,7 +327,7 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
           <TextInput
             style={styles.formInput}
             placeholder="e.g. Maruti Swift"
-            placeholderTextColor={Colors.textMuted}
+            placeholderTextColor={colors.textMuted}
             value={editVehicleName}
             onChangeText={setEditVehicleName}
           />
@@ -331,7 +336,7 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
           <TextInput
             style={styles.formInput}
             placeholder="e.g. MH-01-1234"
-            placeholderTextColor={Colors.textMuted}
+            placeholderTextColor={colors.textMuted}
             autoCapitalize="characters"
             value={editVehiclePlate}
             onChangeText={(text) => setEditVehiclePlate(text.toUpperCase())}
@@ -412,9 +417,9 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
               onPress={onEditPickFrontPhoto}
             >
               {editFrontPhotoUri ? (
-                <Image source={{ uri: editFrontPhotoUri }} style={{ width: 48, height: 48, borderRadius: 6, marginBottom: 4 }} />
+                <Image source={{ uri: editFrontPhotoUri }} style={{ width: 48, height: 48, borderRadius: 6, marginBottom: 4 }} onError={() => {}} />
               ) : (
-                <Camera size={24} color={Colors.textMuted} />
+                <Camera size={24} color={colors.textMuted} />
               )}
               <Text style={styles.uploadBoxText}>{editFrontPhotoUri ? 'Tap to change' : 'Front View'}</Text>
             </TouchableOpacity>
@@ -424,9 +429,9 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
               onPress={onEditPickSidePhoto}
             >
               {editSidePhotoUri ? (
-                <Image source={{ uri: editSidePhotoUri }} style={{ width: 48, height: 48, borderRadius: 6, marginBottom: 4 }} />
+                <Image source={{ uri: editSidePhotoUri }} style={{ width: 48, height: 48, borderRadius: 6, marginBottom: 4 }} onError={() => {}} />
               ) : (
-                <Camera size={24} color={Colors.textMuted} />
+                <Camera size={24} color={colors.textMuted} />
               )}
               <Text style={styles.uploadBoxText}>{editSidePhotoUri ? 'Tap to change' : 'Side View'}</Text>
             </TouchableOpacity>
@@ -438,9 +443,9 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
             onPress={onEditPickRCBook}
           >
             {editRCBookUri ? (
-              <CheckCircle2 size={24} color={Colors.successAlt} />
+              <CheckCircle2 size={24} color={colors.successAlt} />
             ) : (
-              <UploadCloud size={24} color={Colors.textMuted} />
+              <UploadCloud size={24} color={colors.textMuted} />
             )}
             <Text style={styles.uploadBoxText}>
               {editRCBookUri ? 'RC Book ✓ (tap to replace)' : 'Upload RC for verified vehicle badge'}
@@ -464,7 +469,7 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
               disabled={editIsSubmitting}
             >
               {editIsSubmitting ? (
-                <ActivityIndicator color={Colors.white} size="small" />
+                <ActivityIndicator color={colors.white} size="small" />
               ) : (
                 <Text style={styles.saveFormBtnText}>Update</Text>
               )}
@@ -478,7 +483,7 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
           <Text style={styles.sectionHeading}>Your Registered Vehicles</Text>
           {vehicles.length === 0 ? (
             <View style={styles.emptyStateContainer}>
-              <Car size={48} color={Colors.borderMedium} strokeWidth={1.5} />
+              <Car size={48} color={colors.borderMedium} strokeWidth={1.5} />
               <Text style={styles.emptyStateText}>No vehicles registered yet.</Text>
               <TouchableOpacity
                 style={styles.emptyStateBtn}
@@ -501,9 +506,9 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
                 <View style={styles.vehicleInfoRow}>
                   <View style={[styles.vehicleIconBg, item.active && styles.vehicleIconBgActive]}>
                     {item.frontPhotoUrl ? (
-                      <Image source={{ uri: item.frontPhotoUrl }} style={{ width: 38, height: 38, borderRadius: 19 }} />
+                      <Image source={{ uri: item.frontPhotoUrl }} style={{ width: 38, height: 38, borderRadius: 19 }} onError={() => {}} />
                     ) : (
-                      <Car size={22} color={item.active ? Colors.primary : Colors.textSecondary} strokeWidth={2} />
+                      <Car size={22} color={item.active ? colors.primary : colors.textSecondary} strokeWidth={2} />
                     )}
                   </View>
                   <View style={styles.vehicleDetailsCol}>
@@ -515,7 +520,7 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
                         </View>
                       )}
                       {item.rcVerified && (
-                        <View style={[styles.activeBadge, { backgroundColor: Colors.successAlt }]}>
+                        <View style={[styles.activeBadge, { backgroundColor: colors.successAlt }]}>
                           <Text style={styles.activeBadgeText}>VERIFIED</Text>
                         </View>
                       )}
@@ -530,13 +535,13 @@ const MyVehiclesTab: React.FC<MyVehiclesTabProps> = ({
                       style={styles.deleteVehicleBtn}
                       onPress={() => handleDeleteVehicle(item.id)}
                     >
-                      <Trash2 size={18} color={Colors.errorAlt} strokeWidth={2} />
+                      <Trash2 size={18} color={colors.errorAlt} strokeWidth={2} />
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.editVehicleBtn}
                       onPress={() => handleEditPress(item)}
                     >
-                      <ChevronRight size={18} color={Colors.textSecondary} strokeWidth={2} />
+                      <ChevronRight size={18} color={colors.textSecondary} strokeWidth={2} />
                     </TouchableOpacity>
                   </View>
                 </View>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -17,7 +17,9 @@ import { AlertTriangle, Clock, CheckCircle2, XCircle, Search } from 'lucide-reac
 import { api } from '../../services/api';
 import { NETWORK_RECONNECTED } from '../../store/networkStore';
 import PageHeader from '../../components/PageHeader';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import type { ColorsType } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 
 interface IncidentReport {
   id: number;
@@ -29,12 +31,12 @@ interface IncidentReport {
   adminNotes?: string | null;
 }
 
-const STATUS_STYLE: Record<string, { label: string; color: string; bg: string; Icon: any }> = {
-  OPEN: { label: 'Open', color: Colors.info, bg: Colors.infoBg, Icon: Clock },
-  INVESTIGATING: { label: 'Investigating', color: Colors.warning, bg: Colors.warningBg, Icon: Search },
-  RESOLVED: { label: 'Resolved', color: Colors.success, bg: Colors.successBg, Icon: CheckCircle2 },
-  REJECTED: { label: 'Closed', color: Colors.error, bg: Colors.errorBg, Icon: XCircle },
-};
+const makeStatusStyle = (colors: ColorsType): Record<string, { label: string; color: string; bg: string; Icon: any }> => ({
+  OPEN: { label: 'Open', color: colors.info, bg: colors.infoBg, Icon: Clock },
+  INVESTIGATING: { label: 'Investigating', color: colors.warning, bg: colors.warningBg, Icon: Search },
+  RESOLVED: { label: 'Resolved', color: colors.success, bg: colors.successBg, Icon: CheckCircle2 },
+  REJECTED: { label: 'Closed', color: colors.error, bg: colors.errorBg, Icon: XCircle },
+});
 
 const TYPE_LABELS: Record<string, string> = {
   VEHICLE_DAMAGE: 'Vehicle Damage',
@@ -49,6 +51,9 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 export default function MyIncidentsScreen() {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const STATUS_STYLE = useMemo(() => makeStatusStyle(colors), [colors]);
   const router = useRouter();
   const [incidents, setIncidents] = useState<IncidentReport[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,10 +64,7 @@ export default function MyIncidentsScreen() {
   const fetchIncidents = useCallback(async (isRefresh = false) => {
     try {
       isRefresh ? setRefreshing(true) : setLoading(true);
-      const [data] = await Promise.all([
-        api.get('/incidents/my'),
-        new Promise(resolve => setTimeout(resolve, 800)),
-      ]);
+      const data = await api.get('/incidents/my');
       setIncidents(data?.incidents ?? []);
       setError(null);
     } catch (err: any) {
@@ -96,7 +98,7 @@ export default function MyIncidentsScreen() {
       <TouchableOpacity style={styles.card} activeOpacity={0.7} onPress={() => setSelected(item)}>
         <View style={styles.cardTop}>
           <View style={styles.typeWrap}>
-            <AlertTriangle size={16} color={Colors.error} strokeWidth={2} />
+            <AlertTriangle size={16} color={colors.error} strokeWidth={2} />
             <Text style={styles.typeText}>{TYPE_LABELS[item.reportType] ?? item.reportType}</Text>
           </View>
           <View style={[styles.statusBadge, { backgroundColor: meta.bg }]}>
@@ -123,11 +125,11 @@ export default function MyIncidentsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <PageHeader title="My Incidents" onBack={() => router.replace('/(home)')} />
 
       {loading ? (
-        <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>
+        <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>
       ) : (
         <FlatList
           data={incidents}
@@ -139,7 +141,7 @@ export default function MyIncidentsScreen() {
           ListEmptyComponent={
             error ? (
               <View style={styles.center}>
-                <AlertTriangle size={40} color={Colors.error} strokeWidth={1.5} />
+                <AlertTriangle size={40} color={colors.error} strokeWidth={1.5} />
                 <Text style={styles.emptyText}>{error}</Text>
                 <TouchableOpacity style={styles.retryBtn} onPress={() => fetchIncidents()}>
                   <Text style={styles.retryBtnText}>Retry</Text>
@@ -147,13 +149,13 @@ export default function MyIncidentsScreen() {
               </View>
             ) : (
               <View style={styles.center}>
-                <AlertTriangle size={40} color={Colors.textMuted} strokeWidth={1.5} />
+                <AlertTriangle size={40} color={colors.textMuted} strokeWidth={1.5} />
                 <Text style={styles.emptyTitle}>No incidents yet</Text>
                 <Text style={styles.emptyText}>Incidents you report during or after a parking session will appear here with their status.</Text>
               </View>
             )
           }
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchIncidents(true)} tintColor={Colors.primary} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchIncidents(true)} tintColor={colors.primary} />}
         />
       )}
 
@@ -201,42 +203,42 @@ export default function MyIncidentsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.white },
-  scrollView: { flex: 1, backgroundColor: Colors.screenBg },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.lg, padding: Spacing['4xl'], backgroundColor: Colors.screenBg },
-  emptyTitle: { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: Colors.textPrimary },
-  emptyText: { fontSize: FontSize.base, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
-  retryBtn: { paddingHorizontal: Spacing['3xl'], paddingVertical: Spacing.lg, backgroundColor: Colors.primaryBg, borderRadius: BorderRadius.lg },
-  retryBtnText: { color: Colors.primary, fontWeight: FontWeight.bold },
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.white },
+  scrollView: { flex: 1, backgroundColor: colors.screenBg },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.lg, padding: Spacing['4xl'], backgroundColor: colors.screenBg },
+  emptyTitle: { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: colors.textPrimary },
+  emptyText: { fontSize: FontSize.base, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },
+  retryBtn: { paddingHorizontal: Spacing['3xl'], paddingVertical: Spacing.lg, backgroundColor: colors.primaryBg, borderRadius: BorderRadius.lg },
+  retryBtnText: { color: colors.primary, fontWeight: FontWeight.bold },
   list: { padding: Spacing.screenH },
   card: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: BorderRadius.xl,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: colors.borderLight,
     padding: Spacing['3xl'],
     marginBottom: Spacing.xl,
   },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md },
   typeWrap: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flexShrink: 1 },
-  typeText: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: Colors.textPrimary, flexShrink: 1 },
+  typeText: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: colors.textPrimary, flexShrink: 1 },
   statusBadge: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs, borderRadius: BorderRadius.sm },
   statusText: { fontSize: FontSize.xs, fontWeight: FontWeight.bold },
-  desc: { fontSize: FontSize.sm, color: Colors.textBody, lineHeight: 18, marginBottom: Spacing.md },
+  desc: { fontSize: FontSize.sm, color: colors.textBody, lineHeight: 18, marginBottom: Spacing.md },
   cardBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: Spacing.xs },
-  ref: { fontSize: FontSize.sm, fontWeight: FontWeight.extrabold, color: Colors.textSecondary, letterSpacing: 0.4 },
-  meta: { fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: FontWeight.medium, flexShrink: 1, textAlign: 'right', marginLeft: Spacing.md },
-  adminBanner: { marginTop: Spacing.md, backgroundColor: Colors.primaryBg, borderRadius: BorderRadius.sm, paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs },
-  adminBannerText: { fontSize: FontSize.xs, color: Colors.primary, fontWeight: FontWeight.semibold },
+  ref: { fontSize: FontSize.sm, fontWeight: FontWeight.extrabold, color: colors.textSecondary, letterSpacing: 0.4 },
+  meta: { fontSize: FontSize.xs, color: colors.textMuted, fontWeight: FontWeight.medium, flexShrink: 1, textAlign: 'right', marginLeft: Spacing.md },
+  adminBanner: { marginTop: Spacing.md, backgroundColor: colors.primaryBg, borderRadius: BorderRadius.sm, paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs },
+  adminBannerText: { fontSize: FontSize.xs, color: colors.primary, fontWeight: FontWeight.semibold },
   modalOverlay: { flex: 1, backgroundColor: ExtendedColors.overlayHeavy, justifyContent: 'center', padding: Spacing['4xl'] },
-  modalCard: { backgroundColor: Colors.white, borderRadius: BorderRadius.lg, padding: Spacing['4xl'] },
+  modalCard: { backgroundColor: colors.white, borderRadius: BorderRadius.lg, padding: Spacing['4xl'] },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.xl },
-  modalRef: { fontSize: FontSize.lg, fontWeight: FontWeight.extrabold, color: Colors.textPrimary, letterSpacing: 0.4 },
-  modalLabel: { fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: FontWeight.bold, marginTop: Spacing.lg, textTransform: 'uppercase', letterSpacing: 0.4 },
-  modalValue: { fontSize: FontSize.base, color: Colors.textPrimary, marginTop: 2 },
-  modalValueMuted: { fontSize: FontSize.base, color: Colors.textSecondary, marginTop: 2, fontStyle: 'italic' },
-  modalAdminText: { fontSize: FontSize.base, color: Colors.textPrimary, marginTop: Spacing.xs, backgroundColor: Colors.primaryBg, borderRadius: BorderRadius.sm, padding: Spacing.lg, lineHeight: 19 },
-  modalCloseBtn: { marginTop: Spacing['3xl'], backgroundColor: Colors.primary, borderRadius: BorderRadius.md, paddingVertical: Spacing.xl, alignItems: 'center' },
-  modalCloseText: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.white },
+  modalRef: { fontSize: FontSize.lg, fontWeight: FontWeight.extrabold, color: colors.textPrimary, letterSpacing: 0.4 },
+  modalLabel: { fontSize: FontSize.xs, color: colors.textMuted, fontWeight: FontWeight.bold, marginTop: Spacing.lg, textTransform: 'uppercase', letterSpacing: 0.4 },
+  modalValue: { fontSize: FontSize.base, color: colors.textPrimary, marginTop: 2 },
+  modalValueMuted: { fontSize: FontSize.base, color: colors.textSecondary, marginTop: 2, fontStyle: 'italic' },
+  modalAdminText: { fontSize: FontSize.base, color: colors.textPrimary, marginTop: Spacing.xs, backgroundColor: colors.primaryBg, borderRadius: BorderRadius.sm, padding: Spacing.lg, lineHeight: 19 },
+  modalCloseBtn: { marginTop: Spacing['3xl'], backgroundColor: colors.primary, borderRadius: BorderRadius.md, paddingVertical: Spacing.xl, alignItems: 'center' },
+  modalCloseText: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: colors.white },
 });

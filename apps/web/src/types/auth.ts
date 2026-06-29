@@ -3,6 +3,7 @@ export interface AdminUser {
   email: string;
   name: string;
   role: 'admin' | 'moderator';
+  adminRole: 'SUPER_ADMIN' | 'SUPPORT_AGENT';
 }
 
 export interface AuthContextType {

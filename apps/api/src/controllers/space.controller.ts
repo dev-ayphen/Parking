@@ -8,7 +8,6 @@ import { getRequestIdentity } from '../utils/requestIdentity';
 import { auditService } from '../services/audit.service';
 import { entitlementService } from '../services/entitlement.service';
 import { availabilityAlertService } from '../services/availabilityAlert.service';
-import { db } from '../config/database';
 
 export const spaceController = {
   searchSpaces: async (req: Request, res: Response) => {
@@ -63,16 +62,6 @@ export const spaceController = {
       });
       await logEvent('INFO', 'spaces', `New space submitted by user ${userId}`, { spaceId: (result as any).id }, userId);
 
-      // Notify owner that their space is under review
-      await db.notification.create({
-        data: {
-          userId,
-          title: 'Space Submitted ✅',
-          message: `Your space "${(result as any).name}" has been submitted and is pending admin review. We'll notify you once it's approved.`,
-          category: 'SPACE',
-        },
-      });
-
       res.status(201).json({
         success: true,
         message: 'Space created successfully. Verification in progress.',
@@ -117,9 +106,12 @@ export const spaceController = {
     } catch (error) {
       const message = (error as Error).message;
       if (message.includes('active bookings')) {
-        return res.status(409).json({ error: message });
+        return res.status(409).json({
+          success: false,
+          error: { message: 'Cannot delete space with active bookings', code: 'CONFLICT', status: 409 },
+        });
       }
-      res.status(500).json({ error: message });
+      sendError(res, error);
     }
   },
 

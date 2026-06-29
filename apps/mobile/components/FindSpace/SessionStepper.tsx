@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Check } from 'lucide-react-native';
-import { Colors, FontSize, FontWeight, Spacing } from '../../theme';
+import { FontSize, FontWeight, Spacing } from '../../theme';
+import type { ColorsType } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 
 export type SessionStep = 'arrived' | 'check' | 'verify' | 'active' | 'done';
 
@@ -24,7 +26,51 @@ interface Props {
  * Parked → Done. Completed steps get a check, the current step is highlighted,
  * upcoming steps are muted.
  */
+
+const DOT = 26;
+
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
+  wrap: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingVertical: Spacing.lg,
+  },
+  stepCol: { alignItems: 'center', width: 44 },
+  dot: {
+    width: DOT,
+    height: DOT,
+    borderRadius: DOT / 2,
+    backgroundColor: colors.surfaceBg,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dotDone: { backgroundColor: colors.success, borderColor: colors.success },
+  dotActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  dotNum: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: colors.textMuted },
+  dotNumActive: { color: colors.white },
+  label: {
+    fontSize: FontSize.micro,
+    color: colors.textMuted,
+    fontWeight: FontWeight.semibold,
+    marginTop: 5,
+  },
+  labelOn: { color: colors.textPrimary, fontWeight: FontWeight.bold },
+  line: {
+    flex: 1,
+    height: 2,
+    backgroundColor: colors.border,
+    marginTop: DOT / 2 - 1,
+    borderRadius: 1,
+  },
+  lineDone: { backgroundColor: colors.success },
+});
+
 const SessionStepper: React.FC<Props> = ({ current }) => {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
   const currentIdx = STEPS.findIndex((s) => s.key === current);
 
   return (
@@ -44,7 +90,7 @@ const SessionStepper: React.FC<Props> = ({ current }) => {
                 ]}
               >
                 {done ? (
-                  <Check size={12} color={Colors.white} strokeWidth={3} />
+                  <Check size={12} color={colors.white} strokeWidth={3} />
                 ) : (
                   <Text style={[styles.dotNum, active && styles.dotNumActive]}>{i + 1}</Text>
                 )}
@@ -63,45 +109,5 @@ const SessionStepper: React.FC<Props> = ({ current }) => {
     </View>
   );
 };
-
-const DOT = 26;
-
-const styles = StyleSheet.create({
-  wrap: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    paddingVertical: Spacing.lg,
-  },
-  stepCol: { alignItems: 'center', width: 44 },
-  dot: {
-    width: DOT,
-    height: DOT,
-    borderRadius: DOT / 2,
-    backgroundColor: Colors.surfaceBg,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dotDone: { backgroundColor: Colors.success, borderColor: Colors.success },
-  dotActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  dotNum: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: Colors.textMuted },
-  dotNumActive: { color: Colors.white },
-  label: {
-    fontSize: FontSize.micro,
-    color: Colors.textMuted,
-    fontWeight: FontWeight.semibold,
-    marginTop: 5,
-  },
-  labelOn: { color: Colors.textPrimary, fontWeight: FontWeight.bold },
-  line: {
-    flex: 1,
-    height: 2,
-    backgroundColor: Colors.border,
-    marginTop: DOT / 2 - 1,
-    borderRadius: 1,
-  },
-  lineDone: { backgroundColor: Colors.success },
-});
 
 export default SessionStepper;

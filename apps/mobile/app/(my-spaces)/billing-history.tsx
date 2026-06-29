@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,10 +12,13 @@ import {
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Star, Receipt } from 'lucide-react-native';
 import { PageHeader } from '../../components';
 import { api } from '../../services/api';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import type { ColorsType } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 import { toast } from '../../utils/toast';
 
 // Same shape as /subscriptions/me/transactions (subscription.service.ts).
@@ -44,10 +47,13 @@ const formatDate = (dateStr: string): string => {
  * its own scrollable page instead of bloating the subscription screen.
  */
 const BillingHistoryScreen = () => {
+  const router = useRouter();
   const [txns, setTxns] = useState<TxnRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [receiptTxn, setReceiptTxn] = useState<TxnRecord | null>(null);
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const fetchData = useCallback(async (isRefresh = false) => {
     try {
@@ -84,23 +90,23 @@ const BillingHistoryScreen = () => {
             <Text style={[styles.paidBadgeText, !isPaid && styles.pendingBadgeText]}>{t.status}</Text>
           </View>
         </View>
-        <Receipt size={16} color={Colors.borderMuted} style={styles.rowReceiptIcon} />
+        <Receipt size={16} color={colors.borderMuted} style={styles.rowReceiptIcon} />
       </TouchableOpacity>
     );
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <PageHeader title="Billing History"  onBack={() => router.replace('/(my-spaces)')} />
 
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : txns.length === 0 ? (
         <View style={styles.center}>
-          <Receipt size={36} color={Colors.borderMuted} />
+          <Receipt size={36} color={colors.borderMuted} />
           <Text style={styles.emptyTitle}>No payments yet</Text>
           <Text style={styles.emptySub}>Your subscription payments will appear here.</Text>
         </View>
@@ -113,7 +119,7 @@ const BillingHistoryScreen = () => {
           ListHeaderComponent={<Text style={styles.hint}>Tap a payment to view its receipt</Text>}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => fetchData(true)} tintColor={Colors.primary} />
+            <RefreshControl refreshing={refreshing} onRefresh={() => fetchData(true)} tintColor={colors.primary} />
           }
         />
       )}
@@ -130,7 +136,7 @@ const BillingHistoryScreen = () => {
             <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
               <View style={styles.receiptHeader}>
                 <View style={styles.receiptBrandRow}>
-                  <Star size={16} color={Colors.amber} fill={Colors.amber} />
+                  <Star size={16} color={colors.amber} fill={colors.amber} />
                   <Text style={styles.receiptBrand}>ParkSwift</Text>
                 </View>
                 <Text style={styles.receiptSubhead}>Payment Receipt</Text>
@@ -179,51 +185,51 @@ const BillingHistoryScreen = () => {
   );
 };
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: Colors.white },
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: colors.white },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: Spacing.md, paddingHorizontal: Spacing['4xl'] },
-  emptyTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textPrimary, marginTop: Spacing.md },
-  emptySub: { fontSize: FontSize.md, color: Colors.textSecondary, textAlign: 'center' },
+  emptyTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: colors.textPrimary, marginTop: Spacing.md },
+  emptySub: { fontSize: FontSize.md, color: colors.textSecondary, textAlign: 'center' },
   listContent: { padding: Spacing['3xl'], paddingBottom: Spacing['7xl'] },
-  hint: { fontSize: FontSize.sm, color: Colors.textMuted, marginBottom: Spacing.lg },
+  hint: { fontSize: FontSize.sm, color: colors.textMuted, marginBottom: Spacing.lg },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: Spacing['2xl'],
     paddingHorizontal: Spacing['3xl'],
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
   },
-  rowBorder: { borderTopWidth: 1, borderTopColor: Colors.surfaceBg },
+  rowBorder: { borderTopWidth: 1, borderTopColor: colors.surfaceBg },
   rowInfo: { flex: 1 },
-  rowDate: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.textPrimary, marginBottom: Spacing.micro },
-  rowDesc: { fontSize: FontSize.sm, color: Colors.textMuted },
+  rowDate: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: colors.textPrimary, marginBottom: Spacing.micro },
+  rowDesc: { fontSize: FontSize.sm, color: colors.textMuted },
   rowRight: { alignItems: 'flex-end', gap: Spacing.xs },
-  rowAmount: { fontSize: FontSize.lg, fontWeight: FontWeight.extrabold, color: Colors.textPrimary },
+  rowAmount: { fontSize: FontSize.lg, fontWeight: FontWeight.extrabold, color: colors.textPrimary },
   rowReceiptIcon: { marginLeft: Spacing.lg },
-  paidBadge: { backgroundColor: Colors.successBgAlt, paddingHorizontal: Spacing.md, paddingVertical: Spacing.micro, borderRadius: BorderRadius.badge },
+  paidBadge: { backgroundColor: colors.successBgAlt, paddingHorizontal: Spacing.md, paddingVertical: Spacing.micro, borderRadius: BorderRadius.badge },
   paidBadgeText: { fontSize: FontSize.xs, fontWeight: FontWeight.bold, color: ExtendedColors.teal },
-  pendingBadge: { backgroundColor: Colors.warningBg },
-  pendingBadgeText: { color: Colors.warning },
+  pendingBadge: { backgroundColor: colors.warningBg },
+  pendingBadgeText: { color: colors.warning },
   // Receipt modal (shared visual language with the subscription screen)
-  modalOverlay: { flex: 1, backgroundColor: Colors.overlay, justifyContent: 'center', alignItems: 'center', paddingHorizontal: Spacing.screenH },
-  modalCard: { backgroundColor: Colors.white, borderRadius: BorderRadius.circleXl, width: '100%', maxHeight: '85%', overflow: 'hidden' },
-  receiptHeader: { backgroundColor: Colors.textPrimary, paddingVertical: Spacing['3xl'], alignItems: 'center' },
+  modalOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'center', alignItems: 'center', paddingHorizontal: Spacing.screenH },
+  modalCard: { backgroundColor: colors.white, borderRadius: BorderRadius.circleXl, width: '100%', maxHeight: '85%', overflow: 'hidden' },
+  receiptHeader: { backgroundColor: colors.textPrimary, paddingVertical: Spacing['3xl'], alignItems: 'center' },
   receiptBrandRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  receiptBrand: { fontSize: FontSize['2xl'], fontWeight: FontWeight.extrabold, color: Colors.white, letterSpacing: -0.5 },
-  receiptSubhead: { fontSize: FontSize.sm, color: Colors.textMuted, marginTop: Spacing.xs, fontWeight: FontWeight.medium },
+  receiptBrand: { fontSize: FontSize['2xl'], fontWeight: FontWeight.extrabold, color: colors.white, letterSpacing: -0.5 },
+  receiptSubhead: { fontSize: FontSize.sm, color: colors.textMuted, marginTop: Spacing.xs, fontWeight: FontWeight.medium },
   receiptBody: { paddingHorizontal: Spacing.screenH, paddingVertical: Spacing['3xl'] },
   receiptAmountBlock: { alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing['2xl'] },
-  receiptAmountLabel: { fontSize: FontSize.sm, color: Colors.textMuted, fontWeight: FontWeight.medium },
-  receiptAmount: { fontSize: FontSize['5xl'], fontWeight: FontWeight.extrabold, color: Colors.textPrimary, letterSpacing: -0.5 },
-  receiptDivider: { height: 1, backgroundColor: Colors.surfaceBg, marginBottom: Spacing.lg },
+  receiptAmountLabel: { fontSize: FontSize.sm, color: colors.textMuted, fontWeight: FontWeight.medium },
+  receiptAmount: { fontSize: FontSize['5xl'], fontWeight: FontWeight.extrabold, color: colors.textPrimary, letterSpacing: -0.5 },
+  receiptDivider: { height: 1, backgroundColor: colors.surfaceBg, marginBottom: Spacing.lg },
   receiptRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingVertical: Spacing.lg, gap: Spacing.xl },
-  receiptRowLabel: { fontSize: FontSize.md, color: Colors.textSecondary, flexShrink: 0 },
-  receiptRowValue: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textPrimary, textAlign: 'right' },
+  receiptRowLabel: { fontSize: FontSize.md, color: colors.textSecondary, flexShrink: 0 },
+  receiptRowValue: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: colors.textPrimary, textAlign: 'right' },
   receiptRowValueWrap: { flex: 1 },
-  receiptFooterNote: { fontSize: FontSize.xs, color: Colors.textMuted, textAlign: 'center', marginTop: Spacing['2xl'], lineHeight: 16 },
-  receiptDoneBtn: { backgroundColor: Colors.primary, paddingVertical: Spacing['2xl'], alignItems: 'center', marginHorizontal: Spacing.screenH, marginBottom: Spacing.screenH, borderRadius: BorderRadius.button },
-  receiptDoneBtnText: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.white },
+  receiptFooterNote: { fontSize: FontSize.xs, color: colors.textMuted, textAlign: 'center', marginTop: Spacing['2xl'], lineHeight: 16 },
+  receiptDoneBtn: { backgroundColor: colors.primary, paddingVertical: Spacing['2xl'], alignItems: 'center', marginHorizontal: Spacing.screenH, marginBottom: Spacing.screenH, borderRadius: BorderRadius.button },
+  receiptDoneBtnText: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: colors.white },
 });
 
 export default BillingHistoryScreen;

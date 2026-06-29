@@ -84,13 +84,13 @@ async function refreshAccessToken(): Promise<string | null> {
   try {
     const refreshToken = await getRefreshToken();
     if (!refreshToken) {
-      console.log('[TOKEN_REFRESH] No refresh token available');
+      if (__DEV__) console.log('[TOKEN_REFRESH] No refresh token available');
       return null;
     }
 
-    console.log('[TOKEN_REFRESH] Attempting to refresh access token...');
+    if (__DEV__) console.log('[TOKEN_REFRESH] Attempting to refresh access token...');
 
-    const response = await fetch(`${API_CONFIG.BASE_URL}/api/auth/refresh-token`, {
+    const response = await fetch(`${API_CONFIG.BASE_URL}/auth/refresh-token`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -99,7 +99,7 @@ async function refreshAccessToken(): Promise<string | null> {
     });
 
     if (!response.ok) {
-      console.error('[TOKEN_REFRESH] Failed to refresh token:', response.status);
+      if (__DEV__) console.error('[TOKEN_REFRESH] Failed to refresh token:', response.status);
       if (response.status === 401) {
         // Refresh token is invalid or expired
         await clearAuthData();
@@ -111,13 +111,13 @@ async function refreshAccessToken(): Promise<string | null> {
     if (data.token && data.expiresIn) {
       // Save new access token
       await saveAuthToken(data.token, data.expiresIn);
-      console.log('[TOKEN_REFRESH] ✅ Access token refreshed successfully');
+      if (__DEV__) console.log('[TOKEN_REFRESH] ✅ Access token refreshed successfully');
       return data.token;
     }
 
     return null;
   } catch (error) {
-    console.error('[TOKEN_REFRESH] Error refreshing token:', error);
+    if (__DEV__) console.error('[TOKEN_REFRESH] Error refreshing token:', error);
     return null;
   }
 }
@@ -172,7 +172,7 @@ export async function apiCall<T = any>(
       let token = await getAuthToken();
 
       if (shouldRefresh && token) {
-        console.log('[API] Token expiring soon, attempting refresh...');
+        if (__DEV__) console.log('[API] Token expiring soon, attempting refresh...');
         const newToken = await refreshAccessToken();
         if (newToken) {
           token = newToken;

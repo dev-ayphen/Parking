@@ -65,7 +65,7 @@ const FormInput = forwardRef<TextInput, FormInputProps>(
           outputRange: [theme.colors.borderLight, theme.colors.primary],
         });
 
-    const backgroundColor = error ? '#FFF5F5' : theme.colors.inputBg;
+    const backgroundColor = error ? theme.colors.errorBg : theme.colors.inputBg;
 
     return (
       <View style={styles.fieldGroup}>

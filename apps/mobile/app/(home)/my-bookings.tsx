@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {View,
   Text,
   StyleSheet,
@@ -8,14 +8,19 @@ import {View,
   RefreshControl,
   Platform,
   ActivityIndicator,
+  Alert,
   DeviceEventEmitter} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Calendar, Clock, ChevronRight } from 'lucide-react-native';
+import { Calendar, Clock, ChevronRight, Download } from 'lucide-react-native';
+import * as Linking from 'expo-linking';
 import PageHeader from '../../components/PageHeader';
 import { api } from '../../services/api';
-import { NETWORK_RECONNECTED } from '../../store/networkStore';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import { API_BASE } from '../../config/api.config';
+import { NETWORK_RECONNECTED, useNetworkStore } from '../../store/networkStore';
+import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import type { ColorsType } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 
 interface Booking {
   id: string;
@@ -39,15 +44,15 @@ const STATUS_MAP: Record<string, string> = {
 };
 
 // Per-card status badge styling, keyed on raw backend status
-const STATUS_BADGE: Record<string, { label: string; color: string; bg: string }> = {
-  PENDING_APPROVAL: { label: 'Waiting for approval', color: Colors.warning, bg: Colors.warningBgAlt },
-  APPROVED: { label: 'Approved', color: Colors.success, bg: Colors.successBg },
+const makeStatusBadge = (colors: ColorsType): Record<string, { label: string; color: string; bg: string }> => ({
+  PENDING_APPROVAL: { label: 'Waiting for approval', color: colors.warning, bg: colors.warningBgAlt },
+  APPROVED: { label: 'Approved', color: colors.success, bg: colors.successBg },
   ACTIVE: { label: 'Active session', color: ExtendedColors.activeBlueText, bg: ExtendedColors.activeBlueBg },
-  COMPLETED: { label: 'Completed', color: Colors.textBody, bg: Colors.surfaceBg },
-  CANCELLED: { label: 'Cancelled', color: Colors.error, bg: Colors.errorBg },
-  REJECTED: { label: 'Rejected', color: Colors.error, bg: Colors.errorBg },
-  EXPIRED: { label: 'Expired', color: Colors.textSecondary, bg: Colors.surfaceBg },
-};
+  COMPLETED: { label: 'Completed', color: colors.textBody, bg: colors.surfaceBg },
+  CANCELLED: { label: 'Cancelled', color: colors.error, bg: colors.errorBg },
+  REJECTED: { label: 'Rejected', color: colors.error, bg: colors.errorBg },
+  EXPIRED: { label: 'Expired', color: colors.textSecondary, bg: colors.surfaceBg },
+});
 
 const formatDate = (d: string) => {
   const date = new Date(d);
@@ -56,6 +61,9 @@ const formatDate = (d: string) => {
 
 export default function MyBookingsScreen() {
   const router = useRouter();
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const STATUS_BADGE = useMemo(() => makeStatusBadge(colors), [colors]);
   const [activeTab, setActiveTab] = useState('Upcoming');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [total, setTotal] = useState(0);
@@ -64,6 +72,7 @@ export default function MyBookingsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const LIMIT = 50;
 
@@ -130,10 +139,26 @@ export default function MyBookingsScreen() {
     return () => subs.forEach((s) => s.remove());
   }, [fetchBookings]);
 
+  const downloadInvoice = async (bookingId: string) => {
+    if (!useNetworkStore.getState().requireOnline()) return;
+    try {
+      setDownloadingId(bookingId);
+      const { token: signedToken } = await api.post<{ token: string; expiresIn: number }>(
+        `/bookings/${bookingId}/invoice-token`,
+      );
+      const url = `${API_BASE}/bookings/${bookingId}/invoice?signed_token=${signedToken}`;
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert('Error', 'Could not open invoice. Please try again.');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
   const filteredBookings = bookings.filter((b) => b.status === activeTab);
 
   const renderBooking = ({ item }: { item: Booking }) => {
-    const badge = STATUS_BADGE[item.rawStatus] || { label: item.rawStatus, color: Colors.textSecondary, bg: Colors.surfaceBg };
+    const badge = STATUS_BADGE[item.rawStatus] || { label: item.rawStatus, color: colors.textSecondary, bg: colors.surfaceBg };
     return (
       <TouchableOpacity
         style={styles.bookingCard}
@@ -160,22 +185,36 @@ export default function MyBookingsScreen() {
         <View style={styles.divider} />
         <View style={styles.bookingDetails}>
           <View style={styles.detailItem}>
-            <Calendar size={16} color={Colors.textSecondary} />
+            <Calendar size={16} color={colors.textSecondary} />
             <Text style={styles.detailText}>{item.date}</Text>
           </View>
           <View style={styles.detailItem}>
-            <Clock size={16} color={Colors.textSecondary} />
+            <Clock size={16} color={colors.textSecondary} />
             <Text style={styles.detailText}>{item.time}</Text>
           </View>
-          <ChevronRight size={18} color={Colors.borderMuted} />
+          <ChevronRight size={18} color={colors.borderMuted} />
         </View>
+
+        {item.rawStatus === 'COMPLETED' && (
+          <TouchableOpacity
+            style={styles.invoiceBtn}
+            onPress={(e) => { e.stopPropagation?.(); downloadInvoice(item.id); }}
+            disabled={downloadingId === item.id}
+            activeOpacity={0.75}
+          >
+            {downloadingId === item.id
+              ? <ActivityIndicator size="small" color={colors.primary} />
+              : <Download size={14} color={colors.primary} strokeWidth={2} />}
+            <Text style={styles.invoiceBtnText}>Download Invoice</Text>
+          </TouchableOpacity>
+        )}
       </TouchableOpacity>
     );
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <PageHeader title="My Bookings" onBack={() => router.replace('/(home)')} />
 
       <View style={styles.tabsContainer}>
@@ -192,11 +231,11 @@ export default function MyBookingsScreen() {
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : error ? (
         <View style={styles.emptyState}>
-          <Calendar size={64} color={Colors.error} />
+          <Calendar size={64} color={colors.error} />
           <Text style={styles.emptyStateTitle}>Couldn't load bookings</Text>
           <Text style={styles.emptyStateDesc}>{error}</Text>
           <TouchableOpacity style={styles.retryBtn} onPress={() => fetchBookings()}>
@@ -211,13 +250,13 @@ export default function MyBookingsScreen() {
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => fetchBookings(true)} tintColor={Colors.primary} />
+            <RefreshControl refreshing={refreshing} onRefresh={() => fetchBookings(true)} tintColor={colors.primary} />
           }
           onEndReached={() => loadMore()}
           onEndReachedThreshold={0.3}
           ListEmptyComponent={
             <View style={styles.emptyState}>
-              <Calendar size={64} color={Colors.borderMuted} />
+              <Calendar size={64} color={colors.borderMuted} />
               <Text style={styles.emptyStateTitle}>No {activeTab} Bookings</Text>
               <Text style={styles.emptyStateDesc}>
                 You don't have any {activeTab.toLowerCase()} parking bookings yet.
@@ -227,7 +266,7 @@ export default function MyBookingsScreen() {
           ListFooterComponent={
             loadingMore ? (
               <View style={styles.loadingMoreContainer}>
-                <ActivityIndicator size="small" color={Colors.primary} />
+                <ActivityIndicator size="small" color={colors.primary} />
                 <Text style={styles.loadingMoreText}>Loading more bookings...</Text>
               </View>
             ) : null
@@ -238,40 +277,42 @@ export default function MyBookingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.white },
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.white },
   tabsContainer: {
-    flexDirection: 'row', backgroundColor: Colors.white, paddingHorizontal: Spacing.screenH,
-    borderBottomWidth: 1, borderBottomColor: Colors.surfaceBg,
+    flexDirection: 'row', backgroundColor: colors.white, paddingHorizontal: Spacing.screenH,
+    borderBottomWidth: 1, borderBottomColor: colors.surfaceBg,
   },
   tab: { flex: 1, paddingVertical: Spacing['3xl'], alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  activeTab: { borderBottomColor: Colors.primary },
-  tabText: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: Colors.textSecondary },  // 14 = md ✓
-  activeTabText: { color: Colors.primary },
+  activeTab: { borderBottomColor: colors.primary },
+  tabText: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: colors.textSecondary },  // 14 = md ✓
+  activeTabText: { color: colors.primary },
   content: { padding: Spacing.screenH, paddingBottom: Spacing['7xl'] },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   bookingCard: {
-    backgroundColor: Colors.white, borderRadius: BorderRadius.lg, padding: Spacing['3xl'], marginBottom: Spacing['3xl'],  // 16 = lg ✓
+    backgroundColor: colors.white, borderRadius: BorderRadius.lg, padding: Spacing['3xl'], marginBottom: Spacing['3xl'],  // 16 = lg ✓
     ...Platform.select({
       ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 },
       android: { elevation: 3 },
     }),
   },
   bookingHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: Spacing.xl },
-  spaceName: { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.xs },  // 16 = xl ✓
-  address: { fontSize: FontSize.md, color: Colors.textSecondary },  // 14 = md ✓
-  price: { fontSize: FontSize['2xl'], fontWeight: FontWeight.bold, color: Colors.primary },  // 18 = 2xl ✓
+  spaceName: { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: colors.textPrimary, marginBottom: Spacing.xs },  // 16 = xl ✓
+  address: { fontSize: FontSize.md, color: colors.textSecondary },  // 14 = md ✓
+  price: { fontSize: FontSize['2xl'], fontWeight: FontWeight.bold, color: colors.primary },  // 18 = 2xl ✓
   statusBadge: { alignSelf: 'flex-start', paddingHorizontal: Spacing.lg, paddingVertical: 5, borderRadius: BorderRadius.sm, marginBottom: Spacing.xl },  // 8 = sm ✓
   statusBadgeText: { fontSize: FontSize.sm, fontWeight: FontWeight.bold },  // 12 = sm ✓
-  divider: { height: 1, backgroundColor: Colors.surfaceBg, marginBottom: Spacing.xl },
+  divider: { height: 1, backgroundColor: colors.surfaceBg, marginBottom: Spacing.xl },
   bookingDetails: { flexDirection: 'row', justifyContent: 'space-between' },
   detailItem: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
-  detailText: { fontSize: FontSize.md, color: Colors.textDark, fontWeight: FontWeight.medium },  // 14 = md ✓
+  detailText: { fontSize: FontSize.md, color: colors.textDark, fontWeight: FontWeight.medium },  // 14 = md ✓
   emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 64, paddingHorizontal: Spacing['4xl'] },
-  emptyStateTitle: { fontSize: FontSize['2xl'], fontWeight: FontWeight.bold, color: Colors.textPrimary, marginTop: Spacing['3xl'], marginBottom: Spacing.md },  // 18 = 2xl ✓
-  emptyStateDesc: { fontSize: FontSize.md, color: Colors.textSecondary, textAlign: 'center' },  // 14 = md ✓
-  retryBtn: { marginTop: Spacing['3xl'], paddingHorizontal: Spacing['4xl'], paddingVertical: Spacing.lg, backgroundColor: Colors.primaryBg, borderRadius: BorderRadius.lg },
-  retryBtnText: { color: Colors.primary, fontWeight: FontWeight.bold, fontSize: FontSize.md },
+  emptyStateTitle: { fontSize: FontSize['2xl'], fontWeight: FontWeight.bold, color: colors.textPrimary, marginTop: Spacing['3xl'], marginBottom: Spacing.md },  // 18 = 2xl ✓
+  emptyStateDesc: { fontSize: FontSize.md, color: colors.textSecondary, textAlign: 'center' },  // 14 = md ✓
+  retryBtn: { marginTop: Spacing['3xl'], paddingHorizontal: Spacing['4xl'], paddingVertical: Spacing.lg, backgroundColor: colors.primaryBg, borderRadius: BorderRadius.lg },
+  retryBtnText: { color: colors.primary, fontWeight: FontWeight.bold, fontSize: FontSize.md },
   loadingMoreContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing['3xl'], gap: Spacing.md },
-  loadingMoreText: { fontSize: FontSize.md, color: Colors.textSecondary, marginLeft: Spacing.md },
+  loadingMoreText: { fontSize: FontSize.md, color: colors.textSecondary, marginLeft: Spacing.md },
+  invoiceBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, marginTop: Spacing.lg, paddingVertical: Spacing.md, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: colors.primary, backgroundColor: colors.primaryBg },
+  invoiceBtnText: { fontSize: FontSize.sm, color: colors.primary, fontWeight: FontWeight.semibold },
 });

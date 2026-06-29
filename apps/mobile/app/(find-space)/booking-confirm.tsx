@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import Constants from 'expo-constants';
 import {View,
   Text,
   StyleSheet,
@@ -16,7 +17,9 @@ import { MapPin, Car, Clock, Check } from 'lucide-react-native';
 import { api } from '../../services/api';
 import { useNetworkStore } from '../../store/networkStore';
 import PageHeader from '../../components/PageHeader';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import type { ColorsType } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 
 // Arrival time presets (minutes from now)
 const ARRIVAL_PRESETS = [
@@ -37,10 +40,261 @@ const DECLARATIONS = [
 
 type DeclarationKey = (typeof DECLARATIONS)[number]['key'];
 
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.white,
+  },
+  content: {
+    flex: 1,
+    backgroundColor: colors.screenBg,
+    paddingHorizontal: Spacing['3xl'],
+  },
+  summaryCard: {
+    marginTop: Spacing['3xl'],
+    backgroundColor: colors.white,
+    borderRadius: BorderRadius.lg,        // 16 = lg ✓
+    paddingVertical: Spacing['3xl'],
+    borderWidth: 1,
+    borderColor: colors.border,           // '#E2E8F0' = border ✓
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  summarySection: {
+    paddingHorizontal: Spacing['3xl'],
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    gap: Spacing.xl,                      // 12 = xl ✓
+    alignItems: 'flex-start',
+  },
+  summaryIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: BorderRadius.md,        // 12 = md ✓
+    backgroundColor: colors.screenBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  summaryContent: {
+    flex: 1,
+  },
+  summaryLabel: {
+    fontSize: FontSize.sm,                // 12 = sm ✓
+    fontWeight: FontWeight.semibold,
+    color: colors.textMuted,
+    marginBottom: 2,
+    letterSpacing: 0.3,
+  },
+  summaryValue: {
+    fontSize: FontSize.lg,                // 15 = lg ✓
+    fontWeight: FontWeight.bold,
+    color: colors.textPrimary,
+    marginBottom: 2,
+  },
+  summarySubtext: {
+    fontSize: FontSize.base,              // 13 = base ✓
+    fontWeight: FontWeight.medium,
+    color: colors.textSecondary,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: colors.screenBg,
+    marginHorizontal: Spacing['3xl'],
+    marginVertical: Spacing.xl,           // 12 = xl ✓
+  },
+  sectionCard: {
+    marginTop: Spacing['3xl'],
+    backgroundColor: colors.white,
+    borderRadius: BorderRadius.lg,        // 16 = lg ✓
+    padding: Spacing['3xl'],
+    borderWidth: 1,
+    borderColor: colors.border,           // '#E2E8F0' = border ✓
+  },
+  sectionCardTitle: {
+    fontSize: FontSize.lg,                // 15 = lg ✓
+    fontWeight: FontWeight.bold,
+    color: colors.textPrimary,
+    marginBottom: Spacing.xs,
+  },
+  sectionCardSubtitle: {
+    fontSize: FontSize.base,              // 13 = base ✓
+    fontWeight: FontWeight.medium,
+    color: colors.textSecondary,
+    marginBottom: Spacing['2xl'],
+  },
+  arrivalRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.md,
+  },
+  arrivalChip: {
+    paddingHorizontal: Spacing['3xl'],
+    paddingVertical: Spacing.lg,
+    borderRadius: BorderRadius.md,        // 12 = md ✓
+    borderWidth: 1.5,
+    borderColor: colors.border,           // '#E2E8F0' = border ✓
+    backgroundColor: colors.white,
+  },
+  arrivalChipActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.surfaceBg,
+  },
+  arrivalChipText: {
+    fontSize: FontSize.base,              // 13 = base ✓
+    fontWeight: FontWeight.semibold,
+    color: colors.textSecondary,
+  },
+  arrivalChipTextActive: {
+    color: colors.primary,
+  },
+  customInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.lg,
+    marginTop: Spacing.xl,                // 12 = xl ✓
+  },
+  customInput: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderColor: colors.border,           // '#E2E8F0' = border ✓
+    borderRadius: BorderRadius.md,        // 12 = md ✓
+    paddingHorizontal: Spacing['2xl'],
+    paddingVertical: Spacing.xl,          // 12 = xl ✓
+    fontSize: FontSize.lg,                // 15 = lg ✓
+    fontWeight: FontWeight.semibold,
+    color: colors.textPrimary,
+  },
+  customInputSuffix: {
+    fontSize: FontSize.md,                // 14 = md ✓
+    fontWeight: FontWeight.semibold,
+    color: colors.textSecondary,
+  },
+  pricingCard: {
+    marginTop: Spacing['3xl'],
+    backgroundColor: colors.white,
+    borderRadius: BorderRadius.lg,        // 16 = lg ✓
+    padding: Spacing['3xl'],
+    borderWidth: 1,
+    borderColor: colors.border,           // '#E2E8F0' = border ✓
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  pricingTitle: {
+    fontSize: FontSize.lg,                // 15 = lg ✓
+    fontWeight: FontWeight.bold,
+    color: colors.textPrimary,
+    marginBottom: Spacing.xl,             // 12 = xl ✓
+  },
+  breakdownRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: Spacing.lg,
+  },
+  breakdownLabel: {
+    fontSize: FontSize.base,              // 13 = base ✓
+    fontWeight: FontWeight.medium,
+    color: colors.textSecondary,
+  },
+  breakdownValue: {
+    fontSize: FontSize.base,              // 13 = base ✓
+    fontWeight: FontWeight.bold,
+    color: colors.textPrimary,
+  },
+  breakdownDivider: {
+    height: 1,
+    backgroundColor: colors.screenBg,
+    marginVertical: Spacing.md,
+  },
+  totalLabel: {
+    fontSize: FontSize.lg,                // 15 = lg ✓
+    fontWeight: FontWeight.bold,
+    color: colors.textPrimary,
+  },
+  totalValue: {
+    fontSize: FontSize['2xl'],            // 18 = 2xl ✓
+    fontWeight: FontWeight.extrabold,
+    color: colors.primary,
+  },
+  declarationRow: {
+    flexDirection: 'row',
+    gap: Spacing.xl,                      // 12 = xl ✓
+    alignItems: 'flex-start',
+    paddingVertical: Spacing.md,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: BorderRadius.badge,     // 6 = badge ✓
+    borderWidth: 2,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  checkboxChecked: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  declarationText: {
+    flex: 1,
+    fontSize: FontSize.base,              // 13 = base ✓
+    fontWeight: FontWeight.medium,
+    color: colors.textDark,
+    lineHeight: 19,
+  },
+  declarationLink: {
+    color: colors.primary,
+    fontWeight: FontWeight.semibold,
+    textDecorationLine: 'underline',
+  },
+  stickyFooter: {
+    backgroundColor: colors.white,
+    paddingHorizontal: Spacing['3xl'],
+    paddingVertical: Spacing.xl,          // 12 = xl ✓
+    borderTopWidth: 1,
+    borderTopColor: colors.border,        // '#E2E8F0' = border ✓
+    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
+  },
+  confirmButton: {
+    backgroundColor: colors.primary,
+    borderRadius: BorderRadius.button,    // 14 = button ✓
+    paddingVertical: Spacing['3xl'],
+    paddingHorizontal: Spacing['3xl'],
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: Spacing.md,
+  },
+  confirmButtonDisabled: {
+    opacity: 0.5,
+  },
+  confirmButtonText: {
+    color: colors.white,
+    fontSize: FontSize.xl,                // 16 = xl ✓
+    fontWeight: FontWeight.bold,
+  },
+  confirmButtonPrice: {
+    color: colors.white,
+    fontSize: FontSize.md,                // 14 = md ✓
+    fontWeight: FontWeight.semibold,
+  },
+});
+
 const BookingConfirmScreen = () => {
   const router = useRouter();
   const params = useLocalSearchParams();
   const [fadeAnim] = useState(new Animated.Value(0));
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   // Parse params
   const spaceId = params.spaceId as string;
@@ -181,7 +435,7 @@ const BookingConfirmScreen = () => {
           await api.post(`/bookings/${bookingId}/consent`, {
             ...declarations,
             platform: Platform.OS,
-            appVersion: '1.0.0',
+            appVersion: Constants.expoConfig?.version ?? '1.0.0',
           });
         } catch (consentErr) {
           if (__DEV__) console.log('[BOOKING_CONFIRM] consent error', consentErr);
@@ -218,7 +472,7 @@ const BookingConfirmScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
       <PageHeader title="Confirm Booking" onBack={() => router.replace('/(find-space)')} />
 
@@ -230,7 +484,7 @@ const BookingConfirmScreen = () => {
             <View style={styles.summarySection}>
               <View style={styles.summaryRow}>
                 <View style={styles.summaryIcon}>
-                  <MapPin size={18} color={Colors.primary} strokeWidth={2.5} />
+                  <MapPin size={18} color={colors.primary} strokeWidth={2.5} />
                 </View>
                 <View style={styles.summaryContent}>
                   <Text style={styles.summaryLabel}>Parking Space</Text>
@@ -314,7 +568,7 @@ const BookingConfirmScreen = () => {
                 <TextInput
                   style={styles.customInput}
                   placeholder="Enter minutes"
-                  placeholderTextColor={Colors.textMuted}
+                  placeholderTextColor={colors.textMuted}
                   keyboardType="number-pad"
                   value={customValue}
                   onChangeText={(t) => {
@@ -351,7 +605,7 @@ const BookingConfirmScreen = () => {
           <View style={styles.sectionCard}>
             <Text style={styles.sectionCardTitle}>Declarations</Text>
             <Text style={styles.sectionCardSubtitle}>Please review the terms to continue.</Text>
-            
+
             <TouchableOpacity
               style={styles.declarationRow}
               onPress={() => {
@@ -367,7 +621,7 @@ const BookingConfirmScreen = () => {
               activeOpacity={0.7}
             >
               <View style={[styles.checkbox, allAccepted && styles.checkboxChecked]}>
-                {allAccepted && <Check size={14} color={Colors.white} strokeWidth={3} />}
+                {allAccepted && <Check size={14} color={colors.white} strokeWidth={3} />}
               </View>
               <Text style={styles.declarationText}>
                 I have read and agree to the{' '}
@@ -396,7 +650,7 @@ const BookingConfirmScreen = () => {
           disabled={!allAccepted || !hasArrivalTime || submitting}
         >
           {submitting ? (
-            <ActivityIndicator color={Colors.white} size="small" />
+            <ActivityIndicator color={colors.white} size="small" />
           ) : (
             <>
               <Text style={styles.confirmButtonText}>Confirm Booking</Text>
@@ -408,254 +662,5 @@ const BookingConfirmScreen = () => {
     </SafeAreaView>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.white,
-  },
-  content: {
-    flex: 1,
-    backgroundColor: Colors.screenBg,
-    paddingHorizontal: Spacing['3xl'],
-  },
-  summaryCard: {
-    marginTop: Spacing['3xl'],
-    backgroundColor: Colors.white,
-    borderRadius: BorderRadius.lg,        // 16 = lg ✓
-    paddingVertical: Spacing['3xl'],
-    borderWidth: 1,
-    borderColor: Colors.border,           // '#E2E8F0' = border ✓
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  summarySection: {
-    paddingHorizontal: Spacing['3xl'],
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    gap: Spacing.xl,                      // 12 = xl ✓
-    alignItems: 'flex-start',
-  },
-  summaryIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: BorderRadius.md,        // 12 = md ✓
-    backgroundColor: Colors.screenBg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 2,
-  },
-  summaryContent: {
-    flex: 1,
-  },
-  summaryLabel: {
-    fontSize: FontSize.sm,                // 12 = sm ✓
-    fontWeight: FontWeight.semibold,
-    color: Colors.textMuted,
-    marginBottom: 2,
-    letterSpacing: 0.3,
-  },
-  summaryValue: {
-    fontSize: FontSize.lg,                // 15 = lg ✓
-    fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
-    marginBottom: 2,
-  },
-  summarySubtext: {
-    fontSize: FontSize.base,              // 13 = base ✓
-    fontWeight: FontWeight.medium,
-    color: Colors.textSecondary,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.surfaceBg,
-    marginHorizontal: Spacing['3xl'],
-    marginVertical: Spacing.xl,           // 12 = xl ✓
-  },
-  sectionCard: {
-    marginTop: Spacing['3xl'],
-    backgroundColor: Colors.white,
-    borderRadius: BorderRadius.lg,        // 16 = lg ✓
-    padding: Spacing['3xl'],
-    borderWidth: 1,
-    borderColor: Colors.border,           // '#E2E8F0' = border ✓
-  },
-  sectionCardTitle: {
-    fontSize: FontSize.lg,                // 15 = lg ✓
-    fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
-    marginBottom: Spacing.xs,
-  },
-  sectionCardSubtitle: {
-    fontSize: FontSize.base,              // 13 = base ✓
-    fontWeight: FontWeight.medium,
-    color: Colors.textSecondary,
-    marginBottom: Spacing['2xl'],
-  },
-  arrivalRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.md,
-  },
-  arrivalChip: {
-    paddingHorizontal: Spacing['3xl'],
-    paddingVertical: Spacing.lg,
-    borderRadius: BorderRadius.md,        // 12 = md ✓
-    borderWidth: 1.5,
-    borderColor: Colors.border,           // '#E2E8F0' = border ✓
-    backgroundColor: Colors.white,
-  },
-  arrivalChipActive: {
-    borderColor: Colors.primary,
-    backgroundColor: Colors.primaryBg,
-  },
-  arrivalChipText: {
-    fontSize: FontSize.base,              // 13 = base ✓
-    fontWeight: FontWeight.semibold,
-    color: Colors.textSecondary,
-  },
-  arrivalChipTextActive: {
-    color: Colors.primary,
-  },
-  customInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.lg,
-    marginTop: Spacing.xl,                // 12 = xl ✓
-  },
-  customInput: {
-    flex: 1,
-    borderWidth: 1.5,
-    borderColor: Colors.border,           // '#E2E8F0' = border ✓
-    borderRadius: BorderRadius.md,        // 12 = md ✓
-    paddingHorizontal: Spacing['2xl'],
-    paddingVertical: Spacing.xl,          // 12 = xl ✓
-    fontSize: FontSize.lg,                // 15 = lg ✓
-    fontWeight: FontWeight.semibold,
-    color: Colors.textPrimary,
-  },
-  customInputSuffix: {
-    fontSize: FontSize.md,                // 14 = md ✓
-    fontWeight: FontWeight.semibold,
-    color: Colors.textSecondary,
-  },
-  pricingCard: {
-    marginTop: Spacing['3xl'],
-    backgroundColor: Colors.white,
-    borderRadius: BorderRadius.lg,        // 16 = lg ✓
-    padding: Spacing['3xl'],
-    borderWidth: 1,
-    borderColor: Colors.border,           // '#E2E8F0' = border ✓
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  pricingTitle: {
-    fontSize: FontSize.lg,                // 15 = lg ✓
-    fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
-    marginBottom: Spacing.xl,             // 12 = xl ✓
-  },
-  breakdownRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: Spacing.lg,
-  },
-  breakdownLabel: {
-    fontSize: FontSize.base,              // 13 = base ✓
-    fontWeight: FontWeight.medium,
-    color: Colors.textSecondary,
-  },
-  breakdownValue: {
-    fontSize: FontSize.base,              // 13 = base ✓
-    fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
-  },
-  breakdownDivider: {
-    height: 1,
-    backgroundColor: Colors.surfaceBg,
-    marginVertical: Spacing.md,
-  },
-  totalLabel: {
-    fontSize: FontSize.lg,                // 15 = lg ✓
-    fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
-  },
-  totalValue: {
-    fontSize: FontSize['2xl'],            // 18 = 2xl ✓
-    fontWeight: FontWeight.extrabold,
-    color: Colors.primary,
-  },
-  declarationRow: {
-    flexDirection: 'row',
-    gap: Spacing.xl,                      // 12 = xl ✓
-    alignItems: 'flex-start',
-    paddingVertical: Spacing.md,
-  },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: BorderRadius.badge,     // 6 = badge ✓
-    borderWidth: 2,
-    borderColor: Colors.borderMedium,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 1,
-  },
-  checkboxChecked: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
-  declarationText: {
-    flex: 1,
-    fontSize: FontSize.base,              // 13 = base ✓
-    fontWeight: FontWeight.medium,
-    color: Colors.textDark,
-    lineHeight: 19,
-  },
-  declarationLink: {
-    color: Colors.primary,
-    fontWeight: FontWeight.semibold,
-    textDecorationLine: 'underline',
-  },
-  stickyFooter: {
-    backgroundColor: Colors.white,
-    paddingHorizontal: Spacing['3xl'],
-    paddingVertical: Spacing.xl,          // 12 = xl ✓
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,        // '#E2E8F0' = border ✓
-    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
-  },
-  confirmButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: BorderRadius.button,    // 14 = button ✓
-    paddingVertical: Spacing['3xl'],
-    paddingHorizontal: Spacing['3xl'],
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: Spacing.md,
-  },
-  confirmButtonDisabled: {
-    opacity: 0.5,
-  },
-  confirmButtonText: {
-    color: Colors.white,
-    fontSize: FontSize.xl,                // 16 = xl ✓
-    fontWeight: FontWeight.bold,
-  },
-  confirmButtonPrice: {
-    color: Colors.white,
-    fontSize: FontSize.md,                // 14 = md ✓
-    fontWeight: FontWeight.semibold,
-  },
-});
 
 export default BookingConfirmScreen;

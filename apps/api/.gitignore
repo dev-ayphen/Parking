@@ -3,3 +3,9 @@ node_modules
 .env
 
 /src/generated/prisma
+
+# Test scripts (may contain phone numbers / secrets)
+test_*.js
+
+# Legacy upload directory (all media now in Supabase)
+uploads/

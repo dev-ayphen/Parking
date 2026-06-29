@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {View,
   Text,
   StyleSheet,
@@ -14,13 +14,18 @@ import { ChevronLeft } from 'lucide-react-native';
 import { Alert } from 'react-native';
 import { api } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
+import type { ColorsType } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 
 const CompleteProfileScreen = () => {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const router = useRouter();
-  const { token, userId, expiresIn, refreshToken } = useLocalSearchParams();
+  const { userId } = useLocalSearchParams();
   const setSession = useAuthStore((s) => s.setSession);
   const logout = useAuthStore((s) => s.logout);
+  const storeToken = useAuthStore((s) => s.token);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
@@ -28,8 +33,7 @@ const CompleteProfileScreen = () => {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{ firstName?: string; lastName?: string; email?: string; upiId?: string; general?: string }>({});
 
-  // First + last name are mandatory to submit (email validated on submit).
-  const canSubmit = firstName.trim().length > 0 && lastName.trim().length > 0 && !loading;
+  const canSubmit = firstName.trim().length > 0 && lastName.trim().length > 0 && email.trim().length > 0 && !loading;
 
   // Back here can't skip the profile gate — completing it is mandatory. So "back"
   // means "cancel sign-up" → log out and return to login, rather than sneaking
@@ -67,14 +71,13 @@ const CompleteProfileScreen = () => {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         email: email.trim(),
-        upiId: upiId.trim() || undefined, // send undefined if empty so the backend doesn't store it
+        upiId: upiId.trim() || undefined,
       });
-      await setSession(
-        String(token),
-        { id: Number(userId), isProfileComplete: true },
-        Number(expiresIn),
-        typeof refreshToken === 'string' ? refreshToken : undefined,
-      );
+      // Token is already in the store (set in verify-otp before routing here).
+      // Update the user object to reflect the completed profile without re-issuing tokens.
+      if (storeToken) {
+        await setSession(storeToken, { id: Number(userId), isProfileComplete: true });
+      }
       setLoading(false);
       router.replace('/(home)');
     } catch (err) {
@@ -85,10 +88,10 @@ const CompleteProfileScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+      <StatusBar backgroundColor={colors.white} barStyle={isDark ? 'light-content' : 'dark-content'} />
 
       <TouchableOpacity style={styles.backButton} onPress={handleBack} activeOpacity={0.7}>
-        <ChevronLeft size={20} color={Colors.textDark} strokeWidth={2.5} />
+        <ChevronLeft size={20} color={colors.textDark} strokeWidth={2.5} />
       </TouchableOpacity>
 
       <ScrollView style={styles.scrollView}>
@@ -104,7 +107,7 @@ const CompleteProfileScreen = () => {
             <Text style={styles.label}>First Name</Text>
             <TextInput
               placeholder="Enter your first name"
-              placeholderTextColor={Colors.textMuted}
+              placeholderTextColor={colors.textMuted}
               style={[styles.input, !!errors.firstName && styles.inputError]}
               value={firstName}
               onChangeText={(v) => { setFirstName(v); setErrors((e) => ({ ...e, firstName: undefined })); }}
@@ -118,7 +121,7 @@ const CompleteProfileScreen = () => {
             <Text style={styles.label}>Last Name</Text>
             <TextInput
               placeholder="Enter your last name"
-              placeholderTextColor={Colors.textMuted}
+              placeholderTextColor={colors.textMuted}
               style={[styles.input, !!errors.lastName && styles.inputError]}
               value={lastName}
               onChangeText={(v) => { setLastName(v); setErrors((e) => ({ ...e, lastName: undefined })); }}
@@ -132,7 +135,7 @@ const CompleteProfileScreen = () => {
             <Text style={styles.label}>Email</Text>
             <TextInput
               placeholder="Enter your email"
-              placeholderTextColor={Colors.textMuted}
+              placeholderTextColor={colors.textMuted}
               keyboardType="email-address"
               style={[styles.input, !!errors.email && styles.inputError]}
               value={email}
@@ -151,7 +154,7 @@ const CompleteProfileScreen = () => {
             </View>
             <TextInput
               placeholder="name@okhdfcbank"
-              placeholderTextColor={Colors.textMuted}
+              placeholderTextColor={colors.textMuted}
               autoCapitalize="none"
               style={[styles.input, !!errors.upiId && styles.inputError]}
               value={upiId}
@@ -175,11 +178,11 @@ const CompleteProfileScreen = () => {
             disabled={!canSubmit}
           >
             <LinearGradient
-              colors={canSubmit ? [Colors.primaryLight, Colors.primary] : [Colors.borderMuted, Colors.borderMuted]}
+              colors={canSubmit ? [colors.primaryLight, colors.primary] : [colors.borderMuted, colors.borderMuted]}
               style={styles.button}
             >
               {loading ? (
-                <ActivityIndicator color={Colors.white} size="large" />
+                <ActivityIndicator color={colors.white} size="large" />
               ) : (
                 <Text style={styles.buttonText}>Complete Profile</Text>
               )}
@@ -197,18 +200,18 @@ const CompleteProfileScreen = () => {
 
 export default CompleteProfileScreen;
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
   },
   backButton: {
     width: 44,
     height: 44,
     borderRadius: BorderRadius.circle,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: colors.borderLight,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: Spacing.md,
@@ -233,12 +236,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: FontSize['6xl'],
     fontWeight: FontWeight.black,
-    color: Colors.textDark,
+    color: colors.textDark,
   },
 
   subtitle: {
     fontSize: FontSize.lg,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     marginTop: Spacing.lg,
     marginBottom: 45,
   },
@@ -249,7 +252,7 @@ const styles = StyleSheet.create({
 
   label: {
     fontSize: FontSize.base,
-    color: Colors.textDark,
+    color: colors.textDark,
     marginBottom: Spacing.lg,
     fontWeight: FontWeight.semibold,
   },
@@ -257,12 +260,12 @@ const styles = StyleSheet.create({
   input: {
     height: 58,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: colors.borderLight,
     borderRadius: BorderRadius.xl,
     paddingHorizontal: Spacing['3xl'],
     fontSize: FontSize.lg,
-    color: Colors.textDark,
-    backgroundColor: Colors.screenBg,
+    color: colors.textDark,
+    backgroundColor: colors.screenBg,
   },
 
   button: {
@@ -274,7 +277,7 @@ const styles = StyleSheet.create({
   },
 
   buttonText: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: FontSize['2xl'],
     fontWeight: FontWeight.bold,
   },
@@ -282,26 +285,26 @@ const styles = StyleSheet.create({
   note: {
     textAlign: 'center',
     marginTop: Spacing['4xl'],
-    color: Colors.textPlaceholder,
+    color: colors.textPlaceholder,
     fontSize: FontSize.sm,
     fontStyle: 'italic',
   },
   inputError: {
-    borderColor: Colors.error,
+    borderColor: colors.error,
   },
   errorText: {
-    color: Colors.error,
+    color: colors.error,
     fontSize: FontSize.sm,
     marginTop: Spacing.sm,
   },
   labelHint: {
     fontSize: FontSize.xs,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     fontWeight: FontWeight.medium,
   },
   helperText: {
     fontSize: FontSize.xs,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     marginTop: Spacing.sm,
     lineHeight: 14,
   },

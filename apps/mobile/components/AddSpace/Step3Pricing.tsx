@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Modal, FlatList } from 'react-native';
 import { Control, Controller, FieldErrors, UseFormSetValue, UseFormWatch } from 'react-hook-form';
 import { ChevronDown, CheckCircle, X } from 'lucide-react-native';
 import FormInput from '../FormInput';
-import { styles } from './addSpaceStyles';
-import { Colors } from '../../theme';
+import { makeAddSpaceStyles } from './addSpaceStyles';
+import { useTheme } from '../../hooks/useTheme';
+import type { ColorsType } from '../../theme';
 import { SpaceFormData } from './Step1BasicDetails';
 
 const AMENITIES = [
@@ -66,6 +67,9 @@ export default function Step3Pricing({
   formatTimeInput,
   isTimeValid,
 }: Props) {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeAddSpaceStyles(colors), [colors]);
+
   return (
     <View style={styles.formCard}>
       <Text style={styles.stepTitle}>Pricing & Availability</Text>
@@ -171,7 +175,7 @@ export default function Step3Pricing({
                     />
                   </View>
                   <View style={styles.dropdownChevron}>
-                    <ChevronDown size={18} color={Colors.textSecondary} />
+                    <ChevronDown size={18} color={colors.textSecondary} />
                   </View>
                 </TouchableOpacity>
 
@@ -194,7 +198,7 @@ export default function Step3Pricing({
                           style={styles.modalClose}
                           onPress={() => setShowAvailabilityModal(false)}
                         >
-                          <X size={18} color={Colors.textSecondary} />
+                          <X size={18} color={colors.textSecondary} />
                         </TouchableOpacity>
                       </View>
 
@@ -224,7 +228,7 @@ export default function Step3Pricing({
                             {item}
                           </Text>
                           {modalAvailability === item && item !== 'Custom Hours' && (
-                            <CheckCircle size={18} color={Colors.primary} />
+                            <CheckCircle size={18} color={colors.primary} />
                           )}
                         </TouchableOpacity>
                       ))}
@@ -241,7 +245,7 @@ export default function Step3Pricing({
                                 <TextInput
                                   style={[styles.customTimeInput, { flex: 1 }]}
                                   placeholder="09:00"
-                                  placeholderTextColor={Colors.textMuted}
+                                  placeholderTextColor={colors.textMuted}
                                   value={modalStartTime}
                                   onChangeText={(t) =>
                                     setModalStartTime(formatTimeInput(t))
@@ -290,7 +294,7 @@ export default function Step3Pricing({
                                 <TextInput
                                   style={[styles.customTimeInput, { flex: 1 }]}
                                   placeholder="09:00"
-                                  placeholderTextColor={Colors.textMuted}
+                                  placeholderTextColor={colors.textMuted}
                                   value={modalEndTime}
                                   onChangeText={(t) => setModalEndTime(formatTimeInput(t))}
                                   keyboardType="numeric"
@@ -392,7 +396,7 @@ export default function Step3Pricing({
             />
           </View>
           <View style={styles.dropdownChevron}>
-            <ChevronDown size={18} color={Colors.textSecondary} />
+            <ChevronDown size={18} color={colors.textSecondary} />
           </View>
         </TouchableOpacity>
 
@@ -421,7 +425,7 @@ export default function Step3Pricing({
                     setShowAmenitiesModal(false);
                   }}
                 >
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.primary }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: colors.primary }}>
                     Done
                   </Text>
                 </TouchableOpacity>
@@ -450,7 +454,7 @@ export default function Step3Pricing({
                       >
                         {item}
                       </Text>
-                      {selected && <CheckCircle size={18} color={Colors.primary} />}
+                      {selected && <CheckCircle size={18} color={colors.primary} />}
                     </TouchableOpacity>
                   );
                 }}

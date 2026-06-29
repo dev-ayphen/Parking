@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {View,
   Text,
   StyleSheet,
@@ -17,7 +17,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../../services/api';
 import { NETWORK_RECONNECTED } from '../../store/networkStore';
 import { PageHeader } from '../../components';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import type { ColorsType } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 import {
   Bell,
   Car,
@@ -58,6 +60,8 @@ interface Section {
 
 const NotificationsScreen = () => {
   const router = useRouter();
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -121,7 +125,7 @@ const NotificationsScreen = () => {
         setNotifications(mapped);
       }
     } catch (e) {
-      console.error('[NOTIFICATIONS] fetch error:', e);
+      if (__DEV__) console.error('[NOTIFICATIONS] fetch error:', e);
     } finally {
       isRefresh ? setRefreshing(false) : setLoading(false);
     }
@@ -217,19 +221,19 @@ const NotificationsScreen = () => {
 
   const getIcon = (type: Notification['type']) => {
     switch (type) {
-      case 'booking_request': return { icon: Bell, bg: Colors.pendingBg, color: ExtendedColors.orange };
-      case 'booking_approved': return { icon: CheckCircle2, bg: Colors.successBgAlt, color: Colors.successAlt };
-      case 'booking_rejected': return { icon: XCircle, bg: Colors.errorBg, color: Colors.errorAlt };
+      case 'booking_request': return { icon: Bell, bg: colors.pendingBg, color: ExtendedColors.orange };
+      case 'booking_approved': return { icon: CheckCircle2, bg: colors.successBgAlt, color: colors.successAlt };
+      case 'booking_rejected': return { icon: XCircle, bg: colors.errorBg, color: colors.errorAlt };
       case 'session_started': return { icon: Car, bg: ExtendedColors.indigoBg, color: ExtendedColors.indigoAccent };
-      case 'session_ended': return { icon: Clock, bg: Colors.screenBg, color: Colors.textSecondary };
-      case 'payment': return { icon: CreditCard, bg: Colors.successBg, color: Colors.success };
-      case 'subscription': return { icon: Crown, bg: Colors.primaryBg, color: Colors.primary };
-      case 'rating': return { icon: Star, bg: Colors.warningBg, color: Colors.warning };
-      case 'space_approved': return { icon: CheckCircle2, bg: Colors.successBgAlt, color: Colors.successAlt };
-      case 'space_rejected': return { icon: XCircle, bg: Colors.errorBg, color: Colors.errorAlt };
-      case 'space_doc_requested': return { icon: FileText, bg: Colors.primaryBg, color: Colors.primary };
-      case 'system': return { icon: Info, bg: Colors.infoBg, color: Colors.info };
-      default: return { icon: Bell, bg: Colors.screenBg, color: Colors.textSecondary };
+      case 'session_ended': return { icon: Clock, bg: colors.screenBg, color: colors.textSecondary };
+      case 'payment': return { icon: CreditCard, bg: colors.successBg, color: colors.success };
+      case 'subscription': return { icon: Crown, bg: colors.primaryBg, color: colors.primary };
+      case 'rating': return { icon: Star, bg: colors.warningBg, color: colors.warning };
+      case 'space_approved': return { icon: CheckCircle2, bg: colors.successBgAlt, color: colors.successAlt };
+      case 'space_rejected': return { icon: XCircle, bg: colors.errorBg, color: colors.errorAlt };
+      case 'space_doc_requested': return { icon: FileText, bg: colors.primaryBg, color: colors.primary };
+      case 'system': return { icon: Info, bg: colors.infoBg, color: colors.info };
+      default: return { icon: Bell, bg: colors.screenBg, color: colors.textSecondary };
     }
   };
 
@@ -275,7 +279,7 @@ const NotificationsScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
       <PageHeader
         title="Notifications"
@@ -297,12 +301,12 @@ const NotificationsScreen = () => {
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : notifications.length === 0 ? (
         <View style={styles.emptyState}>
           <View style={styles.emptyIconCircle}>
-            <BellOff size={28} color={Colors.textMuted} strokeWidth={1.5} />
+            <BellOff size={28} color={colors.textMuted} strokeWidth={1.5} />
           </View>
           <Text style={styles.emptyTitle}>All caught up!</Text>
           <Text style={styles.emptySub}>No notifications right now. We'll let you know when something happens.</Text>
@@ -320,8 +324,8 @@ const NotificationsScreen = () => {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor={Colors.primary}
-              colors={[Colors.primary]}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
             />
           }
         />
@@ -406,7 +410,7 @@ const NotificationsScreen = () => {
                       if (sid) router.push(`/add-space?edit=${sid}`);
                     }}
                   >
-                    <FileText size={16} color={Colors.white} strokeWidth={2.5} />
+                    <FileText size={16} color={colors.white} strokeWidth={2.5} />
                     <Text style={styles.uploadActionBtnText}>Upload document</Text>
                   </TouchableOpacity>
                 ) : (
@@ -423,18 +427,18 @@ const NotificationsScreen = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
   },
   markAllBtn: {
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
-    backgroundColor: Colors.primaryBg,              // pill background so it reads as a button
+    backgroundColor: colors.primaryBg,              // pill background so it reads as a button
     borderRadius: BorderRadius.circle,
     borderWidth: 1,
-    borderColor: Colors.primary,
+    borderColor: colors.primary,
   },
   // Invisible but still occupies its full size, so the header's right slot keeps a
   // constant width and the title never shifts when all notifications are read.
@@ -442,11 +446,11 @@ const styles = StyleSheet.create({
   markAllText: {
     fontSize: FontSize.sm,                          // 12 = sm ✓
     fontWeight: FontWeight.bold,
-    color: Colors.primary,
+    color: colors.primary,
     textAlign: 'right',
   },
   sectionHeader: {
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
     paddingHorizontal: Spacing['3xl'],
     paddingTop: Spacing['3xl'],
     paddingBottom: Spacing.sm,
@@ -454,21 +458,21 @@ const styles = StyleSheet.create({
   sectionLabel: {
     fontSize: FontSize.sm,                          // 12 = sm ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textMuted,
+    color: colors.textMuted,
     letterSpacing: 0,
   },
   notifItem: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     paddingHorizontal: Spacing['3xl'],
     paddingVertical: Spacing['2xl'],
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceBg,
+    borderBottomColor: colors.surfaceBg,
     position: 'relative',
   },
   notifItemUnread: {
-    backgroundColor: Colors.primaryBg,              // soft pink tint — clearly unread
+    backgroundColor: colors.primaryBg,              // soft pink tint — clearly unread
   },
   unreadAccentBar: {
     position: 'absolute',
@@ -476,13 +480,13 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: 3,
-    backgroundColor: Colors.primary,                // accent bar on the left edge
+    backgroundColor: colors.primary,                // accent bar on the left edge
   },
   unreadDot: {
     width: 7,
     height: 7,
     borderRadius: BorderRadius.indicator,           // 3 = indicator ✓
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     marginRight: Spacing.sm,
     flexShrink: 0,
   },
@@ -513,22 +517,22 @@ const styles = StyleSheet.create({
   notifTitle: {
     fontSize: FontSize.md,                          // 14 = md ✓
     fontWeight: FontWeight.semibold,
-    color: Colors.textBody,
+    color: colors.textBody,
     flexShrink: 1,
   },
   notifTitleUnread: {
     fontWeight: FontWeight.extrabold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   notifTime: {
     fontSize: FontSize.xs,                          // 11 = xs ✓
-    color: Colors.textMuted,
+    color: colors.textMuted,
     fontWeight: FontWeight.medium,
     flexShrink: 0,
   },
   notifBody: {
     fontSize: FontSize.base,                        // 13 = base ✓
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     lineHeight: 18,
   },
   loadingContainer: {
@@ -547,7 +551,7 @@ const styles = StyleSheet.create({
     width: 70,
     height: 70,
     borderRadius: 35,
-    backgroundColor: Colors.surfaceBg,
+    backgroundColor: colors.surfaceBg,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.screenH,
@@ -555,24 +559,24 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: FontSize['2xl'],                      // 18 = 2xl ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: Spacing.md,
   },
   emptySub: {
     fontSize: FontSize.md,                          // 14 = md ✓
-    color: Colors.textMuted,
+    color: colors.textMuted,
     textAlign: 'center',
     lineHeight: 20,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: Colors.overlay,                // 'rgba(0,0,0,0.5)' ✓
+    backgroundColor: colors.overlay,                // 'rgba(0,0,0,0.5)' ✓
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: Spacing.screenH,
   },
   modalContent: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: BorderRadius.circleXl,            // 20 = circleXl ✓
     maxHeight: '85%',
     width: '100%',
@@ -586,27 +590,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.screenH,
     paddingVertical: Spacing['3xl'],
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceBg,
-    backgroundColor: Colors.screenBg,
+    borderBottomColor: colors.surfaceBg,
+    backgroundColor: colors.screenBg,
   },
   modalTitle: {
     fontSize: FontSize['2xl'],                      // 18 = 2xl ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     flex: 1,
   },
   closeBtn: {
     width: 32,
     height: 32,
     borderRadius: BorderRadius.lg,                  // 16 = lg ✓
-    backgroundColor: Colors.border,
+    backgroundColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   closeBtnText: {
     fontSize: FontSize['2xl'],                      // 18 = 2xl ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   modalBody: {
     paddingHorizontal: Spacing.screenH,
@@ -615,15 +619,15 @@ const styles = StyleSheet.create({
   },
   modalMessage: {
     fontSize: FontSize.lg,                          // 15 = lg ✓
-    color: Colors.textBody,
+    color: colors.textBody,
     lineHeight: 22,
     fontWeight: FontWeight.medium,
   },
   reasonSection: {
-    backgroundColor: Colors.errorBg,
+    backgroundColor: colors.errorBg,
     borderRadius: BorderRadius.md,                  // 12 = md ✓
     borderLeftWidth: 4,
-    borderLeftColor: Colors.errorAlt,
+    borderLeftColor: colors.errorAlt,
     paddingHorizontal: Spacing['2xl'],
     paddingVertical: Spacing.xl,
     gap: Spacing.sm,
@@ -631,7 +635,7 @@ const styles = StyleSheet.create({
   reasonLabel: {
     fontSize: FontSize.sm,                          // 12 = sm ✓
     fontWeight: FontWeight.bold,
-    color: Colors.error,
+    color: colors.error,
     letterSpacing: 0,
   },
   reasonText: {
@@ -641,7 +645,7 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.medium,
   },
   timestampSection: {
-    backgroundColor: Colors.infoBg,
+    backgroundColor: colors.infoBg,
     borderRadius: BorderRadius.md,                  // 12 = md ✓
     paddingHorizontal: Spacing['2xl'],
     paddingVertical: Spacing.xl,
@@ -663,10 +667,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.screenH,
     paddingVertical: Spacing['3xl'],
     borderTopWidth: 1,
-    borderTopColor: Colors.surfaceBg,
+    borderTopColor: colors.surfaceBg,
   },
   doneBtn: {
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     borderRadius: BorderRadius.md,                  // 12 = md ✓
     paddingVertical: Spacing['2xl'],
     alignItems: 'center',
@@ -674,21 +678,21 @@ const styles = StyleSheet.create({
   doneBtnText: {
     fontSize: FontSize.lg,                          // 15 = lg ✓
     fontWeight: FontWeight.bold,
-    color: Colors.white,
+    color: colors.white,
   },
   uploadActionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.md,
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     borderRadius: BorderRadius.md,
     paddingVertical: Spacing['2xl'],
   },
   uploadActionBtnText: {
     fontSize: FontSize.lg,
     fontWeight: FontWeight.bold,
-    color: Colors.white,
+    color: colors.white,
   },
 });
 

@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { ZodError } from 'zod';
+import { env } from '../config/env';
 
 /**
  * Standardized application error.
@@ -90,12 +91,18 @@ export const sendError = (res: Response, err: any): Response => {
     });
   }
 
-  // Legacy thrown error with statusCode attached
+  // Legacy thrown error with statusCode attached.
+  // Never expose raw err.message in production — it may contain Prisma query
+  // details, stack fragments, or internal paths.
   const status = err?.statusCode ?? err?.status ?? 500;
+  const isProd = env.NODE_ENV === 'production';
+  const message = isProd && status >= 500
+    ? 'Internal server error'
+    : (err?.message || 'Internal server error');
   return res.status(status).json({
     success: false,
     error: {
-      message: err?.message || 'Internal Server Error',
+      message,
       code: err?.code || 'INTERNAL_ERROR',
       status,
     },

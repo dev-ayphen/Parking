@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { db } from '../config/database';
+import { AppError } from '../utils/errors';
 import { bookingExpiryService } from './bookingExpiry.service';
 import { storageService } from './storage.service';
 import { BUCKETS } from '../config/supabase';
@@ -135,7 +136,7 @@ export const spaceAdminService = {
         },
       },
     });
-    if (!s) throw Object.assign(new Error('Space not found'), { statusCode: 404 });
+    if (!s) throw new AppError('Space not found', 404);
 
     const [ratingAgg, bookingsCount] = await Promise.all([
       db.rating.aggregate({
@@ -200,7 +201,7 @@ export const spaceAdminService = {
     fields: { name?: string; address?: string; hourlyRate?: number; description?: string; capacity?: number },
   ) => {
     const existing = await db.space.findUnique({ where: { id: spaceId }, select: { id: true } });
-    if (!existing) throw Object.assign(new Error('Space not found'), { statusCode: 404 });
+    if (!existing) throw new AppError('Space not found', 404);
 
     const data: any = {};
     if (fields.name !== undefined) data.name = String(fields.name).trim();
@@ -275,7 +276,7 @@ export const spaceAdminService = {
   // is unchanged (a verified space stays live while the owner adds the doc).
   requestSpaceDocument: async (spaceId: number, documentLabel: string, message?: string) => {
     const space = await db.space.findUnique({ where: { id: spaceId } });
-    if (!space) throw Object.assign(new Error('Space not found'), { statusCode: 404 });
+    if (!space) throw new AppError('Space not found', 404);
 
     const label = documentLabel?.trim() || 'a required document';
     const note = message?.trim();

@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { userPreferencesService } from '../services/userPreferences.service';
+import { sendError } from '../utils/errors';
 
 export const userPreferencesController = {
   getPreferences: async (req: Request, res: Response) => {
@@ -12,7 +13,7 @@ export const userPreferencesController = {
       const result = await userPreferencesService.get(userId);
       res.json(result);
     } catch (error) {
-      res.status(500).json({ error: (error as Error).message });
+      sendError(res, error);
     }
   },
 
@@ -26,7 +27,7 @@ export const userPreferencesController = {
       const result = await userPreferencesService.update(userId, req.body);
       res.json(result);
     } catch (error) {
-      res.status(400).json({ error: (error as Error).message });
+      sendError(res, error);
     }
   },
 };

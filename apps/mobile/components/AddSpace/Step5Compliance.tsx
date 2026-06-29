@@ -1,9 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { FieldErrors, UseFormSetValue, UseFormWatch } from 'react-hook-form';
 import { CheckCircle, Building2, MapPin, IndianRupee, FileText } from 'lucide-react-native';
-import { styles } from './addSpaceStyles';
-import { Colors } from '../../theme';
+import { makeAddSpaceStyles } from './addSpaceStyles';
+import { useTheme } from '../../hooks/useTheme';
 import { SpaceFormData } from './Step1BasicDetails';
 
 const REQUIRED_PROOF_TEXT: Record<string, string> = {
@@ -27,13 +27,16 @@ type Props = {
 };
 
 export default function Step5Compliance({ errors, watch, setValue, uploadedDocs }: Props) {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeAddSpaceStyles(colors), [colors]);
+
   return (
     <View>
       {/* ── BASIC DETAILS ── */}
       <View style={styles.summaryCard}>
         <View style={styles.summarySectionHeader}>
           <View style={styles.summarySectionIcon}>
-            <Building2 size={13} color={Colors.primary} />
+            <Building2 size={13} color={colors.primary} />
           </View>
           <Text style={styles.summarySectionTitle}>Basic Details</Text>
         </View>
@@ -61,7 +64,7 @@ export default function Step5Compliance({ errors, watch, setValue, uploadedDocs 
       <View style={styles.summaryCard}>
         <View style={styles.summarySectionHeader}>
           <View style={styles.summarySectionIcon}>
-            <MapPin size={13} color={Colors.primary} />
+            <MapPin size={13} color={colors.primary} />
           </View>
           <Text style={styles.summarySectionTitle}>Location</Text>
         </View>
@@ -89,13 +92,13 @@ export default function Step5Compliance({ errors, watch, setValue, uploadedDocs 
       <View style={styles.summaryCard}>
         <View style={styles.summarySectionHeader}>
           <View style={styles.summarySectionIcon}>
-            <IndianRupee size={13} color={Colors.primary} />
+            <IndianRupee size={13} color={colors.primary} />
           </View>
           <Text style={styles.summarySectionTitle}>Pricing & Availability</Text>
         </View>
         <View style={styles.summaryRow}>
           <Text style={styles.summaryRowLabel}>Hourly Rate</Text>
-          <Text style={[styles.summaryRowValue, { color: Colors.primary, fontWeight: '700' }]}>
+          <Text style={[styles.summaryRowValue, { color: colors.primary, fontWeight: '700' }]}>
             ₹{watch('hourlyPrice') || '—'}/hr
           </Text>
         </View>
@@ -127,7 +130,7 @@ export default function Step5Compliance({ errors, watch, setValue, uploadedDocs 
       <View style={styles.summaryCard}>
         <View style={styles.summarySectionHeader}>
           <View style={styles.summarySectionIcon}>
-            <FileText size={13} color={Colors.primary} />
+            <FileText size={13} color={colors.primary} />
           </View>
           <Text style={styles.summarySectionTitle}>Documents & Photos</Text>
         </View>
@@ -142,7 +145,7 @@ export default function Step5Compliance({ errors, watch, setValue, uploadedDocs 
           <Text
             style={[
               styles.summaryRowValue,
-              uploadedDocs.length === 0 && { color: Colors.errorAlt },
+              uploadedDocs.length === 0 && { color: colors.errorAlt },
             ]}
           >
             {uploadedDocs.length > 0 ? `${uploadedDocs.length} file(s)` : 'None uploaded'}
@@ -153,7 +156,7 @@ export default function Step5Compliance({ errors, watch, setValue, uploadedDocs 
           <Text
             style={[
               styles.summaryRowValue,
-              { color: watch('frontPhoto') ? Colors.success : Colors.errorAlt },
+              { color: watch('frontPhoto') ? colors.success : colors.errorAlt },
             ]}
           >
             {watch('frontPhoto') ? '✓ Added' : '✗ Missing'}
@@ -164,7 +167,7 @@ export default function Step5Compliance({ errors, watch, setValue, uploadedDocs 
           <Text
             style={[
               styles.summaryRowValue,
-              { color: watch('areaPhoto') ? Colors.success : Colors.textMuted },
+              { color: watch('areaPhoto') ? colors.success : colors.textMuted },
             ]}
           >
             {watch('areaPhoto') ? '✓ Added' : 'Not added'}
@@ -175,7 +178,7 @@ export default function Step5Compliance({ errors, watch, setValue, uploadedDocs 
           <Text
             style={[
               styles.summaryRowValue,
-              { color: watch('areaVideo') ? Colors.success : Colors.textMuted },
+              { color: watch('areaVideo') ? colors.success : colors.textMuted },
             ]}
           >
             {watch('areaVideo') ? '✓ Added' : 'Not added'}
@@ -209,7 +212,7 @@ export default function Step5Compliance({ errors, watch, setValue, uploadedDocs 
               onPress={() => setValue(key, !watch(key), { shouldValidate: true })}
             >
               <View style={[styles.checkbox, watch(key) && styles.checkboxActive]}>
-                {watch(key) && <CheckCircle size={14} color={Colors.white} />}
+                {watch(key) && <CheckCircle size={14} color={colors.white} />}
               </View>
               <Text style={styles.consentText}>{text}</Text>
             </TouchableOpacity>

@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { settingsService } from '../services/settings.service';
+import { sendError } from '../utils/errors';
 
 export const settingsController = {
   getSettings: async (_req: Request, res: Response) => {
@@ -7,7 +8,7 @@ export const settingsController = {
       const result = await settingsService.get();
       res.json(result);
     } catch (error) {
-      res.status(500).json({ error: (error as Error).message });
+      sendError(res, error);
     }
   },
 
@@ -16,7 +17,7 @@ export const settingsController = {
       const result = await settingsService.update(req.body, req.user?.id);
       res.json(result);
     } catch (error) {
-      res.status(400).json({ error: (error as Error).message });
+      sendError(res, error);
     }
   },
 
@@ -25,7 +26,7 @@ export const settingsController = {
       const result = await settingsService.getPublic();
       res.json(result);
     } catch (error) {
-      res.status(500).json({ error: (error as Error).message });
+      sendError(res, error);
     }
   },
 };

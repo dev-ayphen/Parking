@@ -2,7 +2,7 @@ import { Router } from 'express';
 import authRouter from './auth.routes';
 import userRouter from './user.routes';
 import spaceRouter from './space.routes';
-import bookingRouter from './booking.routes';
+import bookingRouter, { publicRouter as bookingPublicRouter } from './booking.routes';
 import vehicleRouter from './vehicle.routes';
 import ratingRouter from './rating.routes';
 import subscriptionRouter from './subscription.routes';
@@ -17,14 +17,19 @@ import userPreferencesRouter from './userPreferences.routes';
 import uploadRouter from './upload.routes';
 import configRouter from './config.routes';
 import helpRouter from './help.routes';
+import geocodeRouter from './geocode.routes';
+import analyticsRouter from './analytics.routes';
 
 const router = Router();
 
 router.use('/config', configRouter);
 router.use('/help', helpRouter);
+router.use('/geocode', geocodeRouter);
+router.use('/analytics', analyticsRouter);
 router.use('/auth', authRouter);
 router.use('/users', userRouter);
 router.use('/spaces', spaceRouter);
+router.use('/bookings', bookingPublicRouter);
 router.use('/bookings', bookingRouter);
 router.use('/vehicles', vehicleRouter);
 router.use('/ratings', ratingRouter);

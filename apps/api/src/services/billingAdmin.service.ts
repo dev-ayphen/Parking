@@ -1,4 +1,5 @@
 import { db } from '../config/database';
+import { AppError } from '../utils/errors';
 
 /**
  * Billing administration: transactions, payouts, refunds, subscriptions, plans.
@@ -9,7 +10,7 @@ import { db } from '../config/database';
  * subscription-revenue gateway and any historical records.
  */
 export const billingAdminService = {
-  listTransactions: async (query: any) => {
+  listTransactions: async (query: Record<string, unknown>) => {
     const { type, search, page = 1, limit = 20 } = query;
     const skip = (Number(page) - 1) * Number(limit);
 
@@ -52,7 +53,7 @@ export const billingAdminService = {
       db.transaction.count({ where }),
     ]);
 
-    const mapped = (items as any[]).map((t) => {
+    const mapped = items.map((t) => {
       const userName = t.user
         ? [t.user.firstName, t.user.lastName].filter(Boolean).join(' ') || t.user.phone
         : t.entityLabel || '—';
@@ -106,11 +107,11 @@ export const billingAdminService = {
 
     const revenue30d = revenue30dAgg._sum.amount ?? 0;
     const pendingPayoutAmount = Math.abs(
-      (pendingPayoutsAgg as any[]).reduce((sum, p) => sum + p.amount, 0)
+      pendingPayoutsAgg.reduce((sum, p) => sum + p.amount, 0)
     );
     // Count unique accounts, skipping null/undefined properly
     const pendingPayoutAccounts = new Set(
-      (pendingPayoutsAgg as any[])
+      pendingPayoutsAgg
         .map((p) => p.userId ?? p.entityLabel)
         .filter(Boolean)
     ).size;
@@ -173,27 +174,10 @@ export const billingAdminService = {
       return { success: true, processed: 0, message: 'No pending payouts', userIds: [] };
     }
 
-    // TODO: Fetch owner bank details from database for each pending payout
-    // TODO: Call Razorpay API to create transfer using bank details
-    // TODO: Track payout ID in the transaction record (store Razorpay transfer ID)
-    // For now, mark transactions as SUCCESS; in production, only update after Razorpay confirms
-
-    await db.transaction.updateMany({
-      where: { id: { in: pending.map((p) => p.id) } },
-      data: { status: 'SUCCESS' },
-    });
-    const userIds = Array.from(new Set(pending.map((p) => p.userId).filter(Boolean))) as number[];
-    for (const uid of userIds) {
-      await db.notification.create({
-        data: {
-          userId: uid,
-          title: 'Payout Processed',
-          message: 'Your owner payout has been processed successfully.',
-          category: 'PAYMENT',
-        },
-      });
-    }
-    return { success: true, processed: pending.length, userIds };
+    // Razorpay payout integration is not yet wired up.
+    // Return early so we never mark payouts as SUCCESS without actually moving money.
+    // Wire up: fetch bank details → call Razorpay Payout API → store transfer ID → update status.
+    return { success: false, processed: 0, message: 'Payout processing not yet configured. Wire up Razorpay before enabling.', userIds: [] };
   },
 
   createPayout: async (data: { userId?: number; entityLabel?: string; amount: number; description?: string }) => {
@@ -228,9 +212,9 @@ export const billingAdminService = {
       select: { id: true, txnNumber: true, amount: true, status: true, createdAt: true },
     });
 
-    const userLabel = (txn as any).user
-      ? `${(txn as any).user.firstName || ''} ${(txn as any).user.lastName || ''}`.trim() || (txn as any).user.phone
-      : (txn as any).entityLabel || 'Unknown';
+    const userLabel = txn.user
+      ? `${txn.user.firstName || ''} ${txn.user.lastName || ''}`.trim() || txn.user.phone
+      : txn.entityLabel || 'Unknown';
 
     return {
       success: true,
@@ -242,15 +226,15 @@ export const billingAdminService = {
         amount: txn.amount,
         status: txn.status,
         paymentMethod: txn.paymentMethod,
-        entityLabel: (txn as any).entityLabel,
-        bookingId: (txn as any).bookingId || null,
+        entityLabel: txn.entityLabel,
+        bookingId: txn.bookingId || null,
         createdAt: txn.createdAt,
-        user: (txn as any).user ? {
-          id: (txn as any).user.id,
+        user: txn.user ? {
+          id: txn.user.id,
           name: userLabel,
-          phone: (txn as any).user.phone,
-          email: (txn as any).user.email,
-          role: (txn as any).user.role,
+          phone: txn.user.phone,
+          email: txn.user.email,
+          role: txn.user.role,
         } : null,
         relatedRefund: refundOf,
         isRefundable: ['BOOKING_PAYMENT', 'SUBSCRIPTION'].includes(txn.type) && txn.status === 'SUCCESS' && !refundOf,
@@ -289,8 +273,8 @@ export const billingAdminService = {
           status: 'SUCCESS',
           paymentMethod: original.paymentMethod,
           description: `Refund for ${original.txnNumber}${payload.reason ? ` — ${payload.reason}` : ''}`,
-          userId: (original as any).userId ?? null,
-          entityLabel: (original as any).entityLabel ?? null,
+          userId: original.userId ?? null,
+          entityLabel: original.entityLabel ?? null,
           refundedTxnId: original.id,
         },
       });
@@ -337,7 +321,7 @@ export const billingAdminService = {
     };
 
     const header = ['Transaction ID', 'Type', 'Description', 'User/Entity', 'Amount', 'Method', 'Status', 'Date'];
-    const rows = (txns as any[]).map((t) => {
+    const rows = txns.map((t) => {
       const user = t.user
         ? [t.user.firstName, t.user.lastName].filter(Boolean).join(' ') || t.user.phone
         : t.entityLabel || '';
@@ -388,15 +372,15 @@ export const billingAdminService = {
     const suspended = countBy('SUSPENDED');
 
     // MRR — normalise each active sub to a monthly figure (yearly ÷ 12).
-    const mrr = (activeSubs as any[]).reduce((sum, s) => sum + (s.plan === 'YEARLY' ? s.price / 12 : s.price), 0);
+    const mrr = activeSubs.reduce((sum, s) => sum + (s.plan === 'YEARLY' ? s.price / 12 : s.price), 0);
     const arr = mrr * 12;
     const arpu = active > 0 ? mrr / active : 0;
     const lifetimeRevenue = subRevenueAgg._sum.amount ?? 0;
 
     // Plan distribution (active subscribers per plan).
     const distMap = new Map<string, { name: string; colorKey: string; count: number }>();
-    (allPlans as any[]).forEach((p) => distMap.set(p.name, { name: p.name, colorKey: p.colorKey, count: 0 }));
-    (activeSubs as any[]).forEach((s) => {
+    allPlans.forEach((p) => distMap.set(p.name, { name: p.name, colorKey: p.colorKey, count: 0 }));
+    activeSubs.forEach((s) => {
       const name = s.planRef?.name || s.planName || 'Unknown';
       const entry = distMap.get(name) || { name, colorKey: 'blue', count: 0 };
       entry.count += 1;
@@ -410,7 +394,7 @@ export const billingAdminService = {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       months.push({ label: d.toLocaleDateString('en-IN', { month: 'short' }), key: `${d.getFullYear()}-${d.getMonth()}`, count: 0 });
     }
-    (monthSubs as any[]).forEach((s) => {
+    monthSubs.forEach((s) => {
       const d = new Date(s.createdAt);
       const bucket = months.find((m) => m.key === `${d.getFullYear()}-${d.getMonth()}`);
       if (bucket) bucket.count += 1;
@@ -427,7 +411,7 @@ export const billingAdminService = {
     };
   },
 
-  listSubscriptions: async (query: any) => {
+  listSubscriptions: async (query: Record<string, unknown>) => {
     const { status, search, page = 1, limit = 20 } = query;
     const skip = (Number(page) - 1) * Number(limit);
 
@@ -479,7 +463,7 @@ export const billingAdminService = {
       SUSPENDED: 'Suspended',
     };
 
-    const mapped = (subs as any[]).map((s) => {
+    const mapped = subs.map((s) => {
       const planName = s.planRef?.name || s.planName || 'Basic';
       const isYearly = s.plan === 'YEARLY';
       return {
@@ -498,7 +482,7 @@ export const billingAdminService = {
       };
     });
 
-    const planSummaries = (plans as any[]).map((p) => ({
+    const planSummaries = plans.map((p) => ({
       id: p.id,
       name: p.name,
       description: p.description,
@@ -515,14 +499,14 @@ export const billingAdminService = {
 
   // ── Admin actions on an individual subscription ──────────────────────────
   getSubscriptionDetail: async (subscriptionId: number) => {
-    const s: any = await db.subscription.findUnique({
+    const s = await db.subscription.findUnique({
       where: { id: subscriptionId },
       include: {
         user: { select: { id: true, firstName: true, lastName: true, phone: true, email: true } },
         planRef: { select: { id: true, name: true, colorKey: true } },
       },
     });
-    if (!s) throw Object.assign(new Error('Subscription not found'), { statusCode: 404 });
+    if (!s) throw new AppError('Subscription not found', 404);
 
     // Owner's spaces count + lifetime revenue (subscription txns for this owner).
     let spacesCount = 0;
@@ -568,7 +552,7 @@ export const billingAdminService = {
       where: { id: subscriptionId, status: 'ACTIVE' },
       data: { status: 'SUSPENDED', autoRenewal: false },
     });
-    if (result.count === 0) throw Object.assign(new Error('Active subscription not found'), { statusCode: 404 });
+    if (result.count === 0) throw new AppError('Active subscription not found', 404);
     const sub = await db.subscription.findUnique({ where: { id: subscriptionId } });
     if (sub) {
       const reasonText = reason ? ` Reason: ${reason}.` : '';
@@ -585,7 +569,7 @@ export const billingAdminService = {
       where: { id: subscriptionId, status: 'SUSPENDED' },
       data: { status: 'ACTIVE' },
     });
-    if (result.count === 0) throw Object.assign(new Error('Suspended subscription not found'), { statusCode: 404 });
+    if (result.count === 0) throw new AppError('Suspended subscription not found', 404);
     const sub = await db.subscription.findUnique({ where: { id: subscriptionId } });
     if (sub) {
       await db.notification.create({
@@ -598,9 +582,9 @@ export const billingAdminService = {
   // Extend the renewal date by N days (support goodwill). Works on ACTIVE/SUSPENDED.
   extendSubscription: async (subscriptionId: number, days: number) => {
     const allowed = [7, 30, 60, 90];
-    if (!allowed.includes(days)) throw Object.assign(new Error('Extension must be 7, 30, 60, or 90 days'), { statusCode: 400 });
+    if (!allowed.includes(days)) throw new AppError('Extension must be 7, 30, 60, or 90 days', 400);
     const sub = await db.subscription.findUnique({ where: { id: subscriptionId } });
-    if (!sub) throw Object.assign(new Error('Subscription not found'), { statusCode: 404 });
+    if (!sub) throw new AppError('Subscription not found', 404);
     const base = sub.renewalDate > new Date() ? sub.renewalDate : new Date();
     const newRenewal = new Date(base.getTime() + days * 86400000);
     const updated = await db.subscription.update({
@@ -618,9 +602,9 @@ export const billingAdminService = {
   // (Chargeback / Fraud / Legal Request / Other) is recorded.
   forceCancelSubscription: async (subscriptionId: number, reason?: string) => {
     const sub = await db.subscription.findUnique({ where: { id: subscriptionId } });
-    if (!sub) throw Object.assign(new Error('Subscription not found'), { statusCode: 404 });
+    if (!sub) throw new AppError('Subscription not found', 404);
     if (sub.status === 'CANCELLED' || sub.status === 'EXPIRED') {
-      throw Object.assign(new Error('Subscription is already inactive'), { statusCode: 400 });
+      throw new AppError('Subscription is already inactive', 400);
     }
     const updated = await db.subscription.update({
       where: { id: subscriptionId },
@@ -640,7 +624,7 @@ export const billingAdminService = {
     });
     return {
       success: true,
-      plans: (plans as any[]).map((p) => ({
+      plans: plans.map((p) => ({
         id: p.id,
         name: p.name,
         description: p.description,
@@ -665,7 +649,7 @@ export const billingAdminService = {
   updateSubscriptionPlan: async (planId: number, data: any) => {
     // Full snapshot of the OLD plan so the controller can audit old→new diffs.
     const existing = await db.subscriptionPlan.findUnique({ where: { id: planId } });
-    if (!existing) throw Object.assign(new Error('Plan not found'), { statusCode: 404 });
+    if (!existing) throw new AppError('Plan not found', 404);
 
     const allowed: any = {};
     if (data.name !== undefined) allowed.name = String(data.name);

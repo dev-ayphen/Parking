@@ -8,15 +8,8 @@ import { api } from '../../services/api';
 import { NETWORK_RECONNECTED } from '../../store/networkStore';
 import PageHeader from '../../components/PageHeader';
 import NoActivitySvg from '../../components/Illustrations/NoActivitySvg';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
-
-const REQUEST_STATUS_BADGE: Record<string, { label: string; color: string; bg: string }> = {
-  APPROVED: { label: 'Approved', color: Colors.success, bg: Colors.successBg },
-  COMPLETED: { label: 'Completed', color: Colors.textBody, bg: Colors.surfaceBg },
-  REJECTED: { label: 'Rejected', color: Colors.error, bg: Colors.errorBg },
-  CANCELLED: { label: 'Cancelled', color: Colors.error, bg: Colors.errorBg },
-  EXPIRED: { label: 'Expired', color: Colors.textSecondary, bg: Colors.surfaceBg },
-};
+import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import type { ColorsType } from '../../theme';
 
 const timeAgo = (iso: string) => {
   if (!iso) return '';
@@ -33,6 +26,17 @@ const timeAgo = (iso: string) => {
 
 export default function RecentRequestsScreen() {
   const router = useRouter();
+  const { colors, isDark } = useTheme();
+  const styles = makeStyles(colors);
+
+  const REQUEST_STATUS_BADGE: Record<string, { label: string; color: string; bg: string }> = {
+    APPROVED: { label: 'Approved', color: colors.success, bg: colors.successBg },
+    COMPLETED: { label: 'Completed', color: colors.textBody, bg: colors.surfaceBg },
+    REJECTED: { label: 'Rejected', color: colors.error, bg: colors.errorBg },
+    CANCELLED: { label: 'Cancelled', color: colors.error, bg: colors.errorBg },
+    EXPIRED: { label: 'Expired', color: colors.textSecondary, bg: colors.surfaceBg },
+  };
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [requests, setRequests] = useState<any[]>([]);
@@ -78,7 +82,7 @@ export default function RecentRequestsScreen() {
   }, [fetchRequests]);
 
   const renderItem = ({ item: req }: { item: any }) => {
-    const badge = REQUEST_STATUS_BADGE[req.status] || { label: req.status, color: Colors.textSecondary, bg: Colors.surfaceBg };
+    const badge = REQUEST_STATUS_BADGE[req.status] || { label: req.status, color: colors.textSecondary, bg: colors.surfaceBg };
     return (
       <TouchableOpacity
         style={styles.recentReqCard}
@@ -87,7 +91,7 @@ export default function RecentRequestsScreen() {
       >
         <View style={styles.recentReqAvatar}>
           {req.parkerPhotoUrl ? (
-            <Image source={{ uri: req.parkerPhotoUrl }} style={styles.recentReqAvatarImg} resizeMode="cover" />
+            <Image source={{ uri: req.parkerPhotoUrl }} style={styles.recentReqAvatarImg} resizeMode="cover" onError={() => {}} />
           ) : (
             <Text style={styles.recentReqAvatarText}>{req.parkerName.charAt(0).toUpperCase()}</Text>
           )}
@@ -108,12 +112,12 @@ export default function RecentRequestsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <PageHeader title="All Recent Requests" onBack={() => router.replace('/(my-spaces)')} />
 
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : (
         <FlatList
@@ -124,11 +128,11 @@ export default function RecentRequestsScreen() {
           renderItem={renderItem}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => fetchRequests(true)} tintColor={Colors.primary} />
+            <RefreshControl refreshing={refreshing} onRefresh={() => fetchRequests(true)} tintColor={colors.primary} />
           }
           ListEmptyComponent={
             <View style={styles.emptyStateContainer}>
-              <NoActivitySvg width={120} height={120} primaryColor={Colors.primary} />
+              <NoActivitySvg width={120} height={120} primaryColor={colors.primary} />
               <Text style={styles.emptyStateTitle}>No recent requests</Text>
               <Text style={styles.emptyStateDesc}>You do not have any requests at the moment.</Text>
             </View>
@@ -148,26 +152,26 @@ export default function RecentRequestsScreen() {
             {/* Header */}
             {modalItem?.status === 'COMPLETED' && (
               <View style={styles.modalHeader}>
-                <View style={[styles.modalIconWrap, { backgroundColor: Colors.successBg }]}>
-                  <CheckCircle2 size={32} color={Colors.successAlt} />
+                <View style={[styles.modalIconWrap, { backgroundColor: colors.successBg }]}>
+                  <CheckCircle2 size={32} color={colors.successAlt} />
                 </View>
-                <Text style={[styles.modalTitle, { color: Colors.successAlt }]}>Booking Completed</Text>
+                <Text style={[styles.modalTitle, { color: colors.successAlt }]}>Booking Completed</Text>
                 <Text style={styles.modalSub}>This booking was successfully completed.</Text>
               </View>
             )}
             {modalItem?.status === 'APPROVED' && (
               <View style={styles.modalHeader}>
-                <View style={[styles.modalIconWrap, { backgroundColor: Colors.successBg }]}>
-                  <ThumbsUp size={32} color={Colors.success} />
+                <View style={[styles.modalIconWrap, { backgroundColor: colors.successBg }]}>
+                  <ThumbsUp size={32} color={colors.success} />
                 </View>
-                <Text style={[styles.modalTitle, { color: Colors.success }]}>Booking Approved</Text>
+                <Text style={[styles.modalTitle, { color: colors.success }]}>Booking Approved</Text>
                 <Text style={styles.modalSub}>You approved this booking request.</Text>
               </View>
             )}
             {modalItem?.status === 'EXPIRED' && (
               <View style={styles.modalHeader}>
-                <View style={[styles.modalIconWrap, { backgroundColor: Colors.surfaceBg }]}>
-                  <Clock size={32} color={Colors.textSecondary} />
+                <View style={[styles.modalIconWrap, { backgroundColor: colors.surfaceBg }]}>
+                  <Clock size={32} color={colors.textSecondary} />
                 </View>
                 <Text style={styles.modalTitle}>Request Expired</Text>
                 <Text style={styles.modalSub}>
@@ -177,19 +181,19 @@ export default function RecentRequestsScreen() {
             )}
             {modalItem?.status === 'REJECTED' && (
               <View style={styles.modalHeader}>
-                <View style={[styles.modalIconWrap, { backgroundColor: Colors.errorBg }]}>
-                  <XCircle size={32} color={Colors.error} />
+                <View style={[styles.modalIconWrap, { backgroundColor: colors.errorBg }]}>
+                  <XCircle size={32} color={colors.error} />
                 </View>
-                <Text style={[styles.modalTitle, { color: Colors.error }]}>Request Rejected</Text>
+                <Text style={[styles.modalTitle, { color: colors.error }]}>Request Rejected</Text>
                 <Text style={styles.modalSub}>You declined this booking request.</Text>
               </View>
             )}
             {modalItem?.status === 'CANCELLED' && (
               <View style={styles.modalHeader}>
-                <View style={[styles.modalIconWrap, { backgroundColor: Colors.errorBg }]}>
-                  <AlertCircle size={32} color={Colors.error} />
+                <View style={[styles.modalIconWrap, { backgroundColor: colors.errorBg }]}>
+                  <AlertCircle size={32} color={colors.error} />
                 </View>
-                <Text style={[styles.modalTitle, { color: Colors.error }]}>Booking Cancelled</Text>
+                <Text style={[styles.modalTitle, { color: colors.error }]}>Booking Cancelled</Text>
                 <Text style={styles.modalSub}>This booking was cancelled.</Text>
               </View>
             )}
@@ -216,7 +220,7 @@ export default function RecentRequestsScreen() {
               </View>
               <View style={[styles.modalDetailRow, { borderBottomWidth: 0 }]}>
                 <Text style={styles.modalDetailLabel}>Amount</Text>
-                <Text style={[styles.modalDetailValue, { color: Colors.primary, fontWeight: FontWeight.bold }]}>
+                <Text style={[styles.modalDetailValue, { color: colors.primary, fontWeight: FontWeight.bold }]}>
                   {modalItem?.amount ? `₹${modalItem.amount}` : '-'}
                 </Text>
               </View>
@@ -242,29 +246,29 @@ export default function RecentRequestsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.white },
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.white },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  list: { flex: 1, backgroundColor: Colors.screenBg },
+  list: { flex: 1, backgroundColor: colors.screenBg },
   content: { padding: Spacing['3xl'], paddingBottom: Spacing['7xl'] },
   recentReqCard: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: Colors.white, borderRadius: BorderRadius.button, padding: Spacing.xl, marginBottom: Spacing.md,  // 14 = button ✓
-    borderWidth: 1, borderColor: Colors.surfaceBg,
+    backgroundColor: colors.white, borderRadius: BorderRadius.button, padding: Spacing.xl, marginBottom: Spacing.md,  // 14 = button ✓
+    borderWidth: 1, borderColor: colors.surfaceBg,
   },
   recentReqAvatar: {
-    width: 38, height: 38, borderRadius: BorderRadius.circle, backgroundColor: Colors.surfaceBg,  // 19 = circle ✓
+    width: 38, height: 38, borderRadius: BorderRadius.circle, backgroundColor: colors.surfaceBg,  // 19 = circle ✓
     alignItems: 'center', justifyContent: 'center', marginRight: Spacing.xl, overflow: 'hidden',
   },
   recentReqAvatarImg: { width: '100%', height: '100%', borderRadius: BorderRadius.circle },
-  recentReqAvatarText: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textSecondary },  // 15 = lg ✓
+  recentReqAvatarText: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: colors.textSecondary },  // 15 = lg ✓
   recentReqInfo: { flex: 1 },
-  recentReqName: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textPrimary },  // 14 = md ✓
-  recentReqSpace: { fontSize: FontSize.sm, color: Colors.textMuted, marginTop: Spacing.micro },  // 12 = sm ✓
+  recentReqName: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: colors.textPrimary },  // 14 = md ✓
+  recentReqSpace: { fontSize: FontSize.sm, color: colors.textMuted, marginTop: Spacing.micro },  // 12 = sm ✓
   recentReqRight: { alignItems: 'flex-end', gap: Spacing.xs },
   recentReqBadge: { paddingHorizontal: Spacing.md, paddingVertical: 3, borderRadius: BorderRadius.sm },  // 8 = sm ✓
   recentReqBadgeText: { fontSize: FontSize.xs, fontWeight: FontWeight.bold },  // 11 = xs ✓
-  recentReqTime: { fontSize: FontSize.xs, color: Colors.textMuted },  // 11 = xs ✓
+  recentReqTime: { fontSize: FontSize.xs, color: colors.textMuted },  // 11 = xs ✓
 
   emptyStateContainer: {
     alignItems: 'center',
@@ -275,13 +279,13 @@ const styles = StyleSheet.create({
   emptyStateTitle: {
     fontSize: FontSize['2xl'],                      // 18 = 2xl ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginTop: Spacing.screenH,
     marginBottom: Spacing.md,
   },
   emptyStateDesc: {
     fontSize: FontSize.md,                          // 14 = md ✓
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
   },
@@ -292,7 +296,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalCard: {
-    backgroundColor: Colors.white, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl,  // 24 = xl ✓
+    backgroundColor: colors.white, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl,  // 24 = xl ✓
     paddingHorizontal: Spacing.screenH, paddingTop: Spacing.screenH, paddingBottom: Spacing['6xl'],
     gap: Spacing.xl,
   },
@@ -301,27 +305,27 @@ const styles = StyleSheet.create({
     width: 64, height: 64, borderRadius: 32,
     alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.xs,
   },
-  modalTitle: { fontSize: FontSize['3xl'], fontWeight: FontWeight.extrabold, color: Colors.textPrimary, textAlign: 'center' },  // 20 = 3xl ✓
-  modalSub: { fontSize: FontSize.base, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },  // 13 = base ✓
+  modalTitle: { fontSize: FontSize['3xl'], fontWeight: FontWeight.extrabold, color: colors.textPrimary, textAlign: 'center' },  // 20 = 3xl ✓
+  modalSub: { fontSize: FontSize.base, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },  // 13 = base ✓
   modalDetails: {
-    backgroundColor: Colors.screenBg, borderRadius: BorderRadius.button,   // 14 = button ✓
+    backgroundColor: colors.screenBg, borderRadius: BorderRadius.button,   // 14 = button ✓
     paddingHorizontal: Spacing['2xl'], paddingVertical: Spacing.sm,
   },
   modalDetailRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingVertical: Spacing.lg, borderBottomWidth: 1, borderBottomColor: Colors.border,
+    paddingVertical: Spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  modalDetailLabel: { fontSize: FontSize.sm, color: Colors.textSecondary, fontWeight: FontWeight.medium, flex: 1 },  // 12 = sm ✓
-  modalDetailValue: { fontSize: FontSize.base, color: Colors.textPrimary, fontWeight: FontWeight.semibold, textAlign: 'right', flex: 1.5 },  // 13 = base ✓
+  modalDetailLabel: { fontSize: FontSize.sm, color: colors.textSecondary, fontWeight: FontWeight.medium, flex: 1 },  // 12 = sm ✓
+  modalDetailValue: { fontSize: FontSize.base, color: colors.textPrimary, fontWeight: FontWeight.semibold, textAlign: 'right', flex: 1.5 },  // 13 = base ✓
   reasonBox: {
-    backgroundColor: Colors.pendingBg, borderRadius: BorderRadius.md, padding: Spacing['2xl'],   // '#FFF7ED' ✓, 12 = md ✓
+    backgroundColor: colors.pendingBg, borderRadius: BorderRadius.md, padding: Spacing['2xl'],   // '#FFF7ED' ✓, 12 = md ✓
     borderLeftWidth: 3, borderLeftColor: ExtendedColors.orange,   // '#F97316' ✓
   },
   reasonTitle: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: ExtendedColors.redOrange, marginBottom: Spacing.sm },  // 12 = sm ✓, '#C2410C' ✓
   reasonItem: { fontSize: FontSize.sm, color: ExtendedColors.warningAmber, lineHeight: 20 },  // 12 = sm ✓, '#92400E' ✓
   modalCloseBtn: {
     paddingVertical: Spacing['2xl'], borderRadius: BorderRadius.md,   // 12 = md ✓
-    backgroundColor: Colors.surfaceBg, alignItems: 'center', marginTop: Spacing.md,
+    backgroundColor: colors.surfaceBg, alignItems: 'center', marginTop: Spacing.md,
   },
-  modalCloseBtnText: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textPrimary },  // 15 = lg ✓
+  modalCloseBtnText: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: colors.textPrimary },  // 15 = lg ✓
 });

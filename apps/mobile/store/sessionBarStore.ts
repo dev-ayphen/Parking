@@ -6,27 +6,30 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // Higher number = shown first when several states overlap. With stacking, the
 // list is sorted by this; the top of the stack is the highest-priority bar.
 // PARKER                         OWNER
-//  6  session_ending             6  owner_session_leaving
-//  5  session_active             5  owner_session_ending
-//  4  arrived_otp_ready          4  owner_session_active
-//  3  booking_approved           3  parker_at_gate
-//  2  booking_pending            2  parker_en_route
-//  1  rating_pending             1  new_request
+//  7  session_leaving            6  owner_session_leaving
+//  6  session_ending             5  owner_session_ending
+//  5  session_active             4  owner_session_active
+//  4  arrived_otp_ready          3  parker_at_gate
+//  3  waiting_condition_check    2  parker_en_route
+//  2  booking_approved           1  new_request (+ parker_en_route?)
+//  1  booking_pending
+//  0  rating_pending
 
 export type BarVariant =
-  | 'booking_pending'      // Parker: PENDING_APPROVAL
-  | 'booking_approved'     // Parker: APPROVED, not yet arrived
-  | 'arrived_otp_ready'    // Parker: APPROVED + OTP generated, heading over
-  | 'session_active'       // Parker: ACTIVE
-  | 'session_ending'       // Parker: ACTIVE + < 15 min left
-  | 'session_leaving'      // Parker: tapped "I'm leaving" — awaiting owner exit
-  | 'rating_pending'       // Parker: COMPLETED, no rating yet
-  | 'new_request'          // Owner:  PENDING_APPROVAL incoming
-  | 'parker_en_route'      // Owner:  APPROVED, parker coming
-  | 'parker_at_gate'       // Owner:  Parker arrived, OTP pending
-  | 'owner_session_active' // Owner:  ACTIVE session running
-  | 'owner_session_ending' // Owner:  ACTIVE + < 15 min left
-  | 'owner_session_leaving';// Owner: parker tapped "I'm leaving" — confirm exit
+  | 'booking_pending'           // Parker: PENDING_APPROVAL
+  | 'booking_approved'          // Parker: APPROVED, not yet arrived
+  | 'arrived_otp_ready'         // Parker: APPROVED + OTP generated, heading over
+  | 'waiting_condition_check'   // Parker: arrived, owner hasn't done vehicle check yet
+  | 'session_active'            // Parker: ACTIVE
+  | 'session_ending'            // Parker: ACTIVE + < 15 min left
+  | 'session_leaving'           // Parker: tapped "I'm leaving" — awaiting owner exit
+  | 'rating_pending'            // Parker: COMPLETED, no rating yet
+  | 'new_request'               // Owner:  PENDING_APPROVAL incoming
+  | 'parker_en_route'           // Owner:  APPROVED, parker coming
+  | 'parker_at_gate'            // Owner:  Parker arrived, OTP pending
+  | 'owner_session_active'      // Owner:  ACTIVE session running
+  | 'owner_session_ending'      // Owner:  ACTIVE + < 15 min left
+  | 'owner_session_leaving';    // Owner:  parker tapped "I'm leaving" — confirm exit
 
 export interface BarData {
   variant: BarVariant;
@@ -61,19 +64,20 @@ export interface BarEntry extends BarData {
 export type BarSource = 'parker' | 'owner';
 
 const PRIORITY: Record<NonNullable<BarVariant>, number> = {
-  session_leaving:       7,
-  session_ending:        6,
-  session_active:        5,
-  arrived_otp_ready:     4,
-  booking_approved:      3,
-  booking_pending:       2,
-  rating_pending:        1,
-  owner_session_leaving: 6,
-  owner_session_ending:  5,
-  owner_session_active:  4,
-  parker_at_gate:        3,
-  parker_en_route:       2,
-  new_request:           1,
+  session_leaving:          7,
+  session_ending:           6,
+  session_active:           5,
+  arrived_otp_ready:        4,
+  waiting_condition_check:  3,
+  booking_approved:         2,
+  booking_pending:          1,
+  rating_pending:           0,
+  owner_session_leaving:    6,
+  owner_session_ending:     5,
+  owner_session_active:     4,
+  parker_at_gate:           3,
+  parker_en_route:          2,
+  new_request:              1,
 };
 
 export function barPriority(variant: BarVariant | null): number {
@@ -252,7 +256,7 @@ export const useSessionBarStore = create<SessionBarState>()(
 );
 
 // ── Shared helpers (used by multiple screens) ─────────────────────────────────
-export const APPROVAL_WINDOW_MS = 120_000; // 2 minutes
+export const APPROVAL_WINDOW_MS = 300_000; // 5 minutes
 
 /** Compute ISO end-time from sessionStartedAt + duration (hours). */
 export function computeEndsAtISO(

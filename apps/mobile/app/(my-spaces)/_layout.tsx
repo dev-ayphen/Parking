@@ -1,9 +1,10 @@
 import { Tabs, Redirect } from 'expo-router';
+import ScreenLoader from '../../components/ScreenLoader';
 import { useTheme } from '../../hooks/useTheme';
 import { useAuthStore } from '../../store/authStore';
 import { LayoutDashboard, Building2, CheckCircle, Clock, ClipboardList } from 'lucide-react-native';
 import { Platform, View, TouchableOpacity, StyleSheet } from 'react-native';
-import { Colors, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import { BorderRadius, Spacing, ExtendedColors } from '../../theme';
 
 // Full-screen action pages that should hide the entire tab bar (so their
 // footer buttons aren't covered by the floating nav).
@@ -14,15 +15,41 @@ const FULLSCREEN_ROUTES = ['booking-request', 'exit-verification', 'analytics', 
 // below (height 64, paddingBottom iOS 32 / Android 20) must stay in sync with it.
 
 function CustomTabBar({ state, descriptors, navigation }: any) {
+  const { colors, isDark } = useTheme();
+
   // Hide the whole tab bar on full-screen action pages
   const activeRoute = state.routes[state.index]?.name;
   if (FULLSCREEN_ROUTES.includes(activeRoute)) {
     return null;
   }
 
+  const verifyButton = {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: colors.primary,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    marginTop: -32,
+    borderWidth: 4,
+    borderColor: colors.screenBg,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
+  };
+
+  const verifyButtonInactive = {
+    backgroundColor: isDark ? colors.surfaceBg : '#2D3748',
+    borderColor: colors.primary,
+    shadowOpacity: 0,
+    elevation: 0,
+  };
+
   return (
     <View style={styles.tabBarContainer}>
-      <View style={styles.tabBarBackground}>
+      <View style={[styles.tabBarBackground, { backgroundColor: isDark ? colors.white : ExtendedColors.darkCard }]}>
         {state.routes.map((route: any, index: number) => {
           const { options } = descriptors[route.key];
 
@@ -49,7 +76,8 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
           };
 
           let icon;
-          const color = isFocused ? Colors.white : Colors.textMuted;
+          const inactiveColor = isDark ? colors.textDark : colors.textMuted;
+          const color = isFocused ? colors.primary : inactiveColor;
           const strokeWidth = isFocused ? 2.5 : 2;
 
           if (route.name === 'index') icon = <LayoutDashboard size={22} color={color} strokeWidth={strokeWidth} />;
@@ -65,8 +93,8 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
                 activeOpacity={0.8}
                 style={styles.verifyButtonWrapper}
               >
-                <View style={[styles.verifyButton, !isFocused && styles.verifyButtonInactive]}>
-                  <CheckCircle size={28} color={isFocused ? Colors.white : Colors.primary} strokeWidth={isFocused ? 2.5 : 2} />
+                <View style={[verifyButton, !isFocused && verifyButtonInactive]}>
+                  <CheckCircle size={28} color={isFocused ? colors.white : colors.primary} strokeWidth={isFocused ? 2.5 : 2} />
                 </View>
               </TouchableOpacity>
             );
@@ -93,8 +121,7 @@ export default function MySpacesLayout() {
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
 
-  // Wait for hydration before deciding (no flicker), then guard on missing auth.
-  if (!isHydrated) return null;
+  if (!isHydrated) return <ScreenLoader fullScreen message="" />;
   if (!token || !user) return <Redirect href="/(auth)/login" />;
 
   return (
@@ -163,27 +190,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     height: 64, // Matches the tab bar height to ensure vertical alignment of surrounding elements
-  },
-  verifyButton: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: -32,
-    borderWidth: 4,
-    borderColor: Colors.screenBg,
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  verifyButtonInactive: {
-    backgroundColor: '#2D3748',
-    borderColor: Colors.primary,
-    shadowOpacity: 0,
-    elevation: 0,
   },
 });

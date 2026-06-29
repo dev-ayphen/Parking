@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { supportService } from '../services/support.service';
 import { getIO } from '../app';
+import { sendError } from '../utils/errors';
 
 const emitTicketEvent = (event: string, ticketId: number, payload: any) => {
   const io = getIO();
@@ -23,8 +24,7 @@ export const supportController = {
       emitAdminEvent('support:new', result.ticket);
       res.json(result);
     } catch (error) {
-      const status = (error as any)?.statusCode || 400;
-      res.status(status).json({ error: (error as Error).message, code: (error as any)?.code });
+      sendError(res, error);
     }
   },
 
@@ -35,7 +35,8 @@ export const supportController = {
       const result = await supportService.listMyTickets(userId, req.query);
       res.json(result);
     } catch (error) {
-      res.status(500).json({ error: (error as Error).message });
+      console.error('[support] listMyTickets error:', error);
+      sendError(res, error);
     }
   },
 
@@ -47,8 +48,9 @@ export const supportController = {
       res.json(result);
     } catch (error) {
       const msg = (error as Error).message;
-      const status = msg === 'Forbidden' ? 403 : msg === 'Ticket not found' ? 404 : 500;
-      res.status(status).json({ error: msg });
+      if (msg === 'Forbidden') return res.status(403).json({ error: 'Forbidden' });
+      if (msg === 'Ticket not found') return res.status(404).json({ error: 'Ticket not found' });
+      sendError(res, error);
     }
   },
 
@@ -64,8 +66,9 @@ export const supportController = {
       res.json(result);
     } catch (error) {
       const msg = (error as Error).message;
-      const status = msg === 'Forbidden' ? 403 : msg === 'Ticket not found' ? 404 : 400;
-      res.status(status).json({ error: msg });
+      if (msg === 'Forbidden') return res.status(403).json({ error: 'Forbidden' });
+      if (msg === 'Ticket not found') return res.status(404).json({ error: 'Ticket not found' });
+      sendError(res, error);
     }
   },
 
@@ -80,8 +83,9 @@ export const supportController = {
       res.json(result);
     } catch (error) {
       const msg = (error as Error).message;
-      const status = msg === 'Forbidden' ? 403 : msg === 'Ticket not found' ? 404 : 400;
-      res.status(status).json({ error: msg });
+      if (msg === 'Forbidden') return res.status(403).json({ error: 'Forbidden' });
+      if (msg === 'Ticket not found') return res.status(404).json({ error: 'Ticket not found' });
+      sendError(res, error);
     }
   },
 
@@ -94,8 +98,9 @@ export const supportController = {
       res.json(result);
     } catch (error) {
       const msg = (error as Error).message;
-      const status = msg === 'Forbidden' ? 403 : msg === 'Ticket not found' ? 404 : 400;
-      res.status(status).json({ error: msg });
+      if (msg === 'Forbidden') return res.status(403).json({ error: 'Forbidden' });
+      if (msg === 'Ticket not found') return res.status(404).json({ error: 'Ticket not found' });
+      sendError(res, error);
     }
   },
 };

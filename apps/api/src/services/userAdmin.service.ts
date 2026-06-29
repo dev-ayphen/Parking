@@ -1,6 +1,8 @@
+import { BookingStatus } from '@prisma/client';
 import { db } from '../config/database';
 import { formatUserType, formatDateShort } from '../utils/adminFormat';
 import { bookingExpiryService } from './bookingExpiry.service';
+import { getIO } from '../app';
 
 /**
  * User moderation: list, view details, suspend, unsuspend, ban, delete.
@@ -12,10 +14,13 @@ export const userAdminService = {
     const skip = (Number(page) - 1) * Number(limit);
 
     const statusFilterMap: Record<string, any> = {
-      active: { status: 'ACTIVE', isProfileComplete: true },
-      inactive: { status: 'ACTIVE', isProfileComplete: false },
-      suspended: { status: 'SUSPENDED' },
-      banned: { status: 'BANNED' },
+      active: { status: 'ACTIVE', isProfileComplete: true, deletedAt: null },
+      inactive: { status: 'ACTIVE', isProfileComplete: false, deletedAt: null },
+      suspended: { status: 'SUSPENDED', deletedAt: null },
+      // Admin-banned only: status BANNED but NOT a user-requested deletion.
+      banned: { status: 'BANNED', deletedAt: null },
+      // User-requested account deletions (soft-deleted, retained for legal/audit).
+      deleted: { deletedAt: { not: null } },
     };
 
     const where: any = {};
@@ -52,7 +57,10 @@ export const userAdminService = {
         : 0;
 
       let displayStatus: string;
-      if (u.status === 'SUSPENDED') {
+      if (u.deletedAt) {
+        // User-requested deletion takes precedence over the underlying BANNED status.
+        displayStatus = 'Deleted';
+      } else if (u.status === 'SUSPENDED') {
         if (u.suspendedUntil && new Date(u.suspendedUntil) < new Date()) {
           displayStatus = u.isProfileComplete ? 'Active' : 'Inactive';
         } else {
@@ -74,6 +82,8 @@ export const userAdminService = {
         type: formatUserType(u.role, u.spacesOwned.length > 0),
         status: displayStatus,
         rawStatus: u.status,
+        deletedAt: u.deletedAt ? formatDateShort(u.deletedAt) : null,
+        deletedReason: u.deletedReason || null,
         rating: avgRating || null,
         joined: formatDateShort(u.createdAt),
       };
@@ -118,7 +128,7 @@ export const userAdminService = {
       : 0;
 
     const totalSpent = (user.bookingsAsParker as any[])
-      .filter((b) => b.status === 'COMPLETED')
+      .filter((b) => b.status === BookingStatus.COMPLETED)
       .reduce((sum, b) => sum + (b.totalAmount || 0), 0);
 
     return {
@@ -148,6 +158,9 @@ export const userAdminService = {
         suspendedUntil: user.suspendedUntil,
         banReason: user.banReason,
         bannedAt: user.bannedAt,
+        // User-requested deletion (soft delete). Non-null deletedAt = deleted account.
+        deletedAt: user.deletedAt,
+        deletedReason: user.deletedReason,
         isProfileComplete: user.isProfileComplete,
         createdAt: user.createdAt,
         lastLoginAt: user.lastLoginAt,
@@ -186,10 +199,13 @@ export const userAdminService = {
   },
 
   suspendUser: async (userId: number, opts: { reason?: string; durationDays?: number | null } = {}) => {
-    const reason = (opts.reason || '').trim() || 'No reason provided';
-    const suspendedUntil = opts.durationDays && opts.durationDays > 0
-      ? new Date(Date.now() + opts.durationDays * 86400000)
-      : null;
+    // Server-side friction (mirrors the admin Suspend modal): a documented
+    // reason and a finite duration are required — suspension is never indefinite.
+    const reason = (opts.reason || '').trim();
+    if (reason.length < 10) throw new Error('A suspension reason of at least 10 characters is required');
+    const days = Number(opts.durationDays);
+    if (!Number.isFinite(days) || days < 1) throw new Error('A suspension end date (duration) is required');
+    const suspendedUntil = new Date(Date.now() + days * 86400000);
 
     await db.user.update({
       where: { id: userId },
@@ -228,6 +244,11 @@ export const userAdminService = {
       },
     });
     await db.session.deleteMany({ where: { userId } });
+    // Force-disconnect any live socket so the banned user can't keep receiving
+    // realtime events even if the user:status-change event is dropped on a flaky
+    // network. Sessions are already deleted so reconnection will be rejected by
+    // the socket auth middleware regardless.
+    getIO()?.in(`user_${userId}`).disconnectSockets(true);
     // Cascade: cancel not-yet-started bookings on a banned OWNER's spaces so
     // parkers aren't sent to a banned owner. Active sessions finish normally.
     await bookingExpiryService.cancelInFlightBookings(

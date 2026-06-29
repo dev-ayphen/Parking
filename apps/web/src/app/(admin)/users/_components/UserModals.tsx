@@ -82,19 +82,42 @@ function Section({ title, icon, children }: { title: string; icon: React.ReactNo
 export function SuspendUserModal({
   user, onClose, onSuccess,
 }: { user: AdminUser; onClose: () => void; onSuccess: () => void }) {
+  // Two-step flow: 1) fill reason + end date, 2) confirm. Mirrors the friction
+  // of the Ban modal — suspension can never be indefinite and always needs a
+  // documented reason.
+  const [step, setStep] = useState<'form' | 'confirm'>('form');
   const [reason, setReason] = useState('');
-  const [durationType, setDurationType] = useState<'temporary' | 'permanent'>('temporary');
-  const [durationDays, setDurationDays] = useState(7);
+  const [endDate, setEndDate] = useState(''); // yyyy-mm-dd
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
 
-  const handleSubmit = async () => {
-    if (!reason.trim()) { setErr('Reason is required'); return; }
+  const REASON_MIN = 10;
+  // Date input bounds: must be in the future (min = tomorrow).
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+
+  const reasonOk = reason.trim().length >= REASON_MIN;
+  const dateOk = !!endDate && endDate > todayStr;
+  const canProceed = reasonOk && dateOk;
+
+  // Convert the chosen end date → whole days from now (the backend computes
+  // suspendedUntil from durationDays). Always >= 1.
+  const durationDays = endDate
+    ? Math.max(1, Math.ceil((new Date(endDate + 'T23:59:59').getTime() - Date.now()) / 86400000))
+    : 0;
+
+  const prettyDate = endDate
+    ? new Date(endDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })
+    : '';
+
+  const handleConfirm = async () => {
+    if (!canProceed) { setErr('Please complete all required fields'); return; }
     try {
       setSaving(true);
+      setErr('');
       await adminApi.suspendUser(user.id, {
         reason: reason.trim(),
-        durationDays: durationType === 'permanent' ? null : durationDays,
+        durationDays,
       });
       onSuccess();
     } catch (e: any) {
@@ -106,61 +129,82 @@ export function SuspendUserModal({
 
   return (
     <ModalShell title="Suspend User" icon={<UserX size={20} className="text-amber-600" />} onClose={onClose}>
-      <p className="text-sm text-gray-600 mb-5">
-        Suspending <span className="font-semibold text-gray-900">{user.name}</span> will sign them out and prevent them from logging in.
-      </p>
       {err && <div className="p-3 mb-4 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-sm">{err}</div>}
-      <div className="space-y-4">
-        <div>
-          <label className="block text-xs font-bold uppercase tracking-wide text-gray-700 mb-2">Reason</label>
-          <select
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 mb-2"
-          >
-            <option value="">— Select a reason —</option>
-            <option value="Policy violation">Policy violation</option>
-            <option value="Complaint from another user">Complaint from another user</option>
-            <option value="Suspicious activity">Suspicious activity</option>
-            <option value="Payment dispute">Payment dispute</option>
-            <option value="Other">Other (specify below)</option>
-          </select>
-          {reason === 'Other' && (
-            <input type="text" placeholder="Describe reason..." onChange={(e) => setReason(e.target.value)}
-              className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" />
-          )}
-        </div>
 
-        <div>
-          <label className="block text-xs font-bold uppercase tracking-wide text-gray-700 mb-2">Duration</label>
-          <div className="flex gap-2 mb-3">
-            <button onClick={() => setDurationType('temporary')}
-              className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold border transition ${
-                durationType === 'temporary' ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-white border-gray-200 text-gray-500'
-              }`}>Temporary</button>
-            <button onClick={() => setDurationType('permanent')}
-              className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold border transition ${
-                durationType === 'permanent' ? 'bg-rose-50 border-rose-300 text-rose-700' : 'bg-white border-gray-200 text-gray-500'
-              }`}>Permanent</button>
-          </div>
-          {durationType === 'temporary' && (
-            <div className="flex items-center gap-3">
-              <input type="number" min={1} value={durationDays}
-                onChange={(e) => setDurationDays(Math.max(1, Number(e.target.value)))}
-                className="w-24 px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" />
-              <span className="text-sm text-gray-600">days</span>
+      {step === 'form' ? (
+        <>
+          <p className="text-sm text-gray-600 mb-5">
+            Suspending <span className="font-semibold text-gray-900">{user.name}</span> will sign them out and prevent them from logging in until the chosen date.
+          </p>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wide text-gray-700 mb-2">
+                Reason <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                rows={3}
+                placeholder="Explain why this user is being suspended (min 10 characters)…"
+                className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 resize-none"
+              />
+              <p className={`text-xs mt-1 ${reasonOk ? 'text-gray-400' : 'text-rose-500'}`}>
+                {reason.trim().length}/{REASON_MIN} characters minimum
+              </p>
             </div>
-          )}
-        </div>
-      </div>
-      <ModalFooter>
-        <button onClick={onClose} className="px-5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-100 rounded-xl transition-colors">Cancel</button>
-        <button onClick={handleSubmit} disabled={saving}
-          className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2">
-          {saving && <Loader2 size={14} className="animate-spin" />}
-          Suspend User
-        </button>
-      </ModalFooter>
+
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wide text-gray-700 mb-2">
+                Suspended until <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="date"
+                value={endDate}
+                min={tomorrow}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Suspension cannot be indefinite — choose an end date. {dateOk && `(${durationDays} day${durationDays !== 1 ? 's' : ''})`}
+              </p>
+            </div>
+          </div>
+          <ModalFooter>
+            <button onClick={onClose} className="px-5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-100 rounded-xl transition-colors">Cancel</button>
+            <button
+              onClick={() => { setErr(''); setStep('confirm'); }}
+              disabled={!canProceed}
+              className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-50"
+            >
+              Review &amp; Confirm
+            </button>
+          </ModalFooter>
+        </>
+      ) : (
+        <>
+          <div className="p-4 mb-5 bg-amber-50 border border-amber-200 rounded-xl">
+            <div className="flex items-start gap-2 mb-3">
+              <AlertTriangle size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-amber-800">
+                You are about to suspend <span className="font-bold">{user.name}</span>. They will lose access until <span className="font-bold">{prettyDate}</span>.
+              </p>
+            </div>
+            <div className="text-sm text-amber-800 bg-white/60 rounded-lg p-3 border border-amber-100">
+              <span className="text-xs font-bold uppercase tracking-wide text-amber-700">Reason</span>
+              <p className="mt-1 whitespace-pre-wrap">{reason.trim()}</p>
+            </div>
+          </div>
+          <ModalFooter>
+            <button onClick={() => setStep('form')} disabled={saving}
+              className="px-5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-100 rounded-xl transition-colors disabled:opacity-50">Back</button>
+            <button onClick={handleConfirm} disabled={saving}
+              className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2">
+              {saving && <Loader2 size={14} className="animate-spin" />}
+              Confirm Suspension
+            </button>
+          </ModalFooter>
+        </>
+      )}
     </ModalShell>
   );
 }
@@ -340,11 +384,12 @@ export function UserDetailsModal({ user, onClose }: { user: UserDetails; onClose
         </div>
         <div className="flex flex-col items-end gap-2">
           <div className={`px-3 py-1.5 rounded-full text-xs font-bold ${
+            user.deletedAt ? 'bg-red-100 text-red-700' :
             user.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700' :
             user.status === 'SUSPENDED' ? 'bg-amber-50 text-amber-700' :
             user.status === 'BANNED' ? 'bg-gray-900 text-white' :
             'bg-gray-100 text-gray-700'
-          }`}>{user.status}</div>
+          }`}>{user.deletedAt ? 'DELETED' : user.status}</div>
           <button
             onClick={() => setComposing(true)}
             className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-white bg-indigo-50 hover:bg-indigo-600 px-3 py-1.5 rounded-lg transition-colors"
@@ -377,22 +422,34 @@ export function UserDetailsModal({ user, onClose }: { user: UserDetails; onClose
         <UserActivityView user={user} formatDate={formatDate} />
       ) : (
       <>
-      {user.status === 'SUSPENDED' && (
-        <div className="p-3 mb-5 bg-amber-50 border border-amber-200 rounded-xl text-sm">
-          <p className="font-bold text-amber-800 flex items-center gap-2"><UserX size={14} /> Suspended</p>
-          <p className="text-amber-700 mt-1">Reason: {user.suspendReason || '—'}</p>
-          <p className="text-amber-700">
-            Since: {formatDate(user.suspendedAt)}
-            {user.suspendedUntil ? ` · Until: ${formatDate(user.suspendedUntil)}` : ' · Indefinite'}
-          </p>
+      {user.deletedAt ? (
+        // Deletion takes precedence over the underlying BANNED status it sets.
+        <div className="p-3 mb-5 bg-red-50 border border-red-200 rounded-xl text-sm">
+          <p className="font-bold text-red-800 flex items-center gap-2"><Trash2 size={14} /> Deleted Account</p>
+          <p className="text-red-700 mt-1">Reason: {user.deletedReason === 'USER_REQUESTED' ? 'User Requested' : user.deletedReason || '—'}</p>
+          <p className="text-red-700">On: {formatDate(user.deletedAt)}</p>
+          <p className="text-red-600 mt-1 text-xs">Retained for legal, audit, and financial records. Read-only.</p>
         </div>
-      )}
-      {user.status === 'BANNED' && (
-        <div className="p-3 mb-5 bg-rose-50 border border-rose-200 rounded-xl text-sm">
-          <p className="font-bold text-rose-800 flex items-center gap-2"><Ban size={14} /> Banned</p>
-          <p className="text-rose-700 mt-1">Reason: {user.banReason || '—'}</p>
-          <p className="text-rose-700">On: {formatDate(user.bannedAt)}</p>
-        </div>
+      ) : (
+        <>
+          {user.status === 'SUSPENDED' && (
+            <div className="p-3 mb-5 bg-amber-50 border border-amber-200 rounded-xl text-sm">
+              <p className="font-bold text-amber-800 flex items-center gap-2"><UserX size={14} /> Suspended</p>
+              <p className="text-amber-700 mt-1">Reason: {user.suspendReason || '—'}</p>
+              <p className="text-amber-700">
+                Since: {formatDate(user.suspendedAt)}
+                {user.suspendedUntil ? ` · Until: ${formatDate(user.suspendedUntil)}` : ' · Indefinite'}
+              </p>
+            </div>
+          )}
+          {user.status === 'BANNED' && (
+            <div className="p-3 mb-5 bg-rose-50 border border-rose-200 rounded-xl text-sm">
+              <p className="font-bold text-rose-800 flex items-center gap-2"><Ban size={14} /> Banned</p>
+              <p className="text-rose-700 mt-1">Reason: {user.banReason || '—'}</p>
+              <p className="text-rose-700">On: {formatDate(user.bannedAt)}</p>
+            </div>
+          )}
+        </>
       )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
@@ -429,18 +486,15 @@ export function UserDetailsModal({ user, onClose }: { user: UserDetails; onClose
         </div>
       )}
 
-      {user.billing && (user.billing.billingName || user.billing.gstin || user.billing.billingAddress || user.billing.upiId) && (
+      {user.billing?.upiId && (
         <div className="mb-6 p-4 rounded-2xl bg-indigo-50 border border-indigo-100">
           <div className="flex items-center gap-2 mb-2">
             <FileText size={16} className="text-indigo-600" />
-            <h4 className="text-sm font-bold text-indigo-900 uppercase tracking-wide">Billing & Payment Details</h4>
+            <h4 className="text-sm font-bold text-indigo-900 uppercase tracking-wide">Payment Details</h4>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
-            <div><span className="text-xs text-indigo-600 font-medium">Name:</span>{' '}<span className="font-semibold text-gray-900">{user.billing.billingName || '—'}</span></div>
-            <div><span className="text-xs text-indigo-600 font-medium">Email:</span>{' '}<span className="font-semibold text-gray-900">{user.billing.billingEmail || '—'}</span></div>
-            <div><span className="text-xs text-indigo-600 font-medium">GSTIN:</span>{' '}<span className="font-semibold text-gray-900 font-mono">{user.billing.gstin || '—'}</span></div>
-            <div><span className="text-xs text-indigo-600 font-medium">UPI ID:</span>{' '}<span className="font-semibold text-gray-900 font-mono">{user.billing.upiId || '—'}</span></div>
-            <div className="sm:col-span-2"><span className="text-xs text-indigo-600 font-medium">Address:</span>{' '}<span className="font-semibold text-gray-900">{user.billing.billingAddress || '—'}</span></div>
+          <div className="text-sm">
+            <span className="text-xs text-indigo-600 font-medium">UPI ID:</span>{' '}
+            <span className="font-semibold text-gray-900 font-mono">{user.billing.upiId}</span>
           </div>
         </div>
       )}

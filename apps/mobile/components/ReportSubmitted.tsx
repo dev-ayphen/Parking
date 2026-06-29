@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { CheckCircle2 } from 'lucide-react-native';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../theme';
+import { useTheme } from '../hooks/useTheme';
+import type { ColorsType } from '../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing } from '../theme';
 
 interface ReportSubmittedProps {
   /** Headline, e.g. "Report Submitted" or "Incident Reported" */
@@ -22,6 +24,9 @@ export default function ReportSubmitted({
   reference,
   submittedAt,
 }: ReportSubmittedProps) {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
   const date = submittedAt ? new Date(submittedAt) : new Date();
   const stamp = `${date.toLocaleDateString('en-IN', {
     day: '2-digit', month: 'short', year: 'numeric',
@@ -32,7 +37,7 @@ export default function ReportSubmitted({
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <CheckCircle2 size={20} color={Colors.success} strokeWidth={2.5} />
+        <CheckCircle2 size={20} color={colors.success} strokeWidth={2.5} />
         <Text style={styles.title}>{title}</Text>
       </View>
 
@@ -49,12 +54,12 @@ export default function ReportSubmitted({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
   card: {
-    backgroundColor: Colors.successBg,
+    backgroundColor: colors.successBg,
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
-    borderColor: Colors.success,
+    borderColor: colors.success,
     padding: Spacing.screenH,
   },
   header: {
@@ -66,14 +71,14 @@ const styles = StyleSheet.create({
   title: {
     fontSize: FontSize.lg,
     fontWeight: FontWeight.bold,
-    color: Colors.success,
+    color: colors.success,
   },
   field: {
     marginTop: Spacing.md,
   },
   label: {
     fontSize: FontSize.xs,
-    color: Colors.textMuted,
+    color: colors.textMuted,
     fontWeight: FontWeight.bold,
     textTransform: 'uppercase',
     letterSpacing: 0.4,
@@ -81,13 +86,13 @@ const styles = StyleSheet.create({
   },
   reference: {
     fontSize: FontSize.xl,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     fontWeight: FontWeight.extrabold,
     letterSpacing: 0.5,
   },
   value: {
     fontSize: FontSize.base,
-    color: Colors.textBody,
+    color: colors.textBody,
     fontWeight: FontWeight.semibold,
   },
 });

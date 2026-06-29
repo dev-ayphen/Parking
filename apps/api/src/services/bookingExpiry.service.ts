@@ -1,10 +1,11 @@
+import { BookingStatus } from '@prisma/client';
 import { db } from '../config/database';
 import { emitToUser } from '../app';
 import { auditService } from './audit.service';
 import { adminService } from './admin.service';
 import { availabilityAlertService } from './availabilityAlert.service';
 
-const APPROVAL_WINDOW_MS = 2 * 60 * 1000;        // owner must respond to a request within 2 min
+const APPROVAL_WINDOW_MS = 5 * 60 * 1000;        // owner must respond to a request within 5 min
 const NO_SHOW_GRACE_MS = 30 * 60 * 1000;          // parker grace period past their ETA before no-show
 // Hard ceiling: an APPROVED booking that never starts a session is force-released
 // this long after creation, REGARDLESS of ETA. Stops a parker from parking a
@@ -14,7 +15,7 @@ const APPROVED_MAX_AGE_MS = 6 * 60 * 60 * 1000;   // 6 hours
 
 export const bookingExpiryService = {
   /**
-   * Finds all PENDING_APPROVAL bookings older than 2 minutes,
+   * Finds all PENDING_APPROVAL bookings older than 5 minutes,
    * marks them EXPIRED, notifies both parker and owner, and
    * emits real-time socket events to both.
    *
@@ -25,7 +26,7 @@ export const bookingExpiryService = {
 
     const stale = await db.booking.findMany({
       where: {
-        status: 'PENDING_APPROVAL',
+        status: BookingStatus.PENDING_APPROVAL,
         createdAt: { lt: cutoff },
       },
       include: {
@@ -39,16 +40,16 @@ export const bookingExpiryService = {
     for (const booking of stale) {
       await db.booking.update({
         where: { id: booking.id },
-        data: { status: 'EXPIRED' },
+        data: { status: BookingStatus.EXPIRED },
       });
 
       await auditService.logBookingEvent({
         bookingId: booking.id,
         event: 'BOOKING_EXPIRED',
-        toStatus: 'EXPIRED',
+        toStatus: BookingStatus.EXPIRED,
         actorId: 0,
         actorRole: 'SYSTEM',
-        payload: { reason: 'Owner did not respond within 2 minutes' },
+        payload: { reason: 'Owner did not respond within 5 minutes' },
       });
 
       const parkerId = booking.parkerId;
@@ -101,7 +102,7 @@ export const bookingExpiryService = {
 
     const noShows = await db.booking.findMany({
       where: {
-        status: 'APPROVED',
+        status: BookingStatus.APPROVED,
         sessionStartedAt: null, // session never started → parker never verified arrival
         // A parker who already generated their arrival OTP is physically at the
         // gate mid-verification — do NOT no-show them out from under a live code.
@@ -126,14 +127,14 @@ export const bookingExpiryService = {
         where: { id: booking.id },
         // Tagged NO_SHOW so analytics can separate parker no-shows from
         // intentional cancellations — without needing a new booking status.
-        data: { status: 'CANCELLED', cancelReason: 'NO_SHOW', sessionOtp: null },
+        data: { status: BookingStatus.CANCELLED, cancelReason: 'NO_SHOW', sessionOtp: null },
       });
 
       await auditService.logBookingEvent({
         bookingId: booking.id,
         event: 'BOOKING_CANCELLED',
-        fromStatus: 'APPROVED',
-        toStatus: 'CANCELLED',
+        fromStatus: BookingStatus.APPROVED,
+        toStatus: BookingStatus.CANCELLED,
         actorId: 0,
         actorRole: 'SYSTEM',
         payload: { reason: 'NO_SHOW', detail: 'Parker did not arrive within 30 minutes of ETA' },
@@ -181,7 +182,7 @@ export const bookingExpiryService = {
     filter: { spaceId?: number; ownerId?: number },
     reason: string,
   ): Promise<number> => {
-    const where: any = { status: { in: ['PENDING_APPROVAL', 'APPROVED'] } };
+    const where: any = { status: { in: [BookingStatus.PENDING_APPROVAL, BookingStatus.APPROVED] } };
     if (filter.spaceId) where.spaceId = filter.spaceId;
     if (filter.ownerId) where.space = { ownerId: filter.ownerId };
 
@@ -194,10 +195,10 @@ export const bookingExpiryService = {
     for (const b of affected) {
       await db.booking.update({
         where: { id: b.id },
-        data: { status: 'CANCELLED', cancelReason: 'ADMIN_CANCELLED', sessionOtp: null },
+        data: { status: BookingStatus.CANCELLED, cancelReason: 'ADMIN_CANCELLED', sessionOtp: null },
       });
       await auditService.logBookingEvent({
-        bookingId: b.id, event: 'BOOKING_CANCELLED', fromStatus: b.status, toStatus: 'CANCELLED',
+        bookingId: b.id, event: 'BOOKING_CANCELLED', fromStatus: b.status, toStatus: BookingStatus.CANCELLED,
         actorId: 0, actorRole: 'SYSTEM', payload: { reason },
       });
       await adminService.notifyUser(b.parkerId, {
@@ -216,11 +217,15 @@ export const bookingExpiryService = {
   startExpiryLoop: () => {
     const tick = () => {
       // Both checks run each tick; each is independent and self-contained.
-      bookingExpiryService.expireStaleBookings().catch(() => {});
-      bookingExpiryService.releaseNoShows().catch(() => {});
+      bookingExpiryService.expireStaleBookings().catch((e) => {
+        console.error('[EXPIRY] expireStaleBookings failed:', e?.message ?? e);
+      });
+      bookingExpiryService.releaseNoShows().catch((e) => {
+        console.error('[EXPIRY] releaseNoShows failed:', e?.message ?? e);
+      });
     };
     tick(); // run immediately on start
     setInterval(tick, 30_000);
-    console.log('✅ Booking expiry loop started (every 30s: 2min request window + 30min no-show release)');
+    console.log('✅ Booking expiry loop started (every 30s: 5min request window + 30min no-show release)');
   },
 };

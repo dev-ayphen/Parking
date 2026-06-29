@@ -19,6 +19,7 @@ export type BookingEvent =
   | 'ETA_UPDATED'
   | 'OTP_GENERATED'
   | 'PARKER_MARKED_PAID'
+  | 'PAYMENT_RECEIVED'
   | 'BOOKING_EXPIRED';
 
 export type ActorRole = 'PARKER' | 'OWNER' | 'ADMIN' | 'SYSTEM';

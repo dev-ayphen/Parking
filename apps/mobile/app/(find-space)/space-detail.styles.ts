@@ -1,0 +1,217 @@
+import { StyleSheet, Platform } from 'react-native';
+import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import type { AppTheme } from '../../hooks/useTheme';
+
+export const makeSpaceDetailStyles = ({ colors: C }: AppTheme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: C.white },
+
+  scroll: { flex: 1, backgroundColor: C.screenBg },
+
+  heroWrap: { width: '100%', height: 260, backgroundColor: C.textPrimary, position: 'relative' },
+  heroImg: { height: '100%' },
+  heroFallback: { flex: 1, backgroundColor: C.surfaceBg, alignItems: 'center', justifyContent: 'center', gap: Spacing.md },
+  heroFallbackText: { fontSize: FontSize.base, color: C.textMuted, fontWeight: FontWeight.medium },
+  dotsContainer: { position: 'absolute', bottom: 50, width: '100%', flexDirection: 'row', justifyContent: 'center', gap: Spacing.sm },
+  dot: { width: 6, height: 6, borderRadius: BorderRadius.indicator, backgroundColor: ExtendedColors.whiteAlpha40 },
+  dotActive: { backgroundColor: C.white, width: 8, height: 8, borderRadius: BorderRadius.xs, transform: [{translateY: -1}] },
+  mediaTabs: {
+    position: 'absolute', bottom: Spacing.xl, width: '100%',
+    flexDirection: 'row', justifyContent: 'center', gap: Spacing.md,
+  },
+  mediaTab: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    paddingHorizontal: Spacing['3xl'], paddingVertical: Spacing.md, borderRadius: BorderRadius.circleXl,
+    backgroundColor: ExtendedColors.darkOverlay,
+    borderWidth: 1, borderColor: ExtendedColors.whiteAlpha10,
+  },
+  mediaTabActive: { backgroundColor: ExtendedColors.whiteAlpha20, borderColor: ExtendedColors.whiteAlpha40 },
+  mediaTabText: { color: C.textMuted, fontSize: FontSize.base, fontWeight: FontWeight.bold },
+  mediaTabTextActive: { color: C.white },
+
+  body: { paddingHorizontal: Spacing['3xl'], paddingTop: Spacing['3xl'] },
+
+  compactCard: {
+    backgroundColor: C.white, borderRadius: BorderRadius.lg, padding: Spacing['3xl'],
+    borderWidth: 1, borderColor: C.border, marginBottom: Spacing['3xl'],
+    shadowColor: C.textSecondary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
+  },
+  compactHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  spaceName: { fontSize: FontSize['2xl'], fontWeight: FontWeight.extrabold, color: C.textPrimary, marginBottom: Spacing.xs },
+
+  addressContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: C.screenBg,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.xl,
+    marginTop: Spacing.xl,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  addressIconWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: C.primaryBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.md,
+    marginTop: 1,
+  },
+  addressWithButton: {
+    flex: 1,
+    gap: Spacing.sm,
+  },
+  addressText: { fontSize: FontSize.sm, color: C.textBody, lineHeight: 16, fontWeight: FontWeight.medium },
+  directionsBtn: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    backgroundColor: C.primary,
+    borderRadius: BorderRadius.sm,
+    alignSelf: 'flex-start',
+  },
+  directionsBtnContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  directionsBtnText: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.semibold,
+    color: C.white,
+  },
+  priceBadge: { backgroundColor: C.primaryBg, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, borderRadius: BorderRadius.sm, borderWidth: 1, borderColor: ExtendedColors.primaryBorder },
+  priceBadgeValue: { fontSize: FontSize.xl, fontWeight: FontWeight.extrabold, color: C.primary },
+  priceBadgeUnit: { fontSize: FontSize.xs, fontWeight: FontWeight.semibold, color: ExtendedColors.primaryRed },
+
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, flexWrap: 'wrap', marginBottom: Spacing.xl },
+  metaMuted: { fontSize: FontSize.xs, color: C.textMuted, fontWeight: FontWeight.medium },
+  reviewsLinkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.badge,
+    backgroundColor: C.primaryBg,
+  },
+  reviewsLink: { fontSize: FontSize.xs, color: C.primary, fontWeight: FontWeight.bold },
+  ratingChip: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, paddingHorizontal: Spacing.sm, paddingVertical: 3, borderRadius: BorderRadius.badge },
+  ratingChipText: { fontSize: FontSize.xs, fontWeight: FontWeight.bold },
+  riskChip: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: Spacing.sm, paddingVertical: 3, borderRadius: BorderRadius.badge, borderWidth: 1 },
+  riskChipText: { fontSize: FontSize.nano, fontWeight: FontWeight.bold },
+
+  riskBanner: { flexDirection: 'column', gap: Spacing.md, paddingHorizontal: Spacing['2xl'], paddingVertical: Spacing.xl, borderRadius: BorderRadius.md, borderWidth: 1, marginBottom: Spacing['3xl'] },
+  riskBannerHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
+  riskBannerTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, flex: 1 },
+  riskBannerLine: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.lg },
+  riskBullet: { width: 5, height: 5, borderRadius: 3, marginTop: 6 },
+  riskBannerText: { fontSize: FontSize.sm, fontWeight: FontWeight.medium, flex: 1 },
+
+  cardDivider: { height: 1, backgroundColor: C.surfaceBg, marginVertical: Spacing.xl },
+
+  card: {
+    backgroundColor: C.white, borderRadius: BorderRadius.lg, padding: Spacing['3xl'],
+    borderWidth: 1, borderColor: C.border, marginBottom: Spacing['3xl'],
+    shadowColor: C.textSecondary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
+  },
+  cardTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: C.textPrimary, marginBottom: Spacing.xl },
+
+  detailsList: { marginTop: Spacing.xs },
+  detailRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: Spacing.xl, borderBottomWidth: 1, borderBottomColor: C.surfaceBg,
+  },
+  detailRowLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
+  detailLabel: { fontSize: FontSize.base, color: C.textSecondary, fontWeight: FontWeight.medium },
+  detailValue: { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: C.textPrimary },
+  compactOwner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  compactOwnerAvatar: { width: 20, height: 20, borderRadius: 10, backgroundColor: C.surfaceBg },
+
+  amenitiesWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md },
+  amenityChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: C.screenBg, paddingHorizontal: Spacing.lg, paddingVertical: 7, borderRadius: BorderRadius.sm,
+    borderWidth: 1, borderColor: C.border,
+  },
+  amenityText: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: C.textBody },
+
+  durationStepper: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: C.screenBg, borderRadius: BorderRadius.md, overflow: 'hidden',
+    borderWidth: 1, borderColor: C.border, marginBottom: Spacing.lg,
+  },
+  stepperBtn: { width: 48, height: 44, alignItems: 'center', justifyContent: 'center' },
+  stepperValue: { flex: 1, textAlign: 'center', fontSize: FontSize.xl, fontWeight: FontWeight.extrabold, color: C.textPrimary },
+  durationChips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  dChip: {
+    paddingHorizontal: Spacing.xl, paddingVertical: 7, borderRadius: BorderRadius.sm,
+    borderWidth: 1.5, borderColor: C.border, backgroundColor: C.white,
+  },
+  dChipActive: { borderColor: C.primary, backgroundColor: C.primaryBg },
+  dChipText: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: C.textSecondary },
+  dChipTextActive: { color: C.primary },
+
+  miniMap: { height: 130, borderRadius: BorderRadius.md, overflow: 'hidden', borderWidth: 1, borderColor: C.border },
+
+  priceCard: {
+    backgroundColor: C.white, borderRadius: BorderRadius.button, paddingHorizontal: Spacing['2xl'], paddingVertical: Spacing.xl,
+    borderWidth: 1, borderColor: C.border, marginBottom: Spacing.xl,
+  },
+  priceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: Spacing.sm },
+  priceRowLabel: { fontSize: FontSize.base, color: C.textSecondary, fontWeight: FontWeight.medium },
+  priceRowValue: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: C.textPrimary },
+  priceDivider: { height: 1, backgroundColor: C.surfaceBg, marginVertical: Spacing.xs },
+  totalLabel: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: C.textPrimary },
+  totalValue: { fontSize: FontSize['2xl'], fontWeight: FontWeight.extrabold, color: C.primary },
+
+  footer: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: C.white, paddingHorizontal: Spacing['3xl'], paddingVertical: Spacing.lg,
+    borderTopWidth: 1, borderTopColor: C.border,
+    paddingBottom: Platform.OS === 'ios' ? 24 : Spacing.lg,
+  },
+  footerLeft: { justifyContent: 'center' },
+  footerPriceLabel: { fontSize: FontSize.nano, color: C.textMuted, fontWeight: FontWeight.bold, letterSpacing: 0, marginBottom: 2 },
+  footerPrice: { fontSize: FontSize['3xl'], fontWeight: FontWeight.extrabold, color: C.textPrimary },
+  footerPriceDuration: { fontSize: FontSize.base, color: C.textSecondary, fontWeight: FontWeight.semibold },
+  bookBtn: {
+    backgroundColor: C.primary, borderRadius: BorderRadius.md, paddingHorizontal: 28, paddingVertical: Spacing['2xl'],
+    alignItems: 'center', justifyContent: 'center',
+  },
+  bookBtnDisabled: { backgroundColor: C.textMuted },
+  bookBtnHighRisk: { backgroundColor: C.error },
+  bookBtnText: { color: C.white, fontSize: FontSize.lg, fontWeight: FontWeight.bold },
+  notifyBtn: { backgroundColor: C.primary },
+  notifyBtnActive: { backgroundColor: C.primaryBg, borderWidth: 1.5, borderColor: C.primary },
+  notifyBtnActiveText: { color: C.primary },
+  notifyBtnInner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+
+  skeletonChip: { backgroundColor: C.surfaceBg, height: 14, width: 40, borderRadius: BorderRadius.xs },
+
+  reportLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.xl, marginBottom: Spacing['3xl'] },
+  reportLinkText: { fontSize: FontSize.sm, color: C.textMuted, fontWeight: FontWeight.medium },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  modalSheet: { backgroundColor: C.white, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl, padding: Spacing['3xl'], paddingBottom: 36 },
+  modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: C.borderMuted, alignSelf: 'center', marginBottom: Spacing['2xl'] },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.md },
+  modalTitle: { fontSize: FontSize['2xl'], fontWeight: FontWeight.bold, color: C.textPrimary },
+  modalSub: { fontSize: FontSize.base, color: C.textSecondary, marginBottom: Spacing['3xl'], lineHeight: 19 },
+  contextCard: { backgroundColor: C.screenBg, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: C.border, padding: Spacing.xl, marginBottom: Spacing['3xl'] },
+  contextRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 3 },
+  contextLabel: { fontSize: FontSize.sm, color: C.textMuted, fontWeight: FontWeight.medium },
+  contextVal: { fontSize: FontSize.sm, color: C.textPrimary, fontWeight: FontWeight.semibold, flexShrink: 1, marginLeft: Spacing.lg, textAlign: 'right' },
+  fieldLabel: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: C.textSecondary, marginBottom: Spacing.lg, textTransform: 'uppercase', letterSpacing: 0.5 },
+  reasonRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg, paddingVertical: Spacing.lg, paddingHorizontal: Spacing.xl, borderRadius: BorderRadius.md, marginBottom: Spacing.sm, backgroundColor: C.screenBg, borderWidth: 1, borderColor: C.border },
+  reasonRowActive: { backgroundColor: C.primaryBg, borderColor: C.primary },
+  radioOuter: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
+  radioOuterActive: { borderColor: C.primary },
+  radioInner: { width: 9, height: 9, borderRadius: 5, backgroundColor: C.primary },
+  reasonText: { fontSize: FontSize.base, color: C.textBody, fontWeight: FontWeight.medium },
+  reasonTextActive: { color: C.primary, fontWeight: FontWeight.semibold },
+  descInput: { backgroundColor: C.screenBg, borderWidth: 1, borderColor: C.border, borderRadius: BorderRadius.lg, padding: Spacing.xl, fontSize: FontSize.base, color: C.textPrimary, minHeight: 80, marginBottom: Spacing['3xl'] },
+  submitBtn: { backgroundColor: C.error, borderRadius: BorderRadius.button, paddingVertical: Spacing['3xl'], alignItems: 'center' },
+  submitBtnDisabled: { opacity: 0.6 },
+  submitBtnText: { color: C.white, fontSize: FontSize.lg, fontWeight: FontWeight.bold },
+});

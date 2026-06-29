@@ -1,14 +1,23 @@
+import { useMemo } from 'react';
 import { Stack, Redirect } from 'expo-router';
-import { Colors } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
+import type { ColorsType } from '../../theme';
 import { useAuthStore } from '../../store/authStore';
+import ScreenLoader from '../../components/ScreenLoader';
+
+const makeStyles = (colors: ColorsType) => ({
+  contentStyle: { backgroundColor: colors.white },
+});
 
 export default function FindSpaceLayout() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
   const isHydrated = useAuthStore((s) => s.isHydrated);
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
 
-  // Wait for hydration before deciding (no flicker), then guard on missing auth.
-  if (!isHydrated) return null;
+  if (!isHydrated) return <ScreenLoader fullScreen message="" />;
   if (!token || !user) return <Redirect href="/(auth)/login" />;
 
   return (
@@ -16,7 +25,7 @@ export default function FindSpaceLayout() {
       screenOptions={{
         headerShown: false,
         animation: 'slide_from_right',
-        contentStyle: { backgroundColor: Colors.white },
+        contentStyle: styles.contentStyle,
       }}
     >
       <Stack.Screen name="index" options={{ title: 'Find Parking' }} />

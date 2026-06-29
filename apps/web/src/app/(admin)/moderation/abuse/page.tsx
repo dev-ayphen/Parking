@@ -38,8 +38,11 @@ const ABUSE_TYPES: Record<string, { label: string; color: string }> = {
   HARASSMENT:              { label: 'Harassment',               color: 'bg-purple-100 text-purple-700' },
   FAKE_SPACE:              { label: 'Fake Space Listing',       color: 'bg-red-100 text-red-700' },
   UNSAFE_AREA:             { label: 'Unsafe Area',              color: 'bg-red-100 text-red-700' },
-  OFFLINE_PAYMENT_DEMAND:  { label: 'Offline Payment Demand',   color: 'bg-orange-100 text-orange-700' },
+  OFFLINE_PAYMENT_DEMAND:  { label: 'Asked for Extra Money',    color: 'bg-orange-100 text-orange-700' },
   MISLEADING_LISTING:      { label: 'Misleading Listing',       color: 'bg-yellow-100 text-yellow-700' },
+  UPI_NOT_WORKING:         { label: 'QR / UPI Not Working',     color: 'bg-orange-100 text-orange-700' },
+  PAYMENT_NOT_RECEIVED:    { label: 'Payment Not Received',     color: 'bg-orange-100 text-orange-700' },
+  LEFT_WITHOUT_PAYING:     { label: 'Left Without Paying',      color: 'bg-red-100 text-red-700' },
   OTHER:                   { label: 'Other Abuse',              color: 'bg-gray-100 text-gray-700' },
 };
 
@@ -135,6 +138,15 @@ export default function AbuseReportsPage() {
       setActionError('Type BAN to confirm the permanent ban.');
       return;
     }
+    // Temp suspension must have a future end date — never indefinite (mirrors the
+    // Suspend modal friction on the Users page).
+    if (actionValue === 'SUSPENDED_TEMP') {
+      const today = new Date().toISOString().slice(0, 10);
+      if (!suspendUntil || suspendUntil <= today) {
+        setActionError('Choose a future "suspended until" date — suspension cannot be indefinite.');
+        return;
+      }
+    }
     try {
       setActioning(true);
       setActionError('');
@@ -166,7 +178,7 @@ export default function AbuseReportsPage() {
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between">
+        className="sticky top-0 z-10 bg-gray-50 -mx-6 px-6 py-4 -mt-4 mb-2 flex items-center justify-between border-b border-gray-200">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Abuse Reports & Moderation</h1>
           <p className="text-gray-500 mt-1">Track user misconduct, fake listings, and enforce platform policies.</p>

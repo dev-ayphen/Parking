@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {View,
   Text,
   StyleSheet,
@@ -12,17 +12,23 @@ import {View,
   Image} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { CheckCircle2, Star, AlertTriangle, X, Camera } from 'lucide-react-native';
+import { CheckCircle2, Star, AlertTriangle, X, Camera, Download } from 'lucide-react-native';
+import * as Linking from 'expo-linking';
 import { pickMedia } from '../../utils/pickMedia';
 import { api } from '../../services/api';
+import { API_BASE } from '../../config/api.config';
 import { useNetworkStore } from '../../store/networkStore';
 import { toast } from '../../utils/toast';
 import PageHeader from '../../components/PageHeader';
 import ReportSubmitted from '../../components/ReportSubmitted';
 import { useSessionBarStore } from '../../store/sessionBarStore';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
+import type { ColorsType } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 
 export default function SessionCompleteScreen() {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const params = useLocalSearchParams();
   const router = useRouter();
   const bookingId = params.bookingId as string;
@@ -134,6 +140,24 @@ export default function SessionCompleteScreen() {
     }
   };
 
+  const [downloadingInvoice, setDownloadingInvoice] = useState(false);
+
+  const downloadInvoice = async () => {
+    if (!useNetworkStore.getState().requireOnline()) return;
+    try {
+      setDownloadingInvoice(true);
+      const { token: signedToken } = await api.post<{ token: string; expiresIn: number }>(
+        `/bookings/${bookingId}/invoice-token`,
+      );
+      const url = `${API_BASE}/bookings/${bookingId}/invoice?signed_token=${signedToken}`;
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert('Error', 'Could not open invoice. Please try again.');
+    } finally {
+      setDownloadingInvoice(false);
+    }
+  };
+
   const INCIDENT_TYPES = [
     { value: 'VEHICLE_DAMAGE',  label: 'Vehicle scratched or damaged' },
     { value: 'TOWING',          label: 'Vehicle was towed' },
@@ -206,7 +230,7 @@ export default function SessionCompleteScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>
+        <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>
       </SafeAreaView>
     );
   }
@@ -226,12 +250,12 @@ export default function SessionCompleteScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <PageHeader title="Session Complete"  onBack={() => router.replace('/(home)')} />
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false} contentContainerStyle={styles.contentInner}>
         {/* Success Header */}
         <View style={styles.successHeader}>
-          <CheckCircle2 size={44} color={Colors.success} strokeWidth={2} />
+          <CheckCircle2 size={44} color={colors.success} strokeWidth={2} />
           <Text style={styles.successTitle}>Session Completed</Text>
           <Text style={styles.successSub}>Thanks for parking with ParkSwift.</Text>
         </View>
@@ -263,6 +287,18 @@ export default function SessionCompleteScreen() {
             <Text style={styles.receiptTotalVal}>₹{booking.totalAmount}</Text>
           </View>
           <Text style={styles.paymentNote}>Paid directly to the space owner (cash / UPI). ParkSwift does not process this payment.</Text>
+
+          <TouchableOpacity
+            style={styles.invoiceBtn}
+            onPress={downloadInvoice}
+            disabled={downloadingInvoice}
+            activeOpacity={0.75}
+          >
+            {downloadingInvoice
+              ? <ActivityIndicator size="small" color={colors.primary} />
+              : <Download size={16} color={colors.primary} strokeWidth={2} />}
+            <Text style={styles.invoiceBtnText}>Download Invoice</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Incident Report Card — tappable to view its status once filed */}
@@ -290,7 +326,7 @@ export default function SessionCompleteScreen() {
           <View style={styles.incidentCard}>
             <TouchableOpacity style={styles.incidentTrigger} onPress={() => setIncidentModalVisible(true)} activeOpacity={0.7}>
               <View style={styles.incidentTriggerLeft}>
-                <AlertTriangle size={18} color={Colors.warning} strokeWidth={2} />
+                <AlertTriangle size={18} color={colors.warning} strokeWidth={2} />
                 <View>
                   <Text style={styles.incidentTriggerTitle}>Report a Vehicle Incident</Text>
                   <Text style={styles.incidentTriggerSub}>Damage, towing, dispute, theft</Text>
@@ -305,7 +341,7 @@ export default function SessionCompleteScreen() {
         <View style={styles.ratingCard}>
           {ratingSubmitted ? (
             <View style={styles.ratingSuccess}>
-              <CheckCircle2 size={24} color={Colors.success} />
+              <CheckCircle2 size={24} color={colors.success} />
               <View>
                 <Text style={styles.ratingSuccessText}>Thanks for your feedback!</Text>
                 {booking?.rating && (
@@ -315,8 +351,8 @@ export default function SessionCompleteScreen() {
                         <Star
                           key={star}
                           size={24}
-                          color={star <= booking.rating.rating ? Colors.amber : Colors.borderLight}
-                          fill={star <= booking.rating.rating ? Colors.starYellow : 'transparent'}
+                          color={star <= booking.rating.rating ? colors.amber : colors.borderLight}
+                          fill={star <= booking.rating.rating ? colors.starYellow : 'transparent'}
                           strokeWidth={1.5}
                         />
                       ))}
@@ -336,8 +372,8 @@ export default function SessionCompleteScreen() {
                   <TouchableOpacity key={star} onPress={() => setRating(star)} activeOpacity={0.7}>
                     <Star
                       size={36}
-                      color={star <= rating ? Colors.starYellow : Colors.borderLight}
-                      fill={star <= rating ? Colors.starYellow : 'transparent'}
+                      color={star <= rating ? colors.starYellow : colors.borderLight}
+                      fill={star <= rating ? colors.starYellow : 'transparent'}
                       strokeWidth={1.5}
                     />
                   </TouchableOpacity>
@@ -346,7 +382,7 @@ export default function SessionCompleteScreen() {
               <TextInput
                 style={styles.reviewInput}
                 placeholder="Add a comment..."
-                placeholderTextColor={Colors.textMuted}
+                placeholderTextColor={colors.textMuted}
                 multiline
                 numberOfLines={3}
                 value={review}
@@ -370,7 +406,7 @@ export default function SessionCompleteScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Report an Incident</Text>
               <TouchableOpacity onPress={() => setIncidentModalVisible(false)} hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}>
-                <X size={20} color={Colors.textSecondary} strokeWidth={2} />
+                <X size={20} color={colors.textSecondary} strokeWidth={2} />
               </TouchableOpacity>
             </View>
             <Text style={styles.modalSub}>Let us know what happened. Our team will investigate and follow up.</Text>
@@ -415,7 +451,7 @@ export default function SessionCompleteScreen() {
               <TextInput
                 style={styles.descInput}
                 placeholder="Describe what happened..."
-                placeholderTextColor={Colors.textMuted}
+                placeholderTextColor={colors.textMuted}
                 multiline
                 numberOfLines={3}
                 value={incidentDesc}
@@ -428,15 +464,15 @@ export default function SessionCompleteScreen() {
               <View style={styles.photoGrid}>
                 {incidentPhotos.map((uri) => (
                   <View key={uri} style={styles.photoThumb}>
-                    <Image source={{ uri }} style={styles.photoImg} />
+                    <Image source={{ uri }} style={styles.photoImg} onError={() => {}} />
                     <TouchableOpacity style={styles.photoRemove} onPress={() => removeIncidentPhoto(uri)} hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}>
-                      <X size={12} color={Colors.white} strokeWidth={3} />
+                      <X size={12} color={colors.white} strokeWidth={3} />
                     </TouchableOpacity>
                   </View>
                 ))}
                 {incidentPhotos.length < 5 && (
                   <TouchableOpacity style={styles.photoAdd} onPress={handlePickIncidentPhoto} activeOpacity={0.7}>
-                    <Camera size={20} color={Colors.textMuted} strokeWidth={2} />
+                    <Camera size={20} color={colors.textMuted} strokeWidth={2} />
                     <Text style={styles.photoAddText}>Add</Text>
                   </TouchableOpacity>
                 )}
@@ -449,7 +485,7 @@ export default function SessionCompleteScreen() {
                 activeOpacity={0.8}
               >
                 {incidentSubmitting
-                  ? <ActivityIndicator color={Colors.white} size="small" />
+                  ? <ActivityIndicator color={colors.white} size="small" />
                   : <Text style={styles.submitBtnText}>Submit Report</Text>}
               </TouchableOpacity>
             </ScrollView>
@@ -467,7 +503,7 @@ export default function SessionCompleteScreen() {
           disabled={submittingRating}
         >
           {submittingRating ? (
-            <ActivityIndicator color={Colors.white} />
+            <ActivityIndicator color={colors.white} />
           ) : (
             <Text style={rating > 0 || ratingSubmitted ? styles.btnPrimaryText : styles.btnGhostText}>
               {rating > 0 || ratingSubmitted ? 'Done' : 'Skip for now'}
@@ -479,36 +515,36 @@ export default function SessionCompleteScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.white },
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.white },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  errorText: { color: Colors.error, marginBottom: Spacing.lg },
-  retryBtn: { padding: Spacing.lg, backgroundColor: Colors.errorLight, borderRadius: BorderRadius.sm },
-  retryBtnText: { color: Colors.error, fontWeight: FontWeight.semibold },
+  errorText: { color: colors.error, marginBottom: Spacing.lg },
+  retryBtn: { padding: Spacing.lg, backgroundColor: colors.errorLight, borderRadius: BorderRadius.sm },
+  retryBtnText: { color: colors.error, fontWeight: FontWeight.semibold },
   // Grey scroll area so the white cards (receipt, incident) stand out instead of
   // blending into a white background. SafeAreaView/header stays white like other
   // screens.
-  content: { flex: 1, backgroundColor: Colors.screenBg },
+  content: { flex: 1, backgroundColor: colors.screenBg },
   contentInner: { padding: Spacing.screenH, paddingBottom: Spacing.lg },
 
   // Compact success header — smaller icon, tighter spacing (was a tall block).
   successHeader: { alignItems: 'center', marginTop: Spacing.lg, marginBottom: Spacing['3xl'] },
-  successTitle: { fontSize: FontSize['3xl'], fontWeight: FontWeight.black, color: Colors.textPrimary, marginTop: Spacing.lg, marginBottom: Spacing.xs },
-  successSub: { fontSize: FontSize.sm, color: Colors.textSecondary },
+  successTitle: { fontSize: FontSize['3xl'], fontWeight: FontWeight.black, color: colors.textPrimary, marginTop: Spacing.lg, marginBottom: Spacing.xs },
+  successSub: { fontSize: FontSize.sm, color: colors.textSecondary },
 
   receiptCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: BorderRadius.xl,
     padding: Spacing['4xl'],
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: colors.borderLight,
     marginBottom: Spacing.screenH,
   },
-  receiptSpaceName: { fontSize: FontSize['2xl'], fontWeight: FontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.xs },
-  receiptAddress: { fontSize: FontSize.sm, color: Colors.textSecondary, marginBottom: Spacing.screenH },
+  receiptSpaceName: { fontSize: FontSize['2xl'], fontWeight: FontWeight.bold, color: colors.textPrimary, marginBottom: Spacing.xs },
+  receiptAddress: { fontSize: FontSize.sm, color: colors.textSecondary, marginBottom: Spacing.screenH },
   receiptRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: Spacing.lg },
-  receiptLabel: { fontSize: FontSize.sm, color: Colors.textSecondary, fontWeight: FontWeight.medium },
-  receiptVal: { fontSize: FontSize.sm, color: Colors.textPrimary, fontWeight: FontWeight.semibold },
+  receiptLabel: { fontSize: FontSize.sm, color: colors.textSecondary, fontWeight: FontWeight.medium },
+  receiptVal: { fontSize: FontSize.sm, color: colors.textPrimary, fontWeight: FontWeight.semibold },
   receiptTotalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -516,86 +552,88 @@ const styles = StyleSheet.create({
     marginTop: Spacing['3xl'],
     paddingTop: Spacing['3xl'],
     borderTopWidth: 1,
-    borderTopColor: Colors.borderLighter,
+    borderTopColor: colors.borderLighter,
     borderStyle: 'dashed',
   },
-  receiptTotalLabel: { fontSize: FontSize.lg, color: Colors.textPrimary, fontWeight: FontWeight.bold },
-  receiptTotalVal: { fontSize: FontSize['4xl'], color: Colors.primary, fontWeight: FontWeight.black },
-  paymentNote: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: Spacing.md, lineHeight: 16 },
+  receiptTotalLabel: { fontSize: FontSize.lg, color: colors.textPrimary, fontWeight: FontWeight.bold },
+  receiptTotalVal: { fontSize: FontSize['4xl'], color: colors.primary, fontWeight: FontWeight.black },
+  paymentNote: { fontSize: FontSize.xs, color: colors.textSecondary, marginTop: Spacing.md, lineHeight: 16 },
+  invoiceBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, marginTop: Spacing.screenH, paddingVertical: Spacing.lg, borderRadius: BorderRadius.lg, borderWidth: 1.5, borderColor: colors.primary, backgroundColor: colors.primaryBg },
+  invoiceBtnText: { fontSize: FontSize.sm, color: colors.primary, fontWeight: FontWeight.semibold },
 
   ratingCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: BorderRadius.xl,
     padding: Spacing.screenH,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: colors.borderLight,
   },
-  ratingTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textPrimary, textAlign: 'center', marginBottom: Spacing['3xl'] },
+  ratingTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: colors.textPrimary, textAlign: 'center', marginBottom: Spacing['3xl'] },
   starsContainer: { flexDirection: 'row', justifyContent: 'center', gap: Spacing.lg, marginBottom: Spacing.screenH },
   reviewInput: {
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: colors.borderLight,
     borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
     fontSize: FontSize.sm,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     minHeight: 80,
     textAlignVertical: 'top',
     marginBottom: Spacing['3xl'],
   },
-  ratingHint: { fontSize: FontSize.sm, color: Colors.textMuted, textAlign: 'center', fontWeight: FontWeight.medium },
+  ratingHint: { fontSize: FontSize.sm, color: colors.textMuted, textAlign: 'center', fontWeight: FontWeight.medium },
 
   ratingSuccess: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.lg, paddingVertical: Spacing.screenH },
-  ratingSuccessText: { color: Colors.success, fontSize: FontSize.lg, fontWeight: FontWeight.bold, marginBottom: Spacing.md },
+  ratingSuccessText: { color: colors.success, fontSize: FontSize.lg, fontWeight: FontWeight.bold, marginBottom: Spacing.md },
   submittedStarsContainer: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.md },
-  submittedReviewText: { fontSize: FontSize.sm, color: Colors.textSecondary, fontStyle: 'italic', marginTop: Spacing.md },
+  submittedReviewText: { fontSize: FontSize.sm, color: colors.textSecondary, fontStyle: 'italic', marginTop: Spacing.md },
 
-  footer: { padding: Spacing.screenH, backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: Colors.borderLight },
-  btnPrimary: { backgroundColor: Colors.primary, borderRadius: BorderRadius.xl, paddingVertical: Spacing['3xl'], alignItems: 'center' },
-  btnPrimaryText: { color: Colors.white, fontSize: FontSize.lg, fontWeight: FontWeight.bold },
+  footer: { padding: Spacing.screenH, backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.borderLight },
+  btnPrimary: { backgroundColor: colors.primary, borderRadius: BorderRadius.xl, paddingVertical: Spacing['3xl'], alignItems: 'center' },
+  btnPrimaryText: { color: colors.white, fontSize: FontSize.lg, fontWeight: FontWeight.bold },
   // Secondary "Skip for now" button — light grey fill + clear border so it reads
   // as a tappable button on the white footer, not plain text.
-  btnGhost: { backgroundColor: Colors.screenBg, borderRadius: BorderRadius.xl, paddingVertical: Spacing['3xl'], alignItems: 'center', borderWidth: 1.5, borderColor: Colors.border },
-  btnGhostText: { color: Colors.textPrimary, fontSize: FontSize.lg, fontWeight: FontWeight.bold },
+  btnGhost: { backgroundColor: colors.screenBg, borderRadius: BorderRadius.xl, paddingVertical: Spacing['3xl'], alignItems: 'center', borderWidth: 1.5, borderColor: colors.border },
+  btnGhostText: { color: colors.textPrimary, fontSize: FontSize.lg, fontWeight: FontWeight.bold },
 
   // Incident card
-  viewStatusHint: { fontSize: FontSize.sm, color: Colors.primary, fontWeight: FontWeight.semibold, textAlign: 'center', marginTop: Spacing.md },
-  incidentCard: { backgroundColor: Colors.white, borderRadius: BorderRadius.xl, borderWidth: 1, borderColor: Colors.borderLight, marginBottom: Spacing.screenH, overflow: 'hidden' },
+  viewStatusHint: { fontSize: FontSize.sm, color: colors.primary, fontWeight: FontWeight.semibold, textAlign: 'center', marginTop: Spacing.md },
+  incidentCard: { backgroundColor: colors.white, borderRadius: BorderRadius.xl, borderWidth: 1, borderColor: colors.borderLight, marginBottom: Spacing.screenH, overflow: 'hidden' },
   incidentTrigger: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.screenH },
   incidentTriggerLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
-  incidentTriggerTitle: { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
-  incidentTriggerSub: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 2 },
-  incidentTriggerArrow: { fontSize: FontSize['3xl'], color: Colors.textMuted, fontWeight: FontWeight.normal },
+  incidentTriggerTitle: { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: colors.textPrimary },
+  incidentTriggerSub: { fontSize: FontSize.sm, color: colors.textSecondary, marginTop: 2 },
+  incidentTriggerArrow: { fontSize: FontSize['3xl'], color: colors.textMuted, fontWeight: FontWeight.normal },
 
   // Report modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
-  modalSheet: { backgroundColor: Colors.white, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl, padding: Spacing['3xl'], paddingBottom: 36, maxHeight: '90%' },
-  contextCard: { backgroundColor: Colors.screenBg, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.border, padding: Spacing.xl, marginBottom: Spacing['3xl'] },
+  modalSheet: { backgroundColor: colors.white, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl, padding: Spacing['3xl'], paddingBottom: 36, maxHeight: '90%' },
+  contextCard: { backgroundColor: colors.screenBg, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: colors.border, padding: Spacing.xl, marginBottom: Spacing['3xl'] },
   contextRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 3 },
-  contextLabel: { fontSize: FontSize.sm, color: Colors.textMuted, fontWeight: FontWeight.medium },
-  contextVal: { fontSize: FontSize.sm, color: Colors.textPrimary, fontWeight: FontWeight.semibold, flexShrink: 1, marginLeft: Spacing.lg, textAlign: 'right' },
-  fieldLabelHint: { fontWeight: FontWeight.normal, color: Colors.textMuted, textTransform: 'none' },
+  contextLabel: { fontSize: FontSize.sm, color: colors.textMuted, fontWeight: FontWeight.medium },
+  contextVal: { fontSize: FontSize.sm, color: colors.textPrimary, fontWeight: FontWeight.semibold, flexShrink: 1, marginLeft: Spacing.lg, textAlign: 'right' },
+  fieldLabelHint: { fontWeight: FontWeight.normal, color: colors.textMuted, textTransform: 'none' },
   photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md, marginBottom: Spacing['3xl'] },
   photoThumb: { width: 64, height: 64, borderRadius: BorderRadius.md, overflow: 'hidden', position: 'relative' },
-  photoImg: { width: '100%', height: '100%', backgroundColor: Colors.surfaceBg },
+  photoImg: { width: '100%', height: '100%', backgroundColor: colors.surfaceBg },
   photoRemove: { position: 'absolute', top: 3, right: 3, width: 18, height: 18, borderRadius: 9, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' },
-  photoAdd: { width: 64, height: 64, borderRadius: BorderRadius.md, borderWidth: 1.5, borderColor: Colors.border, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.screenBg, gap: 2 },
-  photoAddText: { fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: FontWeight.medium },
-  modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.borderMuted, alignSelf: 'center', marginBottom: Spacing['2xl'] },
+  photoAdd: { width: 64, height: 64, borderRadius: BorderRadius.md, borderWidth: 1.5, borderColor: colors.border, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.screenBg, gap: 2 },
+  photoAddText: { fontSize: FontSize.xs, color: colors.textMuted, fontWeight: FontWeight.medium },
+  modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.borderMuted, alignSelf: 'center', marginBottom: Spacing['2xl'] },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.md },
-  modalTitle: { fontSize: FontSize['2xl'], fontWeight: FontWeight.bold, color: Colors.textPrimary },
-  modalSub: { fontSize: FontSize.base, color: Colors.textSecondary, marginBottom: Spacing['3xl'], lineHeight: 19 },
-  fieldLabel: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: Colors.textSecondary, marginBottom: Spacing.lg, textTransform: 'uppercase' as const, letterSpacing: 0.5 },
-  reasonRow: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: Spacing.lg, paddingVertical: Spacing.lg, paddingHorizontal: Spacing.xl, borderRadius: BorderRadius.md, marginBottom: Spacing.sm, backgroundColor: Colors.screenBg, borderWidth: 1, borderColor: Colors.border },
-  reasonRowActive: { backgroundColor: Colors.primaryBg, borderColor: Colors.primary },
-  radioOuter: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: Colors.border, alignItems: 'center' as const, justifyContent: 'center' as const },
-  radioOuterActive: { borderColor: Colors.primary },
-  radioInner: { width: 9, height: 9, borderRadius: 5, backgroundColor: Colors.primary },
-  reasonText: { fontSize: FontSize.base, color: Colors.textBody, fontWeight: FontWeight.medium },
-  reasonTextActive: { color: Colors.primary, fontWeight: FontWeight.semibold },
-  descInput: { backgroundColor: Colors.screenBg, borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.lg, padding: Spacing.xl, fontSize: FontSize.base, color: Colors.textPrimary, minHeight: 80, marginBottom: Spacing['3xl'] },
-  submitBtn: { backgroundColor: Colors.error, borderRadius: BorderRadius.button, paddingVertical: Spacing['3xl'], alignItems: 'center' as const },
+  modalTitle: { fontSize: FontSize['2xl'], fontWeight: FontWeight.bold, color: colors.textPrimary },
+  modalSub: { fontSize: FontSize.base, color: colors.textSecondary, marginBottom: Spacing['3xl'], lineHeight: 19 },
+  fieldLabel: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: colors.textSecondary, marginBottom: Spacing.lg, textTransform: 'uppercase' as const, letterSpacing: 0.5 },
+  reasonRow: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: Spacing.lg, paddingVertical: Spacing.lg, paddingHorizontal: Spacing.xl, borderRadius: BorderRadius.md, marginBottom: Spacing.sm, backgroundColor: colors.screenBg, borderWidth: 1, borderColor: colors.border },
+  reasonRowActive: { backgroundColor: colors.primaryBg, borderColor: colors.primary },
+  radioOuter: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: colors.border, alignItems: 'center' as const, justifyContent: 'center' as const },
+  radioOuterActive: { borderColor: colors.primary },
+  radioInner: { width: 9, height: 9, borderRadius: 5, backgroundColor: colors.primary },
+  reasonText: { fontSize: FontSize.base, color: colors.textBody, fontWeight: FontWeight.medium },
+  reasonTextActive: { color: colors.primary, fontWeight: FontWeight.semibold },
+  descInput: { backgroundColor: colors.screenBg, borderWidth: 1, borderColor: colors.border, borderRadius: BorderRadius.lg, padding: Spacing.xl, fontSize: FontSize.base, color: colors.textPrimary, minHeight: 80, marginBottom: Spacing['3xl'] },
+  submitBtn: { backgroundColor: colors.error, borderRadius: BorderRadius.button, paddingVertical: Spacing['3xl'], alignItems: 'center' as const },
   submitBtnDisabled: { opacity: 0.6 },
-  submitBtnText: { color: Colors.white, fontSize: FontSize.lg, fontWeight: FontWeight.bold },
+  submitBtnText: { color: colors.white, fontSize: FontSize.lg, fontWeight: FontWeight.bold },
 });

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,13 +11,15 @@ import {
   DeviceEventEmitter,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Star } from 'lucide-react-native';
 import { api } from '../../services/api';
 import { NETWORK_RECONNECTED } from '../../store/networkStore';
 import PageHeader from '../../components/PageHeader';
 import { formatCount } from '../../utils/ratingUtils';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
+import type { ColorsType } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 
 interface Review {
   id: number;
@@ -40,9 +42,13 @@ interface ReviewsResponse {
 const STAR_ROWS = [5, 4, 3, 2, 1] as const;
 
 export default function SpaceReviewsScreen() {
+  const router = useRouter();
   const params = useLocalSearchParams();
   const spaceId = params.spaceId as string;
   const spaceName = (params.spaceName as string) || 'Reviews';
+
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [data, setData] = useState<ReviewsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -109,8 +115,8 @@ export default function SpaceReviewsScreen() {
         <Star
           key={s}
           size={size}
-          color={s <= value ? Colors.starYellow : Colors.borderLight}
-          fill={s <= value ? Colors.starYellow : 'transparent'}
+          color={s <= value ? colors.starYellow : colors.borderLight}
+          fill={s <= value ? colors.starYellow : 'transparent'}
           strokeWidth={1.5}
         />
       ))}
@@ -144,7 +150,7 @@ export default function SpaceReviewsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <PageHeader title="Reviews" onBack={() => router.dismiss()} />
 
       {/* White header section — space name + summary card */}
@@ -165,7 +171,7 @@ export default function SpaceReviewsScreen() {
                 return (
                   <View key={star} style={styles.breakdownRow}>
                     <Text style={styles.breakdownStar}>{star}</Text>
-                    <Star size={11} color={Colors.starYellow} fill={Colors.starYellow} />
+                    <Star size={11} color={colors.starYellow} fill={colors.starYellow} />
                     <View style={styles.barTrack}>
                       <View style={[styles.barFill, { width: `${pct}%` }]} />
                     </View>
@@ -181,11 +187,11 @@ export default function SpaceReviewsScreen() {
       {/* Grey scroll area — only the review list */}
       {loading ? (
         <View style={[styles.scroll, styles.center]}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : error ? (
         <View style={[styles.scroll, styles.center]}>
-          <Star size={40} color={Colors.error} strokeWidth={1.5} />
+          <Star size={40} color={colors.error} strokeWidth={1.5} />
           <Text style={styles.emptyTitle}>Couldn't load reviews</Text>
           <Text style={styles.emptySub}>{error}</Text>
           <TouchableOpacity style={styles.retryBtn} onPress={() => fetchReviews(1, 'initial')}>
@@ -201,7 +207,7 @@ export default function SpaceReviewsScreen() {
           ListHeaderComponent={Header}
           ListEmptyComponent={
             <View style={styles.emptyBox}>
-              <Star size={36} color={Colors.borderLight} strokeWidth={1.5} />
+              <Star size={36} color={colors.borderLight} strokeWidth={1.5} />
               <Text style={styles.emptyTitle}>No reviews yet</Text>
               <Text style={styles.emptySub}>Be the first parker to review this space.</Text>
             </View>
@@ -209,12 +215,12 @@ export default function SpaceReviewsScreen() {
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => fetchReviews(1, 'refresh')} tintColor={Colors.primary} />
+            <RefreshControl refreshing={refreshing} onRefresh={() => fetchReviews(1, 'refresh')} tintColor={colors.primary} />
           }
           onEndReached={handleLoadMore}
           onEndReachedThreshold={0.4}
           ListFooterComponent={
-            loadingMore ? <ActivityIndicator color={Colors.primary} style={{ marginVertical: Spacing.xl }} /> : null
+            loadingMore ? <ActivityIndicator color={colors.primary} style={{ marginVertical: Spacing.xl }} /> : null
           }
         />
       )}
@@ -222,28 +228,28 @@ export default function SpaceReviewsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.white },
-  scroll: { flex: 1, backgroundColor: Colors.screenBg },
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.white },
+  scroll: { flex: 1, backgroundColor: colors.screenBg },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md, padding: Spacing['4xl'] },
-  retryBtn: { marginTop: Spacing.lg, paddingHorizontal: Spacing['4xl'], paddingVertical: Spacing.lg, backgroundColor: Colors.primaryBg, borderRadius: BorderRadius.lg },
-  retryBtnText: { color: Colors.primary, fontWeight: FontWeight.bold, fontSize: FontSize.md },
+  retryBtn: { marginTop: Spacing.lg, paddingHorizontal: Spacing['4xl'], paddingVertical: Spacing.lg, backgroundColor: colors.primaryBg, borderRadius: BorderRadius.lg },
+  retryBtnText: { color: colors.primary, fontWeight: FontWeight.bold, fontSize: FontSize.md },
   listContent: { padding: Spacing.screenH, paddingBottom: Spacing['4xl'] },
 
   // White header block — space name + summary card, sits above the grey scroll
   headerSection: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     paddingHorizontal: Spacing.screenH,
     paddingBottom: Spacing.screenH,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
+    borderBottomColor: colors.borderLight,
   },
-  spaceName: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.md },
+  spaceName: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: colors.textPrimary, marginBottom: Spacing.md },
 
   // Summary card — borderless inside the white section, just a tight inner layout
   summaryCard: {
     flexDirection: 'row',
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
     borderRadius: BorderRadius.lg,
     padding: Spacing.screenH,
   },
@@ -252,23 +258,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingRight: Spacing.screenH,
     borderRightWidth: 1,
-    borderRightColor: Colors.borderLight,
+    borderRightColor: colors.borderLight,
   },
-  avgNumber: { fontSize: 40, fontWeight: FontWeight.black, color: Colors.textPrimary, lineHeight: 44 },
+  avgNumber: { fontSize: 40, fontWeight: FontWeight.black, color: colors.textPrimary, lineHeight: 44 },
   starsRow: { flexDirection: 'row', gap: 2, marginTop: Spacing.xs },
-  totalText: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: Spacing.sm, fontWeight: FontWeight.medium },
+  totalText: { fontSize: FontSize.sm, color: colors.textSecondary, marginTop: Spacing.sm, fontWeight: FontWeight.medium },
 
   summaryRight: { flex: 1, justifyContent: 'center', paddingLeft: Spacing.screenH, gap: 5 },
   breakdownRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  breakdownStar: { fontSize: FontSize.xs, color: Colors.textSecondary, fontWeight: FontWeight.semibold, width: 8 },
-  barTrack: { flex: 1, height: 6, borderRadius: 3, backgroundColor: Colors.borderLight, overflow: 'hidden' },
-  barFill: { height: '100%', borderRadius: 3, backgroundColor: Colors.starYellow },
-  breakdownCount: { fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: FontWeight.medium, width: 22, textAlign: 'right' },
+  breakdownStar: { fontSize: FontSize.xs, color: colors.textSecondary, fontWeight: FontWeight.semibold, width: 8 },
+  barTrack: { flex: 1, height: 6, borderRadius: 3, backgroundColor: colors.borderLight, overflow: 'hidden' },
+  barFill: { height: '100%', borderRadius: 3, backgroundColor: colors.starYellow },
+  breakdownCount: { fontSize: FontSize.xs, color: colors.textMuted, fontWeight: FontWeight.medium, width: 22, textAlign: 'right' },
 
   sectionLabel: {
     fontSize: FontSize.sm,
     fontWeight: FontWeight.bold,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: Spacing.lg,
@@ -276,10 +282,10 @@ const styles = StyleSheet.create({
 
   // Review card
   reviewCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: colors.borderLight,
     padding: Spacing.screenH,
     marginBottom: Spacing.lg,
   },
@@ -288,17 +294,17 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: Colors.primaryBg,
+    backgroundColor: colors.primaryBg,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.primary },
-  reviewerName: { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: Colors.textPrimary },
-  reviewDate: { fontSize: FontSize.xs, color: Colors.textMuted, marginTop: 1 },
-  reviewText: { fontSize: FontSize.base, color: Colors.textBody, lineHeight: 20, marginTop: Spacing.md },
+  avatarText: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: colors.primary },
+  reviewerName: { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: colors.textPrimary },
+  reviewDate: { fontSize: FontSize.xs, color: colors.textMuted, marginTop: 1 },
+  reviewText: { fontSize: FontSize.base, color: colors.textBody, lineHeight: 20, marginTop: Spacing.md },
 
   // Empty
   emptyBox: { alignItems: 'center', paddingVertical: Spacing['6xl'], gap: Spacing.md },
-  emptyTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textPrimary },
-  emptySub: { fontSize: FontSize.sm, color: Colors.textSecondary, textAlign: 'center', paddingHorizontal: Spacing['4xl'] },
+  emptyTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: colors.textPrimary },
+  emptySub: { fontSize: FontSize.sm, color: colors.textSecondary, textAlign: 'center', paddingHorizontal: Spacing['4xl'] },
 });

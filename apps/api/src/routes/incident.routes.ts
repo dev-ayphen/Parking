@@ -40,7 +40,7 @@ router.get('/my', authenticate, async (req, res) => {
     );
     res.json({ success: true, incidents: withSigned });
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -79,7 +79,7 @@ router.post('/', authenticate, async (req, res) => {
       const existing = await db.incidentReport.findUnique({ where: { bookingId: req.body.bookingId } });
       if (existing) return res.json({ success: true, report: existing, alreadyReported: true });
     }
-    res.status(500).json({ error: (error as Error).message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -119,7 +119,7 @@ router.get('/', authenticate, requireRole('ADMIN'), async (req, res) => {
     );
     res.json({ success: true, incidents: withSigned, total, page: parseInt(page as string), pages: Math.ceil(total / take) });
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -163,7 +163,7 @@ router.put('/:id/status', authenticate, requireRole('ADMIN'), async (req, res) =
 
     res.json({ success: true, incident: updated });
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -191,7 +191,7 @@ router.get('/:id', authenticate, async (req, res) => {
       report: { ...report, evidenceUrls: await resolveEvidenceUrls(report.evidenceUrls) },
     });
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

@@ -73,6 +73,10 @@ const buildHtml = (
   <style>
     html, body, #map { height: 100%; margin: 0; padding: 0; background:#e5e7eb; }
 
+    /* Leaflet's default divIcon has a white box + grey border — kill it so our
+       custom HTML icons (user dot, pins, price cards) render with no box. */
+    .leaflet-div-icon { background: transparent; border: none; }
+
     /* ── Card bubble ─────────────────────────────────────────────────── */
     .park-card {
       position: relative;
@@ -169,6 +173,40 @@ const buildHtml = (
 
     .pink-pin { width:24px; height:24px; }
     .leaflet-control-attribution { font-size:8px; }
+
+    /* ── User location dot (Google/Apple Maps style) ─────────────────────
+       A solid primary-color dot with a white ring, plus a soft pulse ring
+       expanding outward. Pure CSS — no image, no default Leaflet marker box. */
+    .user-loc {
+      position: relative;
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .user-loc .pulse {
+      position: absolute;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: rgba(220, 1, 89, 0.25);
+      animation: userPulse 2s ease-out infinite;
+    }
+    .user-loc .dot {
+      position: relative;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #DC0159;
+      border: 3px solid #fff;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+    }
+    @keyframes userPulse {
+      0%   { transform: scale(0.4); opacity: 0.7; }
+      70%  { opacity: 0; }
+      100% { transform: scale(1);   opacity: 0; }
+    }
   </style>
 </head>
 <body>
@@ -250,9 +288,11 @@ const buildHtml = (
         iconSize:[24,24], iconAnchor:[12,24] });
     }
     function userIcon(){
+      // Google/Apple-Maps-style blue dot: solid center, white ring, soft pulse.
+      // 40x40 so the pulse ring has room; anchored at center [20,20].
       return L.divIcon({ className:'', html:
-        '<div style="width:18px;height:18px;border-radius:9px;background:#2563EB;border:3px solid #fff;box-shadow:0 0 0 2px rgba(37,99,235,0.3)"></div>',
-        iconSize:[18,18], iconAnchor:[9,9] });
+        '<div class="user-loc"><div class="pulse"></div><div class="dot"></div></div>',
+        iconSize:[40,40], iconAnchor:[20,20] });
     }
     function priceIcon(label, status, selected, spots, rating){
       var isClosed = status === 'closed';

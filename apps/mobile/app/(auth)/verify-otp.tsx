@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {View,
   Text,
   StyleSheet,
@@ -7,25 +7,29 @@ import {View,
   StatusBar,
   ActivityIndicator,
   Animated,
-  Dimensions,
+  useWindowDimensions,
   Keyboard,
-  Platform,
   Alert,
+  Platform,
   TouchableWithoutFeedback} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { ShieldCheck } from 'lucide-react-native';
+import { ChevronLeft } from 'lucide-react-native';
 import { api } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
-import PageHeader from '../../components/PageHeader';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors, Shadows } from '../../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors, Shadows } from '../../theme';
+import type { ColorsType } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 
-const { width, height } = Dimensions.get('window');
 const OTP_LENGTH = 6;
 
 const VerifyOtpScreen = () => {
   const router = useRouter();
+  const { colors, isDark } = useTheme();
+  const { width } = useWindowDimensions();
+  const styles = useMemo(() => makeStyles(colors, width), [colors, width]);
   const { phone, devOtp } = useLocalSearchParams();
   const setSession = useAuthStore((s) => s.setSession);
   const initialOtp = typeof devOtp === 'string' ? devOtp : '';
@@ -93,9 +97,11 @@ const VerifyOtpScreen = () => {
       setLoading(false);
 
       if (!data.user.isProfileComplete) {
+        // Session is already saved above — don't pass tokens through route params
+        // (they'd be visible in navigation history and debug tooling).
         router.replace({
           pathname: '/(auth)/complete-profile',
-          params: { token: data.token, userId: data.user.id, expiresIn: data.expiresIn, refreshToken: data.refreshToken },
+          params: { userId: data.user.id },
         });
       } else {
         router.replace('/(home)');
@@ -107,7 +113,7 @@ const VerifyOtpScreen = () => {
   };
 
   const handleResendOtp = async () => {
-    if (!phone) return;
+    if (!phone || resendDisabled) return;
     setResendDisabled(true);
     setResendTimer(30);
     setOtp('');
@@ -124,13 +130,20 @@ const VerifyOtpScreen = () => {
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <SafeAreaView style={[styles.container, { backgroundColor: Colors.white }]}>
-        <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.white }]}>
+        <StatusBar backgroundColor={colors.white} barStyle={isDark ? 'light-content' : 'dark-content'} />
 
+        {/* Decorative circles — very subtle, won't tint SafeAreaView */}
         <View style={styles.topCircle} />
         <View style={styles.smallCircle} />
 
-        <PageHeader title="" onBack={() => router.replace('/(auth)/login')} />
+        <TouchableOpacity
+          onPress={() => router.replace('/(auth)/login')}
+          style={styles.backBtn}
+          activeOpacity={0.7}
+        >
+          <ChevronLeft size={22} color={colors.textPrimary} />
+        </TouchableOpacity>
 
         <Animated.View
           style={[
@@ -144,7 +157,7 @@ const VerifyOtpScreen = () => {
           <View style={styles.headerContainer}>
             <View style={styles.iconRow}>
               <View style={styles.shieldIcon}>
-                <ShieldCheck size={28} color={Colors.primary} strokeWidth={2} />
+                <ShieldCheck size={28} color={colors.primary} strokeWidth={2} />
               </View>
             </View>
             <Text style={styles.title}>Verify OTP</Text>
@@ -205,13 +218,13 @@ const VerifyOtpScreen = () => {
               style={styles.buttonShadow}
             >
               <LinearGradient
-                colors={[Colors.primaryLight, Colors.primary]}
+                colors={[colors.primaryLight, colors.primary]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.button}
               >
                 {loading ? (
-                  <ActivityIndicator color={Colors.white} size="large" />
+                  <ActivityIndicator color={colors.white} size="large" />
                 ) : (
                   <Text style={styles.buttonText}>Verify OTP</Text>
                 )}
@@ -235,26 +248,36 @@ const VerifyOtpScreen = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ColorsType, width: number) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     paddingHorizontal: 0,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.screenBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: Spacing.screenH,
+    marginTop: Spacing.md,
   },
   topCircle: {
     width: width * 1.2,
     height: width * 1.2,
     borderRadius: width * 0.6,
-    backgroundColor: ExtendedColors.primaryAlpha03,
+    backgroundColor: 'rgba(220,1,89,0.04)',
     position: 'absolute',
-    top: -width * 0.7,
+    top: -width * 0.85,
     left: -width * 0.2,
   },
   smallCircle: {
     width: width * 0.8,
     height: width * 0.8,
     borderRadius: width * 0.4,
-    backgroundColor: 'rgba(220,1,89,0.02)',
+    backgroundColor: 'rgba(220,1,89,0.025)',
     position: 'absolute',
     top: width * 0.1,
     right: -width * 0.5,
@@ -262,7 +285,7 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: Spacing.screenH,
-    paddingTop: height * 0.04,
+    paddingTop: 24,
   },
   headerContainer: {
     marginBottom: 36,
@@ -281,17 +304,17 @@ const styles = StyleSheet.create({
   title: {
     fontSize: FontSize['5xl'],
     fontWeight: FontWeight.extrabold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     letterSpacing: -0.5,
     marginBottom: Spacing.lg,
   },
   subtitle: {
     fontSize: FontSize.lg,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     lineHeight: 24,
   },
   phone: {
-    color: Colors.primary,
+    color: colors.primary,
     fontWeight: FontWeight.bold,
   },
   mainContainer: {
@@ -299,7 +322,7 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: FontSize.sm,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     marginBottom: Spacing['3xl'],
     fontWeight: FontWeight.semibold,
     letterSpacing: 0.5,
@@ -325,32 +348,32 @@ const styles = StyleSheet.create({
     width: (width - 40 - 50) / 6,
     aspectRatio: 0.85,
     borderWidth: 1.5,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     borderRadius: BorderRadius.md,
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
     alignItems: 'center',
     justifyContent: 'center',
   },
   otpBoxActive: {
-    borderColor: Colors.primary,
+    borderColor: colors.primary,
     backgroundColor: ExtendedColors.primaryTint1,
     borderWidth: 1.5,
   },
   otpBoxFilled: {
-    borderColor: Colors.border,
-    backgroundColor: Colors.white,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
     borderWidth: 1.5,
   },
   otpText: {
     fontSize: FontSize['3xl'],
     fontWeight: FontWeight.semibold,
-    color: Colors.textMuted,
+    color: colors.textMuted,
   },
   otpTextFilled: {
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   buttonShadow: {
-    shadowColor: Colors.primary,
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.25,
     shadowRadius: 16,
@@ -364,7 +387,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   buttonText: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: FontSize['2xl'],
     fontWeight: FontWeight.bold,
     letterSpacing: 0.5,
@@ -374,20 +397,20 @@ const styles = StyleSheet.create({
   },
   resendLabel: {
     textAlign: 'center',
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     fontSize: FontSize.base,
   },
   resendLink: {
-    color: Colors.primary,
+    color: colors.primary,
     fontWeight: FontWeight.bold,
   },
   resendDisabled: {
     textAlign: 'center',
-    color: Colors.textMuted,
+    color: colors.textMuted,
     fontSize: FontSize.base,
   },
   errorText: {
-    color: Colors.error,
+    color: colors.error,
     fontSize: FontSize.sm,
     marginTop: -Spacing['3xl'],
     marginBottom: Spacing['3xl'],

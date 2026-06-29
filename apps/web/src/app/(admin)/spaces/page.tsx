@@ -13,107 +13,17 @@ import { useAuthStore } from '@/store/authStore';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { API_BASE, SOCKET_URL } from '@/lib/config';
 import { useToast } from '@/components/Toast';
+import { Badge } from '@/components/ui/Badge';
+import { RISK_STYLES, SPACE_STATUS_STYLES } from '@/lib/statusStyles';
 
-// Compact review count: 1200 → "1.2K", 1_500_000 → "1.5M".
-const fmtCount = (n: number) => {
-  if (n < 1000) return String(n);
-  if (n < 1_000_000) { const v = n / 1000; return `${v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)}K`; }
-  const v = n / 1_000_000; return `${v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)}M`;
-};
-
-interface AdminSpace {
-  id: number;
-  name: string;
-  spaceType: string;
-  address: string;
-  landmark: string | null;
-  capacity: number;
-  hourlyRate: number;
-  status: string;
-  requiresAdminReview?: boolean;
-  bookingsCount: number;
-  ratingAvg: number;
-  ratingCount: number;
-  owner: { id: number; name: string; phone: string; email: string | null } | null;
-  createdAt: string;
-  // Fields only present on the single-space detail response (not in the list endpoint).
-  parkingFor?: string;
-  dailyRate?: number | null;
-  monthlyRate?: number | null;
-  availability?: string;
-  startTime?: string | null;
-  endTime?: string | null;
-  amenities?: string[];
-  visibility?: string | null;
-  docType?: string | null;
-  latitude?: number;
-  longitude?: number;
-  ownerConsent?: {
-    acceptOwnerResponsibility: boolean;
-    acceptLegalCompliance: boolean;
-    acceptNonViolationDeclaration: boolean;
-    acceptedAt: string;
-  } | null;
-}
-
-interface SpaceDocument {
-  id: number;
-  spaceId: number;
-  documentType: string;
-  documentLabel: string;
-  fileUrl: string;
-  fileType: string;
-  fileSizeBytes: number | null;
-  status: string;
-  verifiedAt: string | null;
-  verifiedById: number | null;
-  rejectionReason: string | null;
-  createdAt: string;
-}
-
-interface DocCompliance {
-  compliant: boolean;
-  missingDocs: string[];
-  rule: { spaceType: string; riskLevel: string; requiresAdminReview: boolean; note: string } | null;
-}
-
-interface Tally {
-  all: number;
-  pending: number;
-  verified: number;
-  rejected: number;
-  blocked: number;
-}
-
-const RISK_COLORS: Record<string, string> = {
-  LOW: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  MEDIUM: 'bg-amber-50 text-amber-700 border-amber-200',
-  HIGH: 'bg-rose-50 text-rose-700 border-rose-200',
-};
-
-const SPACE_TYPE_RISK: Record<string, 'LOW' | 'MEDIUM' | 'HIGH'> = {
-  'Independent House': 'LOW',
-  'Rented House': 'LOW',
-  'Apartment Owner Slot': 'LOW',
-  'Apartment Tenant Slot': 'MEDIUM',
-  'Gated Villa': 'LOW',
-  'Shop Front Parking': 'MEDIUM',
-  'Office Parking': 'LOW',
-  'Vacant Private Land': 'MEDIUM',
-  'Inside Compound': 'LOW',
-  'Open Frontage Area': 'HIGH',
-};
-
-const tabs = [
-  { key: 'All Spaces', status: undefined },
-  { key: 'Pending Review', status: 'PENDING' },
-  { key: 'Approved', status: 'VERIFIED' },
-  { key: 'Rejected', status: 'REJECTED' },
-  { key: 'Blocked', status: 'BLOCKED' },
-] as const;
+import { SpaceEditModal } from './_components/SpaceEditModal';
+import { fmtCount, SPACE_TYPE_RISK, tabs } from './_components/constants';
+import type { AdminSpace, SpaceDocument, DocCompliance, Tally } from './_components/types';
 
 export default function SpacesPage() {
   const toast = useToast();
+  const { user: authUser } = useAuthStore();
+  const canMutate = authUser?.adminRole !== 'SUPPORT_AGENT';
   const [activeTab, setActiveTab] = useState<typeof tabs[number]>(tabs[0]);
   const [spaces, setSpaces] = useState<AdminSpace[]>([]);
   const [tally, setTally] = useState<Tally>({ all: 0, pending: 0, verified: 0, rejected: 0, blocked: 0 });
@@ -373,7 +283,7 @@ export default function SpacesPage() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="sticky top-0 z-10 bg-gray-50 -mx-6 px-6 py-4 -mt-4 mb-2 flex items-center justify-between border-b border-gray-200">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Spaces Management</h1>
           <p className="text-gray-500 mt-1">Review and approve parking space listings.</p>
@@ -495,9 +405,9 @@ export default function SpacesPage() {
                           {space.spaceType}
                         </span>
                         {SPACE_TYPE_RISK[space.spaceType] && (
-                          <span className={`inline-flex items-center self-start px-2 py-0.5 rounded-full text-xs font-bold border ${RISK_COLORS[SPACE_TYPE_RISK[space.spaceType]]}`}>
+                          <Badge map={RISK_STYLES} statusKey={SPACE_TYPE_RISK[space.spaceType]}>
                             {SPACE_TYPE_RISK[space.spaceType]} RISK
-                          </span>
+                          </Badge>
                         )}
                       </div>
                     </td>
@@ -523,16 +433,17 @@ export default function SpacesPage() {
                       )}
                     </td>
                     <td className="px-6 py-4">
-                      <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${
-                        space.status === 'VERIFIED' ? 'bg-emerald-50 text-emerald-700' :
-                        space.status === 'REJECTED' || space.status === 'BLOCKED' ? 'bg-rose-50 text-rose-700' :
-                        'bg-amber-50 text-amber-700'
-                      }`}>
-                        {space.status === 'VERIFIED' && <CheckCircle2 size={12} />}
-                        {(space.status === 'REJECTED' || space.status === 'BLOCKED') && <XCircle size={12} />}
-                        {space.status === 'PENDING' && <Clock size={12} />}
+                      <Badge
+                        map={SPACE_STATUS_STYLES}
+                        statusKey={space.status}
+                        icon={
+                          space.status === 'VERIFIED' ? <CheckCircle2 size={12} /> :
+                          (space.status === 'REJECTED' || space.status === 'BLOCKED') ? <XCircle size={12} /> :
+                          space.status === 'PENDING' ? <Clock size={12} /> : undefined
+                        }
+                      >
                         {space.status}
-                      </div>
+                      </Badge>
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-1">
@@ -582,7 +493,7 @@ export default function SpacesPage() {
                                   <FileText size={14} /> Request document
                                 </button>
                               )}
-                              {space.status === 'PENDING' && (
+                              {canMutate && space.status === 'PENDING' && (
                                 <>
                                   <button
                                     onClick={() => {
@@ -606,7 +517,7 @@ export default function SpacesPage() {
                                   </button>
                                 </>
                               )}
-                              {space.status === 'VERIFIED' && (
+                              {canMutate && space.status === 'VERIFIED' && (
                                 <button
                                   onClick={() => { handleBlock(space.id); setOpenMenuId(null); }}
                                   disabled={actionId === space.id}
@@ -615,7 +526,7 @@ export default function SpacesPage() {
                                   <XCircle size={14} /> Block space
                                 </button>
                               )}
-                              {space.status === 'BLOCKED' && (
+                              {canMutate && space.status === 'BLOCKED' && (
                                 <button
                                   onClick={() => { handleUnblock(space.id); setOpenMenuId(null); }}
                                   disabled={actionId === space.id}
@@ -624,7 +535,7 @@ export default function SpacesPage() {
                                   <ShieldCheck size={14} /> Unblock space
                                 </button>
                               )}
-                              {space.status === 'REJECTED' && (
+                              {canMutate && space.status === 'REJECTED' && (
                                 <button
                                   onClick={() => { handleApprove(space.id); setOpenMenuId(null); }}
                                   disabled={actionId === space.id}
@@ -877,15 +788,18 @@ export default function SpacesPage() {
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="text-xs text-gray-500 font-semibold uppercase">Status</p>
-                          <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold mt-1 ${
-                            detailsSpace.status === 'VERIFIED' ? 'bg-emerald-50 text-emerald-700' :
-                            detailsSpace.status === 'REJECTED' ? 'bg-rose-50 text-rose-700' :
-                            'bg-amber-50 text-amber-700'
-                          }`}>
-                            {detailsSpace.status === 'VERIFIED' && <CheckCircle2 size={12} />}
-                            {(detailsSpace.status === 'REJECTED') && <XCircle size={12} />}
-                            {detailsSpace.status === 'PENDING' && <Clock size={12} />}
-                            {detailsSpace.status}
+                          <div className="mt-1">
+                            <Badge
+                              map={SPACE_STATUS_STYLES}
+                              statusKey={detailsSpace.status}
+                              icon={
+                                detailsSpace.status === 'VERIFIED' ? <CheckCircle2 size={12} /> :
+                                detailsSpace.status === 'REJECTED' ? <XCircle size={12} /> :
+                                detailsSpace.status === 'PENDING' ? <Clock size={12} /> : undefined
+                              }
+                            >
+                              {detailsSpace.status}
+                            </Badge>
                           </div>
                         </div>
                         <p className="text-xs text-gray-400">Bookings: <span className="font-bold text-gray-600">{detailsSpace.bookingsCount}</span></p>
@@ -956,9 +870,9 @@ export default function SpacesPage() {
                     )}
                     {docCompliance.rule && (
                       <div className="flex items-center gap-2 mt-2">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold border ${RISK_COLORS[docCompliance.rule.riskLevel] || 'bg-gray-50 text-gray-600 border-gray-200'}`}>
+                        <Badge map={RISK_STYLES} statusKey={docCompliance.rule.riskLevel}>
                           {docCompliance.rule.riskLevel} RISK
-                        </span>
+                        </Badge>
                         {docCompliance.rule.requiresAdminReview && (
                           <span className="px-2 py-0.5 bg-rose-50 text-rose-600 border border-rose-200 rounded-full text-xs font-bold">Admin Review Required</span>
                         )}
@@ -998,13 +912,9 @@ export default function SpacesPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-semibold text-gray-900 text-sm">{doc.documentLabel}</p>
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-                            doc.status === 'VERIFIED' ? 'bg-emerald-50 text-emerald-700' :
-                            doc.status === 'REJECTED' ? 'bg-rose-50 text-rose-700' :
-                            'bg-amber-50 text-amber-700'
-                          }`}>
+                          <Badge map={SPACE_STATUS_STYLES} statusKey={doc.status}>
                             {doc.status}
-                          </span>
+                          </Badge>
                         </div>
                         <p className="text-xs text-gray-400 mt-0.5">{doc.fileType} • {doc.fileSizeBytes ? `${Math.round(doc.fileSizeBytes / 1024)} KB` : '—'}</p>
                         {doc.rejectionReason && (
@@ -1066,7 +976,7 @@ export default function SpacesPage() {
                     )}
 
                     {/* Action buttons */}
-                    {doc.status !== 'VERIFIED' && (
+                    {doc.status !== 'VERIFIED' && canMutate && (
                       <div className="flex gap-2 mt-3">
                         <button
                           onClick={() => handleVerifyDoc(doc.id, 'VERIFIED')}
@@ -1307,79 +1217,3 @@ export default function SpacesPage() {
   );
 }
 
-// ───────────────────────────────────────────────────────────────────────
-// Admin space editor — basic fields only (not photos/documents)
-// ───────────────────────────────────────────────────────────────────────
-
-function SpaceEditModal({
-  space, onClose, onSaved,
-}: { space: AdminSpace; onClose: () => void; onSaved: () => void }) {
-  const [name, setName] = useState(space.name);
-  const [address, setAddress] = useState(space.address);
-  const [hourlyRate, setHourlyRate] = useState(String(space.hourlyRate));
-  const [capacity, setCapacity] = useState(String(space.capacity));
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState('');
-
-  const handleSave = async () => {
-    if (!name.trim() || !address.trim()) { setErr('Name and address are required'); return; }
-    try {
-      setSaving(true);
-      setErr('');
-      await adminApi.updateSpace(space.id, {
-        name: name.trim(),
-        address: address.trim(),
-        hourlyRate: Number(hourlyRate) || 0,
-        capacity: Number(capacity) || 1,
-      });
-      onSaved();
-    } catch (e: any) {
-      setErr(e?.response?.data?.error || e?.message || 'Failed to save');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-        <div className="border-b border-gray-100 px-6 py-4 flex items-center justify-between">
-          <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2"><Pencil size={18} className="text-indigo-600" /> Edit Space</h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg"><X size={18} /></button>
-        </div>
-        <div className="p-6 space-y-4">
-          {err && <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-sm">{err}</div>}
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wide text-gray-700 mb-2">Space Name</label>
-            <input value={name} onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wide text-gray-700 mb-2">Address</label>
-            <textarea value={address} onChange={(e) => setAddress(e.target.value)} rows={2}
-              className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 resize-none" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wide text-gray-700 mb-2">Hourly Rate (₹)</label>
-              <input type="number" min={0} value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)}
-                className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" />
-            </div>
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wide text-gray-700 mb-2">Capacity</label>
-              <input type="number" min={1} value={capacity} onChange={(e) => setCapacity(e.target.value)}
-                className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" />
-            </div>
-          </div>
-          <div className="flex items-center justify-end gap-3 pt-2">
-            <button onClick={onClose} className="px-5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-100 rounded-xl transition-colors">Cancel</button>
-            <button onClick={handleSave} disabled={saving}
-              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2">
-              {saving && <Loader2 size={14} className="animate-spin" />} Save Changes
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}

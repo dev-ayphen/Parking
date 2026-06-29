@@ -1,4 +1,5 @@
 import { db } from '../config/database';
+import { AppError } from '../utils/errors';
 
 /**
  * Admin review moderation. Unlike the public reads, this sees ALL reviews
@@ -83,7 +84,7 @@ export const ratingAdminService = {
   /** Hide a review (soft) — excluded from all public reads, stays in the DB. */
   hideReview: async (reviewId: number, adminLabel: string) => {
     const existing = await db.rating.findUnique({ where: { id: reviewId } });
-    if (!existing) throw Object.assign(new Error('Review not found'), { statusCode: 404 });
+    if (!existing) throw new AppError('Review not found', 404);
 
     const updated = await db.rating.update({
       where: { id: reviewId },
@@ -95,7 +96,7 @@ export const ratingAdminService = {
   /** Restore a previously hidden review. */
   unhideReview: async (reviewId: number) => {
     const existing = await db.rating.findUnique({ where: { id: reviewId } });
-    if (!existing) throw Object.assign(new Error('Review not found'), { statusCode: 404 });
+    if (!existing) throw new AppError('Review not found', 404);
 
     const updated = await db.rating.update({
       where: { id: reviewId },

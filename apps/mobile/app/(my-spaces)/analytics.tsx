@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {View,
   Text,
   StyleSheet,
@@ -15,7 +15,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import PageHeader from '../../components/PageHeader';
 import { api } from '../../services/api';
 import { NETWORK_RECONNECTED } from '../../store/networkStore';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import type { ColorsType } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 
 interface Analytics {
   totalBookings: number;
@@ -39,6 +41,8 @@ const inr = (n: number) => `₹${(n || 0).toLocaleString('en-IN')}`;
 const monthLabel = new Date().toLocaleDateString('en-IN', { month: 'long' });
 
 const AnalyticsScreen = () => {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const router = useRouter();
   const params = useLocalSearchParams();
   const spaceId = params.spaceId as string;
@@ -82,7 +86,7 @@ const AnalyticsScreen = () => {
     return (
       <SafeAreaView style={styles.container}>
         <PageHeader title="Analytics" onBack={() => router.replace('/(my-spaces)')} />
-        <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>
+        <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>
       </SafeAreaView>
     );
   }
@@ -105,18 +109,18 @@ const AnalyticsScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <PageHeader title="Analytics" onBack={() => router.replace('/(my-spaces)')} />
 
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchAnalytics(true)} tintColor={Colors.primary} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchAnalytics(true)} tintColor={colors.primary} />}
       >
         <Text style={styles.spaceNameLabel} numberOfLines={1}>{data.spaceName || spaceName}</Text>
 
         {/* Hero Revenue Card — all real */}
-        <LinearGradient colors={[Colors.textPrimary, ExtendedColors.darkCard]} style={styles.heroCard}>
+        <LinearGradient colors={[colors.textPrimary, ExtendedColors.darkCard]} style={styles.heroCard}>
           <View style={styles.heroHeader}>
             <Text style={styles.heroLabel}>Revenue ({monthLabel})</Text>
           </View>
@@ -142,7 +146,7 @@ const AnalyticsScreen = () => {
         <View style={styles.statsGrid}>
           <View style={styles.statsCard}>
             <View style={[styles.statsIconWrapper, { backgroundColor: ExtendedColors.analyticsBg }]}>
-              <Calendar size={18} color={Colors.textBody} />
+              <Calendar size={18} color={colors.textBody} />
             </View>
             <View>
               <Text style={styles.statsLabel}>Total Bookings</Text>
@@ -151,8 +155,8 @@ const AnalyticsScreen = () => {
           </View>
 
           <View style={styles.statsCard}>
-            <View style={[styles.statsIconWrapper, { backgroundColor: Colors.successBgAlt }]}>
-              <Car size={18} color={Colors.successAlt} />
+            <View style={[styles.statsIconWrapper, { backgroundColor: colors.successBgAlt }]}>
+              <Car size={18} color={colors.successAlt} />
             </View>
             <View>
               <Text style={styles.statsLabel}>Occupancy</Text>
@@ -161,22 +165,22 @@ const AnalyticsScreen = () => {
           </View>
 
           <View style={styles.statsCard}>
-            <View style={[styles.statsIconWrapper, { backgroundColor: Colors.warningBg }]}>
-              <Star size={18} color={Colors.warning} />
+            <View style={[styles.statsIconWrapper, { backgroundColor: colors.warningBg }]}>
+              <Star size={18} color={colors.warning} />
             </View>
             <View>
               <Text style={styles.statsLabel}>Avg Rating</Text>
               <Text style={styles.statsValue}>
                 {data.ratingCount > 0
-                  ? <>{data.avgRating}<Text style={{ fontSize: FontSize.sm, color: Colors.textSecondary }}> /5</Text></>
-                  : <Text style={{ fontSize: FontSize.md, color: Colors.textSecondary }}>New</Text>}
+                  ? <>{data.avgRating}<Text style={{ fontSize: FontSize.sm, color: colors.textSecondary }}> /5</Text></>
+                  : <Text style={{ fontSize: FontSize.md, color: colors.textSecondary }}>New</Text>}
               </Text>
             </View>
           </View>
 
           <View style={styles.statsCard}>
-            <View style={[styles.statsIconWrapper, { backgroundColor: Colors.infoBg }]}>
-              <Clock size={18} color={Colors.info} />
+            <View style={[styles.statsIconWrapper, { backgroundColor: colors.infoBg }]}>
+              <Clock size={18} color={colors.info} />
             </View>
             <View>
               <Text style={styles.statsLabel}>Avg Duration</Text>
@@ -191,17 +195,17 @@ const AnalyticsScreen = () => {
         <View style={styles.activityCard}>
           {hasBookings ? (
             <>
-              <BreakdownRow icon={<CheckCircle2 size={14} color={Colors.successAlt} />} bg={Colors.successBgAlt} label="Completed" value={data.completedBookings} />
+              <BreakdownRow styles={styles} icon={<CheckCircle2 size={14} color={colors.successAlt} />} bg={colors.successBgAlt} label="Completed" value={data.completedBookings} />
               <View style={styles.divider} />
-              <BreakdownRow icon={<Clock size={14} color={Colors.warning} />} bg={Colors.warningBg} label="Active / Upcoming" value={data.activeBookings} />
+              <BreakdownRow styles={styles} icon={<Clock size={14} color={colors.warning} />} bg={colors.warningBg} label="Active / Upcoming" value={data.activeBookings} />
               <View style={styles.divider} />
-              <BreakdownRow icon={<Calendar size={14} color={Colors.info} />} bg={Colors.infoBg} label="Pending Requests" value={data.pendingBookings} />
+              <BreakdownRow styles={styles} icon={<Calendar size={14} color={colors.info} />} bg={colors.infoBg} label="Pending Requests" value={data.pendingBookings} />
               <View style={styles.divider} />
-              <BreakdownRow icon={<TrendingDown size={14} color={Colors.error} />} bg={Colors.errorBg} label="Cancelled / Rejected" value={data.cancelledBookings} />
+              <BreakdownRow styles={styles} icon={<TrendingDown size={14} color={colors.error} />} bg={colors.errorBg} label="Cancelled / Rejected" value={data.cancelledBookings} />
             </>
           ) : (
             <View style={styles.emptyBox}>
-              <Calendar size={28} color={Colors.borderLight} />
+              <Calendar size={28} color={colors.borderLight} />
               <Text style={styles.emptyText}>No bookings yet. Stats will appear as parkers book this space.</Text>
             </View>
           )}
@@ -213,7 +217,7 @@ const AnalyticsScreen = () => {
   );
 };
 
-const BreakdownRow = ({ icon, bg, label, value }: { icon: React.ReactNode; bg: string; label: string; value: number }) => (
+const BreakdownRow = ({ styles, icon, bg, label, value }: { styles: ReturnType<typeof makeStyles>; icon: React.ReactNode; bg: string; label: string; value: number }) => (
   <View style={styles.activityRow}>
     <View style={[styles.activityIcon, { backgroundColor: bg }]}>{icon}</View>
     <View style={styles.activityInfo}>
@@ -223,18 +227,18 @@ const BreakdownRow = ({ icon, bg, label, value }: { icon: React.ReactNode; bg: s
   </View>
 );
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
   },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing['3xl'] },
-  errorText: { fontSize: FontSize.md, color: Colors.textSecondary, marginBottom: Spacing.xl },
-  retryBtn: { backgroundColor: Colors.primaryLight, paddingHorizontal: Spacing['4xl'], paddingVertical: Spacing.xl, borderRadius: BorderRadius.button },
-  retryBtnText: { color: Colors.primary, fontWeight: FontWeight.bold, fontSize: FontSize.md },
-  spaceNameLabel: { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.xl },
+  errorText: { fontSize: FontSize.md, color: colors.textSecondary, marginBottom: Spacing.xl },
+  retryBtn: { backgroundColor: colors.primaryLight, paddingHorizontal: Spacing['4xl'], paddingVertical: Spacing.xl, borderRadius: BorderRadius.button },
+  retryBtnText: { color: colors.primary, fontWeight: FontWeight.bold, fontSize: FontSize.md },
+  spaceNameLabel: { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: colors.textPrimary, marginBottom: Spacing.xl },
   emptyBox: { alignItems: 'center', paddingVertical: Spacing['4xl'], gap: Spacing.md },
-  emptyText: { fontSize: FontSize.sm, color: Colors.textSecondary, textAlign: 'center', paddingHorizontal: Spacing['3xl'], lineHeight: 18 },
+  emptyText: { fontSize: FontSize.sm, color: colors.textSecondary, textAlign: 'center', paddingHorizontal: Spacing['3xl'], lineHeight: 18 },
   content: {
     padding: Spacing['3xl'],
   },
@@ -250,7 +254,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   heroLabel: {
-    color: Colors.textMuted,
+    color: colors.textMuted,
     fontSize: FontSize.sm,                          // 12 = sm ✓
     fontWeight: FontWeight.semibold,
     letterSpacing: 0,
@@ -265,14 +269,14 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
   trendText: {
-    color: Colors.successAlt,
+    color: colors.successAlt,
     fontSize: FontSize.xs,                          // 11 = xs ✓
     fontWeight: FontWeight.bold,
   },
   heroValue: {
     fontSize: FontSize['7xl'],                      // 32 = 7xl ✓
     fontWeight: FontWeight.extrabold,
-    color: Colors.white,
+    color: '#FFFFFF',
     letterSpacing: -1,
     marginBottom: Spacing.micro,
   },
@@ -293,12 +297,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   heroFooterLabel: {
-    color: Colors.textMuted,
+    color: colors.textMuted,
     fontSize: FontSize.xs,                          // 11 = xs ✓
     marginBottom: Spacing.micro,
   },
   heroFooterValue: {
-    color: Colors.white,
+    color: '#FFFFFF',
     fontSize: FontSize.xl,                          // 16 = xl ✓
     fontWeight: FontWeight.bold,
   },
@@ -311,7 +315,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: FontSize.lg,                          // 15 = lg ✓
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: Spacing.lg,
   },
   statsGrid: {
@@ -322,11 +326,11 @@ const styles = StyleSheet.create({
   },
   statsCard: {
     width: '48%',
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     padding: Spacing['2xl'],
     borderRadius: BorderRadius.md,                  // 12 = md ✓
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.xl,
@@ -340,19 +344,19 @@ const styles = StyleSheet.create({
   },
   statsLabel: {
     fontSize: FontSize.xs,                          // 11 = xs ✓
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     marginBottom: 1,
   },
   statsValue: {
     fontSize: FontSize.xl,                          // 16 = xl ✓
     fontWeight: FontWeight.extrabold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   activityCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: BorderRadius.lg,                  // 16 = lg ✓
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     padding: Spacing['3xl'],
   },
   activityRow: {
@@ -373,21 +377,21 @@ const styles = StyleSheet.create({
   activityTitle: {
     fontSize: FontSize.md,                          // 14 = md ✓
     fontWeight: FontWeight.semibold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: Spacing.micro,
   },
   activityTime: {
     fontSize: FontSize.sm,                          // 12 = sm ✓
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   activityAmount: {
     fontSize: FontSize.md,                          // 14 = md ✓
     fontWeight: FontWeight.bold,
-    color: Colors.successAlt,
+    color: colors.successAlt,
   },
   divider: {
     height: 1,
-    backgroundColor: Colors.surfaceBg,
+    backgroundColor: colors.surfaceBg,
     marginVertical: Spacing.xl,
   },
 });

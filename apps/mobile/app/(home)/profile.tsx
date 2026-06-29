@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -21,7 +21,9 @@ import { pickMedia } from '../../utils/pickMedia';
 import { User, Phone, Mail, Camera, ShieldAlert, X, QrCode } from 'lucide-react-native';
 import { api } from '../../services/api';
 import { PageHeader, ScreenLoader } from '../../components';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import type { ColorsType } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 import { toast } from '../../utils/toast';
 
 interface UserProfile {
@@ -40,6 +42,8 @@ interface UserProfile {
 const ProfileScreen = () => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [photoUploading, setPhotoUploading] = useState(false);
@@ -189,7 +193,7 @@ const ProfileScreen = () => {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: Colors.screenBg }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.screenBg }]}>
         <PageHeader title="My Profile"  onBack={() => router.replace('/(home)')} />
         <ScreenLoader />
       </SafeAreaView>
@@ -198,21 +202,21 @@ const ProfileScreen = () => {
 
   if (!user) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: Colors.white }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.white }]}>
         <PageHeader title="My Profile"  onBack={() => router.replace('/(home)')} />
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <Text style={{ color: Colors.textSecondary }}>Failed to load profile</Text>
+          <Text style={{ color: colors.textSecondary }}>Failed to load profile</Text>
         </View>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: Colors.white }]}>
-      <StatusBar barStyle="dark-content" />
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.white }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <PageHeader title="My Profile"  onBack={() => router.replace('/(home)')} />
 
-      <ScrollView style={[styles.content, { backgroundColor: Colors.screenBg }]} showsVerticalScrollIndicator={false}>
+      <ScrollView style={[styles.content, { backgroundColor: colors.screenBg }]} showsVerticalScrollIndicator={false}>
         <View style={styles.detailsCard}>
           {/* Avatar */}
           <View style={styles.avatarSection}>
@@ -226,18 +230,18 @@ const ProfileScreen = () => {
                   isn't cut off by overflow:hidden. */}
               <View style={styles.avatarCircle}>
                 {user.photoUrl ? (
-                  <Image source={{ uri: user.photoUrl }} style={styles.avatarImage} />
+                  <Image source={{ uri: user.photoUrl }} style={styles.avatarImage} onError={() => {}} />
                 ) : (
-                  <User size={32} color={Colors.primary} strokeWidth={2.5} />
+                  <User size={32} color={colors.primary} strokeWidth={2.5} />
                 )}
                 {photoUploading && (
                   <View style={styles.avatarUploading}>
-                    <ActivityIndicator color={Colors.white} size="small" />
+                    <ActivityIndicator color={colors.white} size="small" />
                   </View>
                 )}
               </View>
               <View style={styles.editAvatarBadge}>
-                <Camera size={14} color={Colors.white} strokeWidth={2.5} />
+                <Camera size={14} color={colors.white} strokeWidth={2.5} />
               </View>
             </TouchableOpacity>
             <Text style={styles.userName}>{user.firstName} {user.lastName}</Text>
@@ -250,7 +254,7 @@ const ProfileScreen = () => {
           {/* Phone */}
           <View style={styles.field}>
             <View style={styles.fieldIconBox}>
-              <Phone size={16} color={Colors.textBody} strokeWidth={2.5} />
+              <Phone size={16} color={colors.textBody} strokeWidth={2.5} />
             </View>
             <View style={styles.fieldTextContainer}>
               <Text style={styles.fieldLabel}>Mobile Number</Text>
@@ -262,7 +266,7 @@ const ProfileScreen = () => {
           {/* Email */}
           <View style={styles.field}>
             <View style={styles.fieldIconBox}>
-              <Mail size={16} color={Colors.textBody} strokeWidth={2.5} />
+              <Mail size={16} color={colors.textBody} strokeWidth={2.5} />
             </View>
             <View style={styles.fieldTextContainer}>
               <Text style={styles.fieldLabel}>Email</Text>
@@ -273,8 +277,8 @@ const ProfileScreen = () => {
 
           {/* Emergency */}
           <View style={styles.field}>
-            <View style={[styles.fieldIconBox, { backgroundColor: Colors.primaryBg }]}>
-              <ShieldAlert size={16} color={Colors.primary} strokeWidth={2.5} />
+            <View style={[styles.fieldIconBox, { backgroundColor: colors.primaryBg }]}>
+              <ShieldAlert size={16} color={colors.primary} strokeWidth={2.5} />
             </View>
             <View style={styles.fieldTextContainer}>
               <Text style={styles.fieldLabel}>Emergency Contact</Text>
@@ -284,7 +288,7 @@ const ProfileScreen = () => {
                   {user.emergencyContactPhone ? ` • ${user.emergencyContactPhone}` : ''}
                 </Text>
               ) : (
-                <Text style={[styles.fieldValue, { color: Colors.textMuted, fontWeight: FontWeight.medium }]}>
+                <Text style={[styles.fieldValue, { color: colors.textMuted, fontWeight: FontWeight.medium }]}>
                   Not set — tap Edit Profile to add
                 </Text>
               )}
@@ -294,15 +298,15 @@ const ProfileScreen = () => {
 
           {/* UPI ID */}
           <View style={styles.field}>
-            <View style={[styles.fieldIconBox, { backgroundColor: Colors.primaryBg }]}>
-              <QrCode size={16} color={Colors.primary} strokeWidth={2.5} />
+            <View style={[styles.fieldIconBox, { backgroundColor: colors.primaryBg }]}>
+              <QrCode size={16} color={colors.primary} strokeWidth={2.5} />
             </View>
             <View style={styles.fieldTextContainer}>
               <Text style={styles.fieldLabel}>UPI ID</Text>
               {upiId ? (
                 <Text style={styles.fieldValue}>{upiId}</Text>
               ) : (
-                <Text style={[styles.fieldValue, { color: Colors.textMuted, fontWeight: FontWeight.medium }]}>
+                <Text style={[styles.fieldValue, { color: colors.textMuted, fontWeight: FontWeight.medium }]}>
                   Not set — tap Edit Profile to add
                 </Text>
               )}
@@ -340,7 +344,7 @@ const ProfileScreen = () => {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Edit Profile</Text>
               <TouchableOpacity onPress={closeModal} style={styles.closeBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <X size={20} color={Colors.textSecondary} strokeWidth={2} />
+                <X size={20} color={colors.textSecondary} strokeWidth={2} />
               </TouchableOpacity>
             </View>
 
@@ -354,7 +358,7 @@ const ProfileScreen = () => {
                     <TextInput
                       style={[styles.input, errors.firstName ? styles.inputError : null]}
                       placeholder="First name"
-                      placeholderTextColor={Colors.textMuted}
+                      placeholderTextColor={colors.textMuted}
                       value={firstName}
                       onChangeText={t => { setFirstName(t); setErrors(p => ({ ...p, firstName: '' })); }}
                       editable={!saving}
@@ -367,7 +371,7 @@ const ProfileScreen = () => {
                     <TextInput
                       style={[styles.input, errors.lastName ? styles.inputError : null]}
                       placeholder="Last name"
-                      placeholderTextColor={Colors.textMuted}
+                      placeholderTextColor={colors.textMuted}
                       value={lastName}
                       onChangeText={t => { setLastName(t); setErrors(p => ({ ...p, lastName: '' })); }}
                       editable={!saving}
@@ -382,7 +386,7 @@ const ProfileScreen = () => {
                   <TextInput
                     style={[styles.input, errors.email ? styles.inputError : null]}
                     placeholder="Enter email address"
-                    placeholderTextColor={Colors.textMuted}
+                    placeholderTextColor={colors.textMuted}
                     value={email}
                     onChangeText={t => { setEmail(t); setErrors(p => ({ ...p, email: '' })); }}
                     keyboardType="email-address"
@@ -403,7 +407,7 @@ const ProfileScreen = () => {
                   <TextInput
                     style={styles.input}
                     placeholder="e.g. Father, Spouse, Friend"
-                    placeholderTextColor={Colors.textMuted}
+                    placeholderTextColor={colors.textMuted}
                     value={emergencyContactName}
                     onChangeText={setEmergencyContactName}
                     editable={!saving}
@@ -416,7 +420,7 @@ const ProfileScreen = () => {
                   <TextInput
                     style={[styles.input, errors.emergencyContactPhone ? styles.inputError : null]}
                     placeholder="10-digit mobile number"
-                    placeholderTextColor={Colors.textMuted}
+                    placeholderTextColor={colors.textMuted}
                     value={emergencyContactPhone}
                     onChangeText={t => { setEmergencyContactPhone(t.replace(/[^0-9]/g, '')); setErrors(p => ({ ...p, emergencyContactPhone: '' })); }}
                     keyboardType="phone-pad"
@@ -437,7 +441,7 @@ const ProfileScreen = () => {
                   <TextInput
                     style={[styles.input, errors.upiId ? styles.inputError : null]}
                     placeholder="e.g. name@okhdfcbank"
-                    placeholderTextColor={Colors.textMuted}
+                    placeholderTextColor={colors.textMuted}
                     value={upiIdInput}
                     onChangeText={t => { setUpiIdInput(t.replace(/\s/g, '')); setErrors(p => ({ ...p, upiId: '' })); }}
                     autoCapitalize="none"
@@ -455,7 +459,7 @@ const ProfileScreen = () => {
                   activeOpacity={0.8}
                 >
                   {saving
-                    ? <ActivityIndicator color={Colors.white} size="small" />
+                    ? <ActivityIndicator color={colors.white} size="small" />
                     : <Text style={styles.saveButtonText}>Save Changes</Text>
                   }
                 </TouchableOpacity>
@@ -469,7 +473,7 @@ const ProfileScreen = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
   container: { flex: 1 },
   content: {
     flex: 1,
@@ -479,7 +483,7 @@ const styles = StyleSheet.create({
 
   // ── Profile card ───────────────────────────────────────────────
   detailsCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: BorderRadius.circleXl,
     padding: Spacing['3xl'],
     marginBottom: Spacing.screenH,
@@ -509,11 +513,11 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: Colors.primaryBg,
+    backgroundColor: colors.primaryBg,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 3,
-    borderColor: Colors.primaryBg,
+    borderColor: colors.primaryBg,
     overflow: 'hidden',
   },
   avatarImage: {
@@ -533,35 +537,35 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: -4,
     right: -4,
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     width: 28,
     height: 28,
     borderRadius: BorderRadius.button,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: Colors.white,
+    borderColor: colors.white,
   },
   userName: {
     fontSize: FontSize['3xl'],
     fontWeight: FontWeight.extrabold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: Spacing.md,
   },
   verifiedText: {
     fontSize: FontSize.base,
-    color: Colors.successAlt,
+    color: colors.successAlt,
     fontWeight: FontWeight.semibold,
     marginBottom: Spacing.xs,
   },
   memberSinceText: {
     fontSize: FontSize.sm,
-    color: Colors.textMuted,
+    color: colors.textMuted,
     fontWeight: FontWeight.medium,
   },
   cardDivider: {
     height: 1,
-    backgroundColor: Colors.border,
+    backgroundColor: colors.border,
     marginVertical: Spacing.xl,
   },
   field: {
@@ -574,27 +578,27 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: BorderRadius.md,
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: Colors.surfaceBg,
+    borderColor: colors.surfaceBg,
   },
   fieldTextContainer: { flex: 1 },
   fieldLabel: {
     fontSize: FontSize.xs,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     fontWeight: FontWeight.semibold,
     marginBottom: Spacing.micro,
   },
   fieldValue: {
     fontSize: FontSize.md,
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   divider: {
     height: 1,
-    backgroundColor: Colors.surfaceBg,
+    backgroundColor: colors.surfaceBg,
     marginVertical: Spacing.micro,
   },
   buttonGroup: {
@@ -603,7 +607,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing['7xl'],
   },
   editButton: {
-    backgroundColor: Colors.textPrimary,
+    backgroundColor: colors.textPrimary,
     borderRadius: BorderRadius.button,
     paddingVertical: Spacing['3xl'],
     alignItems: 'center',
@@ -611,7 +615,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   editButtonText: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: FontSize.lg,
     fontWeight: FontWeight.bold,
   },
@@ -627,7 +631,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.45)',
   },
   modalSheet: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     maxHeight: '92%',
@@ -641,7 +645,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: Colors.border,
+    backgroundColor: colors.border,
     alignSelf: 'center',
     marginTop: 12,
     marginBottom: 4,
@@ -653,18 +657,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceBg,
+    borderBottomColor: colors.surfaceBg,
   },
   modalTitle: {
     fontSize: FontSize['2xl'],
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   closeBtn: {
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: Colors.screenBg,
+    backgroundColor: colors.screenBg,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -684,26 +688,26 @@ const styles = StyleSheet.create({
   label: {
     fontSize: FontSize.sm,
     fontWeight: FontWeight.semibold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: 6,
   },
   input: {
     borderWidth: 1.5,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     borderRadius: BorderRadius.md,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: FontSize.md,
-    color: Colors.textPrimary,
-    backgroundColor: Colors.white,
+    color: colors.textPrimary,
+    backgroundColor: colors.white,
   },
   inputError: {
-    borderColor: Colors.errorAlt,
+    borderColor: colors.errorAlt,
     backgroundColor: ExtendedColors.primaryTint3,
   },
   errorText: {
     fontSize: FontSize.xs,
-    color: Colors.errorAlt,
+    color: colors.errorAlt,
     marginTop: 4,
     fontWeight: FontWeight.medium,
   },
@@ -712,20 +716,20 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
+    borderTopColor: colors.border,
   },
   sectionTitle: {
     fontSize: FontSize.lg,
     fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: 2,
   },
   sectionSubtitle: {
     fontSize: FontSize.xs,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   saveButton: {
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     borderRadius: BorderRadius.button,
     paddingVertical: 16,
     alignItems: 'center',
@@ -734,7 +738,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   saveButtonText: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: FontSize.lg,
     fontWeight: FontWeight.bold,
   },

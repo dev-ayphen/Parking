@@ -1,21 +1,17 @@
 import React, { useMemo } from 'react';
-import {
-  View,
-  TouchableOpacity,
-  StyleSheet,
-  Text,
-} from 'react-native';
+import { View, TouchableOpacity, StyleSheet, Text } from 'react-native';
 import { Bell, Menu } from 'lucide-react-native';
 import Svg, { Path, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { useTheme } from '../../hooks/useTheme';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
+import type { ColorsType } from '../../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing } from '../../theme';
 
-const PinIcon = ({ size = 24 }: { size?: number }) => (
-  <Svg width={size} height={size} viewBox="0 0 512 512">
+const PinIcon = ({ primaryDark, isDark }: { primaryDark: string; isDark: boolean }) => (
+  <Svg width={22} height={22} viewBox="0 0 512 512">
     <Defs>
       <RadialGradient id="pinGradHeader" cx="40%" cy="30%" r="70%">
         <Stop offset="0%" stopColor="#FF3D7F" />
-        <Stop offset="100%" stopColor={Colors.primaryDark} />
+        <Stop offset="100%" stopColor={primaryDark} />
       </RadialGradient>
     </Defs>
     <Path
@@ -32,71 +28,25 @@ interface ProHeaderProps {
   profileImage?: string;
 }
 
-const ProHeader: React.FC<ProHeaderProps> = ({
-  onMenuPress,
-  onNotificationPress,
-  notificationCount = 0,
-}) => {
-  const theme = useTheme();
-
-  const dynamicStyles = useMemo(
-    () =>
-      StyleSheet.create({
-        container: { backgroundColor: theme.colors.white },
-        badge: { backgroundColor: theme.colors.primary },
-        titleBlack: { color: theme.colors.textPrimary },
-        titlePink: { color: theme.colors.primary },
-      }),
-    [theme]
-  );
-
-  return (
-    <View style={[styles.container, dynamicStyles.container]}>
-      <TouchableOpacity activeOpacity={0.7} onPress={onMenuPress} style={styles.iconButtonWrapper}>
-        <Menu size={20} color={Colors.textDark} strokeWidth={2.5} />
-      </TouchableOpacity>
-
-      <View style={styles.logoContainer}>
-        <PinIcon size={22} />
-        <Text style={styles.logoText}>
-          <Text style={[styles.logoBlack, dynamicStyles.titleBlack]}>Park</Text>
-          <Text style={[styles.logoPink, dynamicStyles.titlePink]}>Swift</Text>
-        </Text>
-      </View>
-
-      <View style={styles.rightActions}>
-        <TouchableOpacity activeOpacity={0.7} onPress={onNotificationPress} style={styles.iconButtonWrapper}>
-          <Bell size={20} color={Colors.textDark} strokeWidth={2.5} />
-          {notificationCount > 0 && (
-            <View style={[styles.bellBadge, dynamicStyles.badge]}>
-              <Text style={styles.bellBadgeText}>
-                {notificationCount > 99 ? '99+' : notificationCount}
-              </Text>
-            </View>
-          )}
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-};
-
-const styles = StyleSheet.create({
+const makeStyles = (colors: ColorsType, isDark: boolean) => StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.screenH,
     paddingVertical: Spacing.xl,
-    backgroundColor: Colors.white,
-    borderBottomWidth: 0,
+    backgroundColor: colors.white,
+    borderBottomWidth: isDark ? 1 : 0,
+    borderBottomColor: colors.borderLight,
   },
   iconButtonWrapper: {
-    width: 38,
-    height: 38,
+    width: 40,
+    height: 40,
     borderRadius: BorderRadius.circle,
-    backgroundColor: Colors.screenBg,
+    // In dark: use surfaceBg so it pops above the header card
+    backgroundColor: isDark ? colors.surfaceBg : colors.screenBg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: isDark ? colors.border : colors.borderLight,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
@@ -112,10 +62,10 @@ const styles = StyleSheet.create({
     letterSpacing: -0.6,
   },
   logoBlack: {
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   logoPink: {
-    color: Colors.primary,
+    color: colors.primary,
   },
   rightActions: {
     flexDirection: 'row',
@@ -126,20 +76,60 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 5,
     right: 5,
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     width: 14,
     height: 14,
     borderRadius: BorderRadius.bell,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,
-    borderColor: Colors.white,
+    borderColor: colors.white,
   },
   bellBadgeText: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: FontSize.tiny,
     fontWeight: FontWeight.boldAlias,
   },
 });
+
+const ProHeader: React.FC<ProHeaderProps> = ({
+  onMenuPress,
+  onNotificationPress,
+  notificationCount = 0,
+}) => {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
+  // In dark mode use a brighter icon color so they're clearly visible
+  const iconColor = isDark ? colors.textPrimary : colors.textDark;
+
+  return (
+    <View style={styles.container}>
+      <TouchableOpacity activeOpacity={0.7} onPress={onMenuPress} style={styles.iconButtonWrapper}>
+        <Menu size={20} color={iconColor} strokeWidth={2.5} />
+      </TouchableOpacity>
+
+      <View style={styles.logoContainer}>
+        <PinIcon primaryDark={colors.primaryDark} isDark={isDark} />
+        <Text style={styles.logoText}>
+          <Text style={styles.logoBlack}>Park</Text>
+          <Text style={styles.logoPink}>Swift</Text>
+        </Text>
+      </View>
+
+      <View style={styles.rightActions}>
+        <TouchableOpacity activeOpacity={0.7} onPress={onNotificationPress} style={styles.iconButtonWrapper}>
+          <Bell size={20} color={iconColor} strokeWidth={2.5} />
+          {notificationCount > 0 && (
+            <View style={styles.bellBadge}>
+              <Text style={styles.bellBadgeText}>
+                {notificationCount > 99 ? '99+' : notificationCount}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
 
 export default ProHeader;

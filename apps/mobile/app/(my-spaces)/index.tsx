@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import {View,
   Text,
-  StyleSheet,
   ScrollView,
   TouchableOpacity,
   RefreshControl,
@@ -21,8 +20,9 @@ import { PageHeader, LoadErrorState } from '../../components';
 import NoActivitySvg from '../../components/Illustrations/NoActivitySvg';
 import { api } from '../../services/api';
 import { NETWORK_RECONNECTED } from '../../store/networkStore';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing, ExtendedColors } from '../../theme';
+import { ExtendedColors, FontWeight, FontSize } from '../../theme';
 import { useSessionBarStore, computeExpiresAt, minsUntil } from '../../store/sessionBarStore';
+import { makeOwnerDashboardStyles } from './styles';
 
 interface Entitlements {
   planName: string;
@@ -57,15 +57,6 @@ interface DashboardData {
   hasUpiId: boolean;
 }
 
-// Status badge styling for retained recent requests
-const REQUEST_STATUS_BADGE: Record<string, { label: string; color: string; bg: string }> = {
-  APPROVED: { label: 'Approved', color: Colors.success, bg: Colors.successBg },
-  COMPLETED: { label: 'Completed', color: Colors.textBody, bg: Colors.surfaceBg },
-  REJECTED: { label: 'Rejected', color: Colors.error, bg: Colors.errorBg },
-  CANCELLED: { label: 'Cancelled', color: Colors.error, bg: Colors.errorBg },
-  EXPIRED: { label: 'Expired', color: Colors.textSecondary, bg: Colors.surfaceBg },
-};
-
 // "2m ago" / "1h ago" / "Yesterday"
 const timeAgo = (iso: string) => {
   if (!iso) return '';
@@ -99,6 +90,7 @@ const EMPTY_DASHBOARD: DashboardData = {
 
 export default function OwnerDashboardScreen() {
   const theme = useTheme();
+  const colors = theme.colors;
   const router = useRouter();
   const setBarForSource = useSessionBarStore((s) => s.setBarForSource);
   const clearSource = useSessionBarStore((s) => s.clearSource);
@@ -114,6 +106,17 @@ export default function OwnerDashboardScreen() {
   const [hasLoaded, setHasLoaded] = useState(false);
   const [nowTs, setNowTs] = useState(Date.now()); // ticks for the live approval countdown
   const [modalItem, setModalItem] = useState<any>(null);
+
+  // Status badge styling for retained recent requests — inside component so it can use colors
+  const REQUEST_STATUS_BADGE: Record<string, { label: string; color: string; bg: string }> = {
+    APPROVED: { label: 'Approved', color: colors.success, bg: colors.successBg },
+    COMPLETED: { label: 'Completed', color: colors.textBody, bg: colors.surfaceBg },
+    REJECTED: { label: 'Rejected', color: colors.error, bg: colors.errorBg },
+    CANCELLED: { label: 'Cancelled', color: colors.error, bg: colors.errorBg },
+    EXPIRED: { label: 'Expired', color: colors.textSecondary, bg: colors.surfaceBg },
+  };
+
+  const styles = makeOwnerDashboardStyles(colors);
 
   const fetchDashboard = useCallback(async (isRefresh = false) => {
     try {
@@ -318,7 +321,7 @@ export default function OwnerDashboardScreen() {
         <StatusBar barStyle="dark-content" />
         <PageHeader title="Manage Spaces"  onBack={() => router.replace('/(home)')} />
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       </SafeAreaView>
     );
@@ -342,19 +345,19 @@ export default function OwnerDashboardScreen() {
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
       <PageHeader title="Manage Spaces"  onBack={() => router.replace('/(home)')} />
-      
+
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
       >
         {/* Subscription lock banner — the key revenue nudge. Shown when the owner
             has no active subscription or it has expired, so they can't list spaces. */}
         {subscriptionLocked && (
           <View style={styles.lockBanner}>
             <View style={styles.lockBannerIcon}>
-              <Lock size={18} color={Colors.error} />
+              <Lock size={18} color={colors.error} />
             </View>
             <View style={styles.lockBannerBody}>
               <Text style={styles.lockBannerTitle}>
@@ -381,7 +384,7 @@ export default function OwnerDashboardScreen() {
 
         {/* Premium Banner - Floating Style */}
         <LinearGradient
-          colors={dashboardData.isSubscribed ? [Colors.textPrimary, ExtendedColors.darkCard, Colors.textDark] : [ExtendedColors.darkGrad1, ExtendedColors.darkGrad2, ExtendedColors.darkGrad3]}
+          colors={dashboardData.isSubscribed ? [colors.textPrimary, ExtendedColors.darkCard, colors.textDark] : [ExtendedColors.darkGrad1, ExtendedColors.darkGrad2, ExtendedColors.darkGrad3]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.heroBanner}
@@ -390,9 +393,9 @@ export default function OwnerDashboardScreen() {
             <View>
               <View style={styles.heroBadgeRow}>
                 {dashboardData.isSubscribed ? (
-                  <Star size={14} color={Colors.amber} fill={Colors.amber} style={{ marginRight: 6 }} />
+                  <Star size={14} color={colors.amber} fill={colors.amber} style={{ marginRight: 6 }} />
                 ) : (
-                  <Zap size={14} color={Colors.amber} fill={Colors.amber} style={{ marginRight: 6 }} />
+                  <Zap size={14} color={colors.amber} fill={colors.amber} style={{ marginRight: 6 }} />
                 )}
                 <Text style={styles.heroBadgeText}>
                   {dashboardData.isSubscribed ? 'PARKSWIFT PRO' : 'UPGRADE TO PRO'}
@@ -421,14 +424,14 @@ export default function OwnerDashboardScreen() {
         <View style={styles.statsGrid}>
           <View style={styles.statCard}>
             <View style={[styles.statIconWrapper, { backgroundColor: ExtendedColors.primaryTint4 }]}>
-              <TrendingUp size={18} color={Colors.primary} />
+              <TrendingUp size={18} color={colors.primary} />
             </View>
             <View style={styles.statTextBlock}>
               <Text style={styles.statValue}>₹{dashboardData.revenue}</Text>
               <Text style={styles.statLabel}>Revenue</Text>
             </View>
           </View>
-          
+
           <View style={styles.statCard}>
             <View style={[styles.statIconWrapper, { backgroundColor: ExtendedColors.skyBlueTint }]}>
               <MapPin size={18} color={ExtendedColors.activeBlueText} />
@@ -440,8 +443,8 @@ export default function OwnerDashboardScreen() {
           </View>
 
           <View style={styles.statCard}>
-            <View style={[styles.statIconWrapper, { backgroundColor: Colors.successBg }]}>
-              <CheckCircle size={18} color={Colors.success} />
+            <View style={[styles.statIconWrapper, { backgroundColor: colors.successBg }]}>
+              <CheckCircle size={18} color={colors.success} />
             </View>
             <View style={styles.statTextBlock}>
               <Text style={styles.statValue}>{dashboardData.todayBookingsCount}</Text>
@@ -450,8 +453,8 @@ export default function OwnerDashboardScreen() {
           </View>
 
           <View style={styles.statCard}>
-            <View style={[styles.statIconWrapper, { backgroundColor: Colors.warningBg }]}>
-              <Activity size={18} color={Colors.warning} />
+            <View style={[styles.statIconWrapper, { backgroundColor: colors.warningBg }]}>
+              <Activity size={18} color={colors.warning} />
             </View>
             <View style={styles.statTextBlock}>
               <Text style={styles.statValue}>{dashboardData.pendingRequests.length}</Text>
@@ -469,7 +472,7 @@ export default function OwnerDashboardScreen() {
                 <Text style={styles.sectionLink}>View all</Text>
               </TouchableOpacity>
             </View>
-            
+
             {dashboardData.pendingRequests.map(request => {
               const left = approvalLeft(request.createdAt);
               const urgent = left != null && left < 30;
@@ -483,7 +486,7 @@ export default function OwnerDashboardScreen() {
                   <View style={styles.actionCardHeader}>
                     <View style={styles.avatarCircle}>
                       {request.parkerPhotoUrl ? (
-                        <Image source={{ uri: request.parkerPhotoUrl }} style={styles.avatarImg} resizeMode="cover" />
+                        <Image source={{ uri: request.parkerPhotoUrl }} style={styles.avatarImg} resizeMode="cover" onError={() => {}} />
                       ) : (
                         <Text style={styles.avatarText}>{request.parkerName.charAt(0)}</Text>
                       )}
@@ -494,7 +497,7 @@ export default function OwnerDashboardScreen() {
                     </View>
                     {/* Live approval countdown — how long the owner has to respond */}
                     <View style={[styles.urgentBadge, urgent && styles.urgentBadgeRed]}>
-                      <Clock size={11} color={urgent ? Colors.error : Colors.warning} style={{ marginRight: 3 }} />
+                      <Clock size={11} color={urgent ? colors.error : colors.warning} style={{ marginRight: 3 }} />
                       <Text style={[styles.urgentBadgeText, urgent && styles.urgentBadgeTextRed]}>
                         {left != null && left > 0 ? `${fmtCountdown(left)} left` : 'Expiring…'}
                       </Text>
@@ -506,7 +509,7 @@ export default function OwnerDashboardScreen() {
                     </Text>
                     <View style={styles.reviewBtn}>
                       <Text style={styles.reviewBtnText}>Review Request</Text>
-                      <ArrowRight size={14} color={Colors.white} />
+                      <ArrowRight size={14} color={colors.white} />
                     </View>
                   </View>
                 </TouchableOpacity>
@@ -526,8 +529,8 @@ export default function OwnerDashboardScreen() {
             </View>
 
             {dashboardData.liveSessions.map(session => (
-              <TouchableOpacity 
-                key={session.id} 
+              <TouchableOpacity
+                key={session.id}
                 style={styles.liveSessionCard}
                 activeOpacity={0.8}
                 onPress={() => router.push('/(my-spaces)/active')}
@@ -540,7 +543,7 @@ export default function OwnerDashboardScreen() {
                   <Text style={styles.liveSessionSpace}>{session.spaceName}</Text>
                 </View>
                 <View style={styles.timerContainer}>
-                  <Clock size={14} color={Colors.success} style={{ marginRight: 4 }} />
+                  <Clock size={14} color={colors.success} style={{ marginRight: 4 }} />
                   <Text style={styles.timerText}>{session.timeLeft}</Text>
                 </View>
               </TouchableOpacity>
@@ -559,7 +562,7 @@ export default function OwnerDashboardScreen() {
             </View>
 
             {dashboardData.recentRequests.slice(0, 2).map((req) => {
-              const badge = REQUEST_STATUS_BADGE[req.status] || { label: req.status, color: Colors.textSecondary, bg: Colors.surfaceBg };
+              const badge = REQUEST_STATUS_BADGE[req.status] || { label: req.status, color: colors.textSecondary, bg: colors.surfaceBg };
               return (
                 <TouchableOpacity
                   key={req.id}
@@ -569,7 +572,7 @@ export default function OwnerDashboardScreen() {
                 >
                   <View style={styles.recentReqAvatar}>
                     {req.parkerPhotoUrl ? (
-                      <Image source={{ uri: req.parkerPhotoUrl }} style={styles.recentReqAvatarImg} resizeMode="cover" />
+                      <Image source={{ uri: req.parkerPhotoUrl }} style={styles.recentReqAvatarImg} resizeMode="cover" onError={() => {}} />
                     ) : (
                       <Text style={styles.recentReqAvatarText}>{req.parkerName.charAt(0).toUpperCase()}</Text>
                     )}
@@ -593,10 +596,10 @@ export default function OwnerDashboardScreen() {
         {/* Empty State when everything is cleared */}
         {dashboardData.pendingRequests.length === 0 && dashboardData.liveSessions.length === 0 && (
           <View style={styles.emptyStateContainer}>
-            <NoActivitySvg width={140} height={140} primaryColor={Colors.primary} />
+            <NoActivitySvg width={140} height={140} primaryColor={colors.primary} />
             <Text style={styles.emptyStateTitle}>You're all caught up!</Text>
             <Text style={styles.emptyStateDesc}>
-              No pending requests or active sessions right now. 
+              No pending requests or active sessions right now.
               {dashboardData.activeSpacesCount === 0 ? " Add a space to start earning." : " We'll notify you when you get a booking."}
             </Text>
             {dashboardData.activeSpacesCount === 0 && (
@@ -610,7 +613,7 @@ export default function OwnerDashboardScreen() {
             )}
           </View>
         )}
-        
+
         <View style={{ height: 100 }} />
       </ScrollView>
 
@@ -626,8 +629,8 @@ export default function OwnerDashboardScreen() {
             {/* Header */}
             {modalItem?.status === 'EXPIRED' && (
               <View style={styles.modalHeader}>
-                <View style={[styles.modalIconWrap, { backgroundColor: Colors.surfaceBg }]}>
-                  <Clock size={32} color={Colors.textSecondary} />
+                <View style={[styles.modalIconWrap, { backgroundColor: colors.surfaceBg }]}>
+                  <Clock size={32} color={colors.textSecondary} />
                 </View>
                 <Text style={styles.modalTitle}>Request Expired</Text>
                 <Text style={styles.modalSub}>
@@ -637,28 +640,28 @@ export default function OwnerDashboardScreen() {
             )}
             {modalItem?.status === 'REJECTED' && (
               <View style={styles.modalHeader}>
-                <View style={[styles.modalIconWrap, { backgroundColor: Colors.errorBg }]}>
-                  <XCircle size={32} color={Colors.error} />
+                <View style={[styles.modalIconWrap, { backgroundColor: colors.errorBg }]}>
+                  <XCircle size={32} color={colors.error} />
                 </View>
-                <Text style={[styles.modalTitle, { color: Colors.error }]}>Request Rejected</Text>
+                <Text style={[styles.modalTitle, { color: colors.error }]}>Request Rejected</Text>
                 <Text style={styles.modalSub}>You declined this booking request.</Text>
               </View>
             )}
             {modalItem?.status === 'CANCELLED' && (
               <View style={styles.modalHeader}>
-                <View style={[styles.modalIconWrap, { backgroundColor: Colors.errorBg }]}>
-                  <AlertCircle size={32} color={Colors.error} />
+                <View style={[styles.modalIconWrap, { backgroundColor: colors.errorBg }]}>
+                  <AlertCircle size={32} color={colors.error} />
                 </View>
-                <Text style={[styles.modalTitle, { color: Colors.error }]}>Booking Cancelled</Text>
+                <Text style={[styles.modalTitle, { color: colors.error }]}>Booking Cancelled</Text>
                 <Text style={styles.modalSub}>This booking was cancelled.</Text>
               </View>
             )}
             {(modalItem?.status === 'APPROVED' || modalItem?.status === 'COMPLETED') && (
               <View style={styles.modalHeader}>
-                <View style={[styles.modalIconWrap, { backgroundColor: Colors.successBg }]}>
-                  <CheckCircle size={32} color={Colors.success} />
+                <View style={[styles.modalIconWrap, { backgroundColor: colors.successBg }]}>
+                  <CheckCircle size={32} color={colors.success} />
                 </View>
-                <Text style={[styles.modalTitle, { color: Colors.success }]}>
+                <Text style={[styles.modalTitle, { color: colors.success }]}>
                   {modalItem?.status === 'COMPLETED' ? 'Booking Completed' : 'Request Approved'}
                 </Text>
                 <Text style={styles.modalSub}>
@@ -691,7 +694,7 @@ export default function OwnerDashboardScreen() {
               </View>
               <View style={[styles.modalDetailRow, { borderBottomWidth: 0 }]}>
                 <Text style={styles.modalDetailLabel}>Amount</Text>
-                <Text style={[styles.modalDetailValue, { color: Colors.primary, fontWeight: FontWeight.bold }]}>
+                <Text style={[styles.modalDetailValue, { color: colors.primary, fontWeight: FontWeight.bold }]}>
                   {modalItem?.amount ? `₹${modalItem.amount}` : '-'}
                 </Text>
               </View>
@@ -717,461 +720,4 @@ export default function OwnerDashboardScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: Colors.white,
-  },
-  container: {
-    flex: 1,
-    backgroundColor: Colors.screenBg,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: Colors.screenBg,
-  },
-  scrollContent: {
-    paddingHorizontal: Spacing['3xl'],
-    paddingTop: Spacing['3xl'],
-    paddingBottom: Spacing['7xl'],
-  },
-  lockBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.errorBg,
-    borderRadius: BorderRadius.lg,                  // 16 = lg ✓
-    borderWidth: 1,
-    borderColor: Colors.error,
-    padding: Spacing.xl,
-    marginBottom: Spacing.xl,
-  },
-  lockBannerIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: Colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: Spacing.lg,
-  },
-  lockBannerBody: {
-    flex: 1,
-    marginRight: Spacing.md,
-  },
-  lockBannerTitle: {
-    fontSize: FontSize.md,                          // 14 = md ✓
-    fontWeight: FontWeight.bold,
-    color: Colors.error,
-    marginBottom: 2,
-  },
-  lockBannerText: {
-    fontSize: FontSize.sm,                          // 12 = sm ✓
-    color: Colors.textSecondary,
-    lineHeight: 16,
-  },
-  lockBannerBtn: {
-    backgroundColor: Colors.error,
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.input,               // 10 = input ✓
-  },
-  lockBannerBtnText: {
-    color: Colors.white,
-    fontWeight: FontWeight.bold,
-    fontSize: FontSize.sm,                          // 12 = sm ✓
-  },
 
-  // UPI "add your UPI ID" nudge — softer (primary tint, tappable whole row).
-  upiBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.primaryBg,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    borderColor: Colors.primary,
-    padding: Spacing.xl,
-    marginBottom: Spacing.xl,
-  },
-  upiBannerIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: Colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: Spacing.lg,
-  },
-  upiBannerBody: { flex: 1, marginRight: Spacing.md },
-  upiBannerTitle: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.bold,
-    color: Colors.primary,
-    marginBottom: 2,
-  },
-  upiBannerText: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    lineHeight: 16,
-  },
-  heroBanner: {
-    borderRadius: BorderRadius.circleXl,            // 20 = circleXl ✓
-    padding: Spacing.screenH,
-    marginBottom: Spacing['4xl'],
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-  heroContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  heroBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Spacing.md,
-  },
-  heroBadgeText: {
-    color: Colors.amber,
-    fontSize: FontSize.xs,                          // 11 = xs ✓
-    fontWeight: FontWeight.extrabold,
-    letterSpacing: 1,
-  },
-  heroTitle: {
-    fontSize: FontSize['3xl'],                      // 20 = 3xl ✓
-    fontWeight: FontWeight.extrabold,
-    color: Colors.white,
-    marginBottom: Spacing.xs,
-  },
-  heroSubtitle: {
-    fontSize: FontSize.base,                        // 13 = base ✓
-    color: Colors.borderMuted,
-    fontWeight: FontWeight.medium,
-  },
-  heroBtn: {
-    backgroundColor: Colors.white,
-    paddingHorizontal: Spacing['2xl'],
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.input,               // 10 = input ✓
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  heroBtnText: {
-    color: Colors.textPrimary,
-    fontWeight: FontWeight.bold,
-    fontSize: FontSize.sm,                          // 12 = sm ✓
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: Spacing.md,
-  },
-  statCard: {
-    width: '48%',
-    backgroundColor: Colors.white,
-    borderRadius: BorderRadius.button,              // 14 = button ✓
-    padding: Spacing.xl,
-    marginBottom: Spacing.xl,
-    flexDirection: 'row',
-    alignItems: 'center',
-    shadowColor: Colors.textMuted,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBg,
-  },
-  statIconWrapper: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: Spacing.lg,
-  },
-  statTextBlock: {
-    flex: 1,
-  },
-  statValue: {
-    fontSize: FontSize['2xl'],                      // 18 = 2xl ✓
-    fontWeight: FontWeight.extrabold,
-    color: Colors.textPrimary,
-    marginBottom: 1,
-  },
-  statLabel: {
-    fontSize: FontSize.xs,                          // 11 = xs ✓
-    color: Colors.textSecondary,
-    fontWeight: FontWeight.semibold,
-  },
-  section: {
-    marginBottom: Spacing['4xl'],
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.xl,
-  },
-  sectionTitle: {
-    fontSize: FontSize.xl,                          // 16 = xl ✓
-    fontWeight: FontWeight.extrabold,
-    color: Colors.textPrimary,
-  },
-  sectionLink: {
-    fontSize: FontSize.base,                        // 13 = base ✓
-    color: Colors.primary,
-    fontWeight: FontWeight.semibold,
-  },
-  actionCard: {
-    backgroundColor: Colors.white,
-    borderRadius: BorderRadius.lg,                  // 16 = lg ✓
-    padding: Spacing['3xl'],
-    marginBottom: Spacing.xl,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBg,
-    shadowColor: Colors.textMuted,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  actionCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Spacing.xl,
-  },
-  avatarCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.surfaceBg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: Spacing.lg,
-    overflow: 'hidden',
-  },
-  avatarImg: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 20,
-  },
-  avatarText: {
-    fontSize: FontSize.xl,                          // 16 = xl ✓
-    fontWeight: FontWeight.bold,
-    color: Colors.textSecondary,
-  },
-  actionCardInfo: {
-    flex: 1,
-  },
-  actionCardName: {
-    fontSize: FontSize.lg,                          // 15 = lg ✓
-    fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
-    marginBottom: Spacing.micro,
-  },
-  actionCardDetails: {
-    fontSize: FontSize.sm,                          // 12 = sm ✓
-    color: Colors.textSecondary,
-    fontWeight: FontWeight.medium,
-  },
-  urgentBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.warningBgAlt,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.input,               // 10 = input ✓
-  },
-  urgentBadgeRed: { backgroundColor: Colors.errorBg },
-  urgentBadgeText: {
-    color: Colors.warning,
-    fontSize: FontSize.xs,                          // 11 = xs ✓
-    fontWeight: FontWeight.bold,
-  },
-  urgentBadgeTextRed: { color: Colors.error },
-  actionCardFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderTopWidth: 1,
-    borderTopColor: Colors.surfaceBg,
-    paddingTop: Spacing.xl,
-  },
-  actionCardDuration: {
-    fontSize: FontSize.sm,                          // 12 = sm ✓
-    color: Colors.textSecondary,
-    fontWeight: FontWeight.semibold,
-  },
-  reviewBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.primary,
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.input,               // 10 = input ✓
-  },
-  reviewBtnText: {
-    color: Colors.white,
-    fontWeight: FontWeight.bold,
-    fontSize: FontSize.sm,                          // 12 = sm ✓
-    marginRight: Spacing.xs,
-  },
-  recentReqCard: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: Colors.white, borderRadius: BorderRadius.button, padding: Spacing.xl, marginBottom: Spacing.md,  // 14 = button ✓
-    borderWidth: 1, borderColor: Colors.surfaceBg,
-  },
-  recentReqAvatar: {
-    width: 38, height: 38, borderRadius: BorderRadius.circle, backgroundColor: Colors.surfaceBg,  // 19 = circle ✓
-    alignItems: 'center', justifyContent: 'center', marginRight: Spacing.xl, overflow: 'hidden',
-  },
-  recentReqAvatarImg: { width: '100%', height: '100%', borderRadius: BorderRadius.circle },
-  recentReqAvatarText: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textSecondary },  // 15 = lg ✓
-  recentReqInfo: { flex: 1 },
-  recentReqName: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.textPrimary },  // 14 = md ✓
-  recentReqSpace: { fontSize: FontSize.sm, color: Colors.textMuted, marginTop: Spacing.micro },  // 12 = sm ✓
-  recentReqRight: { alignItems: 'flex-end', gap: Spacing.xs },
-  recentReqBadge: { paddingHorizontal: Spacing.md, paddingVertical: 3, borderRadius: BorderRadius.sm },  // 8 = sm ✓
-  recentReqBadgeText: { fontSize: FontSize.xs, fontWeight: FontWeight.bold },  // 11 = xs ✓
-  recentReqTime: { fontSize: FontSize.xs, color: Colors.textMuted },  // 11 = xs ✓
-
-  liveSessionCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.white,
-    borderRadius: BorderRadius.lg,                  // 16 = lg ✓
-    padding: Spacing['2xl'],
-    marginBottom: Spacing.lg,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBg,
-    shadowColor: Colors.textMuted,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  liveStatusIndicator: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: Colors.successBg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: Spacing.lg,
-  },
-  liveDot: {
-    width: 12,
-    height: 12,
-    borderRadius: BorderRadius.badge,               // 6 = badge ✓
-    backgroundColor: Colors.success,
-  },
-  liveSessionInfo: {
-    flex: 1,
-  },
-  liveSessionName: {
-    fontSize: FontSize.lg,                          // 15 = lg ✓
-    fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
-    marginBottom: Spacing.micro,
-  },
-  liveSessionSpace: {
-    fontSize: FontSize.sm,                          // 12 = sm ✓
-    color: Colors.textSecondary,
-    fontWeight: FontWeight.medium,
-  },
-  timerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.screenBg,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.input,               // 10 = input ✓
-  },
-  timerText: {
-    color: Colors.success,
-    fontWeight: FontWeight.bold,
-    fontSize: FontSize.base,                        // 13 = base ✓
-  },
-
-  // Empty State
-  emptyStateContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 0,
-    paddingBottom: Spacing.screenH,
-    paddingHorizontal: Spacing.screenH,
-    marginTop: -16,
-  },
-  emptyStateTitle: {
-    fontSize: FontSize['2xl'],                      // 18 = 2xl ✓
-    fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
-    marginTop: Spacing.screenH,
-    marginBottom: Spacing.md,
-  },
-  emptyStateDesc: {
-    fontSize: FontSize.md,                          // 14 = md ✓
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: Spacing.screenH,
-  },
-  emptyStateBtn: {
-    backgroundColor: Colors.primary,
-    paddingHorizontal: Spacing['4xl'],
-    paddingVertical: Spacing.xl,
-    borderRadius: BorderRadius.md,                  // 12 = md ✓
-  },
-  emptyStateBtnText: {
-    color: Colors.white,
-    fontSize: FontSize.lg,                          // 15 = lg ✓
-    fontWeight: FontWeight.semibold,
-  },
-  // Modal styles
-  modalOverlay: {
-    flex: 1, backgroundColor: ExtendedColors.overlayHeavy,   // 'rgba(0,0,0,0.55)' ✓
-    justifyContent: 'flex-end',
-  },
-  modalCard: {
-    backgroundColor: Colors.white, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl,  // 24 = xl ✓
-    paddingHorizontal: Spacing.screenH, paddingTop: Spacing.screenH, paddingBottom: Spacing['6xl'],
-    gap: Spacing.xl,
-  },
-  modalHeader: { alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.xs },
-  modalIconWrap: {
-    width: 64, height: 64, borderRadius: 32,
-    alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.xs,
-  },
-  modalTitle: { fontSize: FontSize['3xl'], fontWeight: FontWeight.extrabold, color: Colors.textPrimary, textAlign: 'center' },  // 20 = 3xl ✓
-  modalSub: { fontSize: FontSize.base, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },  // 13 = base ✓
-  modalDetails: {
-    backgroundColor: Colors.screenBg, borderRadius: BorderRadius.button,   // 14 = button ✓
-    paddingHorizontal: Spacing['2xl'], paddingVertical: Spacing.sm,
-  },
-  modalDetailRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingVertical: Spacing.lg, borderBottomWidth: 1, borderBottomColor: Colors.border,
-  },
-  modalDetailLabel: { fontSize: FontSize.sm, color: Colors.textSecondary, fontWeight: FontWeight.medium, flex: 1 },  // 12 = sm ✓
-  modalDetailValue: { fontSize: FontSize.base, color: Colors.textPrimary, fontWeight: FontWeight.semibold, textAlign: 'right', flex: 1.5 },  // 13 = base ✓
-  reasonBox: {
-    backgroundColor: Colors.pendingBg, borderRadius: BorderRadius.md, padding: Spacing['2xl'],   // '#FFF7ED' ✓, 12 = md ✓
-    borderLeftWidth: 3, borderLeftColor: ExtendedColors.orange,   // '#F97316' ✓
-  },
-  reasonTitle: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: ExtendedColors.redOrange, marginBottom: Spacing.sm },  // 12 = sm ✓, '#C2410C' ✓
-  reasonItem: { fontSize: FontSize.sm, color: ExtendedColors.warningAmber, lineHeight: 20 },  // 12 = sm ✓, '#92400E' ✓
-  modalCloseBtn: {
-    paddingVertical: Spacing['2xl'], borderRadius: BorderRadius.md,   // 12 = md ✓
-    backgroundColor: Colors.surfaceBg, alignItems: 'center', marginTop: Spacing.md,
-  },
-  modalCloseBtnText: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.textPrimary },  // 15 = lg ✓
-});

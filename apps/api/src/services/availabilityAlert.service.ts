@@ -1,4 +1,6 @@
+import { BookingStatus } from '@prisma/client';
 import { db } from '../config/database';
+import { AppError } from '../utils/errors';
 import { adminService } from './admin.service';
 import { emitToUser } from '../app';
 
@@ -14,7 +16,7 @@ import { emitToUser } from '../app';
  */
 
 // A booking in one of these statuses occupies a slot.
-const OCCUPYING_STATUSES = ['PENDING_APPROVAL', 'APPROVED', 'ACTIVE'];
+const OCCUPYING_STATUSES = [BookingStatus.PENDING_APPROVAL, BookingStatus.APPROVED, BookingStatus.ACTIVE];
 
 /** True when the space currently has no free slots (active bookings ≥ capacity). */
 const isSpaceFull = async (spaceId: number): Promise<boolean> => {
@@ -37,9 +39,9 @@ export const availabilityAlertService = {
       where: { id: spaceId, deletedAt: null },
       select: { id: true, ownerId: true },
     });
-    if (!space) throw Object.assign(new Error('Space not found'), { statusCode: 404 });
+    if (!space) throw new AppError('Space not found', 404);
     if (space.ownerId === userId) {
-      throw Object.assign(new Error('You cannot set an availability alert on your own space.'), { statusCode: 400 });
+      throw new AppError('You cannot set an availability alert on your own space.', 400);
     }
 
     if (!(await isSpaceFull(spaceId))) {

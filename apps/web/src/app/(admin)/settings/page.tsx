@@ -8,6 +8,8 @@ import {
   Eye, EyeOff,
 } from 'lucide-react';
 import { adminApi } from '@/services/api';
+import { useAuthStore } from '@/store/authStore';
+import { useToast } from '@/components/Toast';
 
 interface PlatformSettings {
   // General
@@ -64,6 +66,9 @@ const tabs = [
 ] as const;
 
 export default function SettingsPage() {
+  const toast = useToast();
+  const { user: authUser } = useAuthStore();
+  const isSupportAgent = authUser?.adminRole === 'SUPPORT_AGENT';
   const [activeTab, setActiveTab] = useState<typeof tabs[number]['name']>('General');
   const [settings, setSettings] = useState<PlatformSettings | null>(null);
   const [original, setOriginal] = useState<PlatformSettings | null>(null);
@@ -103,9 +108,12 @@ export default function SettingsPage() {
       setSettings(res.settings);
       setOriginal(res.settings);
       setSuccess('Settings saved. Changes are now live for all users.');
+      toast.success('Settings saved');
       setTimeout(() => setSuccess(''), 4000);
     } catch (e: any) {
-      setError(e?.response?.data?.error || e?.message || 'Failed to save');
+      const msg = e?.response?.data?.error || e?.message || 'Failed to save';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setSaving(false);
     }
@@ -119,10 +127,20 @@ export default function SettingsPage() {
     );
   }
 
+  if (isSupportAgent) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-6">
+        <Shield size={48} className="text-gray-300 mb-4" />
+        <h2 className="text-xl font-bold text-gray-800 mb-2">Access Restricted</h2>
+        <p className="text-gray-500 max-w-sm">Platform settings are only accessible to Super Admins.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      <div className="sticky top-0 z-10 bg-gray-50 -mx-6 px-6 py-4 -mt-4 mb-2 flex items-center justify-between border-b border-gray-200">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Platform Settings</h1>
           <p className="text-gray-500 mt-1">Configure your ParkSwift environment.</p>

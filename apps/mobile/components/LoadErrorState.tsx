@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { WifiOff, XCircle } from 'lucide-react-native';
 import { useNetworkStore } from '../store/networkStore';
-import { Colors, FontSize, FontWeight, BorderRadius, Spacing } from '../theme';
+import { FontSize, FontWeight, BorderRadius, Spacing } from '../theme';
+import { useTheme } from '../hooks/useTheme';
+import type { ColorsType } from '../theme';
 
 interface LoadErrorStateProps {
   /** The error message from the failed fetch (shown only when actually online). */
@@ -21,16 +23,53 @@ interface LoadErrorStateProps {
  * Usage in a screen:
  *   if (loadFailed && !hasData) return <LoadErrorState onRetry={fetchData} message={error} />;
  */
+const makeStyles = (colors: ColorsType) => StyleSheet.create({
+  container: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing['4xl'],
+    backgroundColor: colors.screenBg,
+  },
+  title: {
+    fontSize: FontSize['2xl'],
+    fontWeight: FontWeight.bold,
+    color: colors.textPrimary,
+    marginTop: Spacing.xl,
+  },
+  message: {
+    fontSize: FontSize.md,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing['3xl'],
+  },
+  retryBtn: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: Spacing['5xl'],
+    paddingVertical: Spacing.xl,
+    borderRadius: BorderRadius.button,
+  },
+  retryBtnText: {
+    color: colors.white,
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.bold,
+  },
+});
+
 const LoadErrorState: React.FC<LoadErrorStateProps> = ({ message, onRetry }) => {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const isConnected = useNetworkStore((s) => s.isConnected);
   const offline = isConnected === false;
 
   return (
     <View style={styles.container}>
       {offline ? (
-        <WifiOff size={48} color={Colors.errorAlt} strokeWidth={1.5} />
+        <WifiOff size={48} color={colors.errorAlt} strokeWidth={1.5} />
       ) : (
-        <XCircle size={48} color={Colors.errorAlt} strokeWidth={1.5} />
+        <XCircle size={48} color={colors.errorAlt} strokeWidth={1.5} />
       )}
       <Text style={styles.title}>{offline ? 'No internet connection' : 'Failed to load'}</Text>
       <Text style={styles.message}>
@@ -44,40 +83,5 @@ const LoadErrorState: React.FC<LoadErrorStateProps> = ({ message, onRetry }) => 
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: Spacing['4xl'],
-    backgroundColor: Colors.screenBg,
-  },
-  title: {
-    fontSize: FontSize['2xl'],
-    fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
-    marginTop: Spacing.xl,
-  },
-  message: {
-    fontSize: FontSize.md,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 20,
-    marginTop: Spacing.sm,
-    marginBottom: Spacing['3xl'],
-  },
-  retryBtn: {
-    backgroundColor: Colors.primary,
-    paddingHorizontal: Spacing['5xl'],
-    paddingVertical: Spacing.xl,
-    borderRadius: BorderRadius.button,
-  },
-  retryBtnText: {
-    color: Colors.white,
-    fontSize: FontSize.lg,
-    fontWeight: FontWeight.bold,
-  },
-});
 
 export default LoadErrorState;

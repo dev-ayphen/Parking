@@ -1,4 +1,4 @@
-import { Alert, Platform } from 'react-native';
+import { Alert, Platform, Linking } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 
 /**
@@ -37,7 +37,14 @@ const mediaTypeFor = (media: 'images' | 'videos') =>
 async function launchCamera(opts: PickMediaOptions): Promise<PickedAsset | null> {
   const perm = await ImagePicker.requestCameraPermissionsAsync();
   if (!perm.granted) {
-    Alert.alert('Camera access needed', 'Allow camera access to take a photo.');
+    Alert.alert(
+      'Camera access needed',
+      'Allow camera access in Settings to take a photo.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Open Settings', onPress: () => Linking.openSettings() },
+      ],
+    );
     return null;
   }
   const result = await ImagePicker.launchCameraAsync({
@@ -53,7 +60,14 @@ async function launchCamera(opts: PickMediaOptions): Promise<PickedAsset | null>
 async function launchGallery(opts: PickMediaOptions): Promise<PickedAsset | null> {
   const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!perm.granted) {
-    Alert.alert('Photo access needed', 'Allow photo library access to choose a file.');
+    Alert.alert(
+      'Photo access needed',
+      'Allow photo library access in Settings to choose a file.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Open Settings', onPress: () => Linking.openSettings() },
+      ],
+    );
     return null;
   }
   const result = await ImagePicker.launchImageLibraryAsync({
